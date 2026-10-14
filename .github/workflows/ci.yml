@@ -62,6 +62,12 @@ jobs:
 
       # sdk/python needs Python 3.11+ (the hosted runners ship 3.12) and the pinned websockets;
       # the gate fails (BRISVOX_REQUIRE_PYTHON_SDK) instead of skipping when they are missing.
+      # The TypeScript and web SDK tests run on the Node version they are developed with (the
+      # runners' default Node differs and treats timers that do not hold the event loop differently).
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: "24"
+
       - name: Python SDK dependencies
         run: python -m pip install "websockets>=15,<16"
 

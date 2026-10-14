@@ -425,7 +425,14 @@ describe("handshake budget", () => {
     const started = Date.now();
     const done = agent.handle(socket as unknown as WebSocket);
     socket.emit("message", Buffer.from(JSON.stringify({ seq: 1, t_ms: 0, type: "session.start", ...START_BODY })), false);
-    await done;
+    // The agent's timers do not keep the process alive (a real server is kept alive by its
+    // listening socket); with a fake socket nothing else would, so hold the event loop here.
+    const keepAlive = setInterval(() => {}, 1_000);
+    try {
+      await done;
+    } finally {
+      clearInterval(keepAlive);
+    }
     assert.ok(Date.now() - started < 2000, "the write was bounded by the handshake budget, not by writeTimeoutMs");
     assert.ok(socket.terminated, "a write that cannot finish takes the link down");
     assert.ok(logger.has("handshake failed"));
