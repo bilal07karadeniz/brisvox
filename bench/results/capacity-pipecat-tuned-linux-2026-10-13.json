@@ -1,0 +1,62 @@
+{
+  "schema": "brisvox-bench/capacity-summary/1",
+  "system": "pipecat-tuned",
+  "date": "2026-10-13",
+  "label": "pipecat-tuned (4 CPUs, 4g, Linux)",
+  "environment": {
+    "os": "linux",
+    "arch": "x86_64",
+    "logical_cores": 8,
+    "release_build": true,
+    "not_linux_run": false,
+    "banner": null
+  },
+  "note": "server flags: -e OMP_NUM_THREADS=1 -e OPENBLAS_NUM_THREADS=1 -e MKL_NUM_THREADS=1; 4 Pipecat process(es); Linux kernel 6.6.87.2-microsoft-standard-WSL2; container --cpus=4 --cpuset-cpus=0-3 --memory=4g --memory-swap=4g --ulimit nofile=1048576:1048576 --network host, server cores 0-3, generator cores 4-11 (bench/capacity_linux.sh)",
+  "runs": [
+    {
+      "file": "capacity-pipecat-tuned-linux-2026-10-13-run1.json",
+      "max_concurrent": 70,
+      "first_failure": 80,
+      "limit": "found",
+      "failure_reason": "9 of 320 turns lost or not clean (9 talked over, 0 no response, 0 bot speaking; allowed 0.0 %); p95 V2V 2613 ms is above the limit 1200 ms (floor 950 ms + 250 ms)",
+      "p95_v2v_ms": 1036,
+      "p50_v2v_ms": 1025,
+      "server_cpu_cores": 2.03,
+      "mcores_per_call": 28.99,
+      "rss_peak_mb": 1574,
+      "generator_cpu_cores": 0.12,
+      "max_send_lateness_ms": 3
+    },
+    {
+      "file": "capacity-pipecat-tuned-linux-2026-10-13-run2.json",
+      "max_concurrent": 90,
+      "first_failure": 100,
+      "limit": "found",
+      "failure_reason": "70 of 400 turns lost or not clean (65 talked over, 5 no response, 0 bot speaking; allowed 0.0 %); p95 V2V 9381 ms is above the limit 1200 ms (floor 950 ms + 250 ms)",
+      "p95_v2v_ms": 1060,
+      "p50_v2v_ms": 1025,
+      "server_cpu_cores": 2.45,
+      "mcores_per_call": 27.27,
+      "rss_peak_mb": 1885,
+      "generator_cpu_cores": 0.16,
+      "max_send_lateness_ms": 4
+    },
+    {
+      "file": "capacity-pipecat-tuned-linux-2026-10-13-run3.json",
+      "max_concurrent": 90,
+      "first_failure": 100,
+      "limit": "found",
+      "failure_reason": "163 of 400 turns lost or not clean (0 talked over, 163 no response, 0 bot speaking; allowed 0.0 %)",
+      "p95_v2v_ms": 1039,
+      "p50_v2v_ms": 1025,
+      "server_cpu_cores": 2.41,
+      "mcores_per_call": 26.83,
+      "rss_peak_mb": 1862,
+      "generator_cpu_cores": 0.15,
+      "max_send_lateness_ms": 4
+    }
+  ],
+  "median_max_concurrent": 90,
+  "min_max_concurrent": 70,
+  "max_max_concurrent": 90
+}

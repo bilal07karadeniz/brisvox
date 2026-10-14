@@ -1,0 +1,74 @@
+# Outbound appointment reminders with answering-machine handling (same providers as agent.toml).
+# The application places the call with Twilio's machine detection on (place_call.py does); the
+# verdict reaches the call as the stream parameter `answered_by` (twiml_server.py puts it there).
+# A person gets the conversation; a machine whose greeting ended is played `message`, then the
+# call is hung up through the carrier. Reference: docs/CONFIG.md `[telephony.voicemail]`,
+# docs/TELEPHONY.md section 6.
+#
+# Run it as a second server process next to agent.toml (one agent definition per process).
+
+[agent]
+name = "harbour-dental-reminder"
+language = "en-US"
+system_prompt = """
+You are calling on behalf of Harbour Dental to remind a patient of an appointment. The person
+who answered is on a phone line: speak in one or two short sentences. The person speaks first
+("Hello?"): answer them by introducing yourself.
+
+Say who you are and that you are calling about an appointment reminder. If the person is not the
+patient, ask politely for the patient or say you will call back, and end the call. You do not
+know the time of the appointment: tell them the front desk will confirm it and offer to put them
+through (transfer_call with the destination "front_desk"). Do not discuss anything medical.
+When the conversation is over, say goodbye and call end_call.
+"""
+tools = ["transfer_call", "end_call"]
+
+[telephony]
+destinations = [
+  { name = "front_desk", number = "+15555550100", description = "the front desk" },
+]
+
+[telephony.voicemail]
+# Spoken as it is after the machine's greeting, on a recording the callee did not ask for: keep
+# it short and put nothing private in it (no name, no time, no treatment).
+message = "Hello, this is Harbour Dental with a reminder about an upcoming appointment. Please call the front desk to confirm it. Thank you, goodbye."
+on_unknown = "treat_as_human"   # no verdict: talk, as if a person answered
+
+[turn]
+fallback_silence_ms = 2000
+
+[interruption]
+preset = "recommended"
+echo_guard_ms = 600
+backchannels = ["en"]
+
+[audio]
+frame_ms = 20
+call_sample_rate = 8000
+
+[stt]
+provider = "assemblyai"
+api_key_env = "ASSEMBLYAI_API_KEY"
+
+[stt.assemblyai]
+speech_model = "universal-3-6-pro"
+region = "us"
+keyterms = ["Harbour Dental"]
+
+[llm]
+provider = "openai_compatible"
+api_key_env = "GROQ_API_KEY"
+
+[llm.openai_compatible]
+preset = "groq"
+model = "llama-3.1-8b-instant"
+max_tokens = 300
+
+[tts]
+provider = "deepgram_aura"
+api_key_env = "DEEPGRAM_API_KEY"
+voice = "aura-2-thalia-en"
+sample_rate = 8000
+
+[tts.deepgram_aura]
+speed = 1.0

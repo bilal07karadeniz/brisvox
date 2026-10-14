@@ -1,0 +1,21 @@
+{
+  "name": "en_tr_mixed",
+  "sample_rate": 16000,
+  "samples": 194240,
+  "segments": [
+    {
+      "start": 6400,
+      "end": 71200,
+      "lang": "en",
+      "text": "The East African Islands are in the Indian Ocean off the eastern coast of Africa.",
+      "source": "fleurs:en_us:dev:10238777279729691182.wav"
+    },
+    {
+      "start": 87200,
+      "end": 175040,
+      "lang": "tr",
+      "text": "Noel, Hristiyanlığın en mühim bayramlarından biridir ve İsa'nın doğum günü olarak kutlanır.",
+      "source": "fleurs:tr_tr:dev:11377958266948174551.wav"
+    }
+  ]
+}

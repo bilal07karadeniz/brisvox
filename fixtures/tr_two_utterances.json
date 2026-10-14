@@ -1,0 +1,21 @@
+{
+  "name": "tr_two_utterances",
+  "sample_rate": 16000,
+  "samples": 252640,
+  "segments": [
+    {
+      "start": 8000,
+      "end": 100800,
+      "lang": "tr",
+      "text": "Ürünlerimizin yüzde seksenlik bir bölümü Orta Amerika ülkelerindeki oranlar üzerinden vergilendirildi.",
+      "source": "fleurs:tr_tr:dev:10509229732650122653.wav"
+    },
+    {
+      "start": 124800,
+      "end": 233440,
+      "lang": "tr",
+      "text": "Zamanla, yeni nüfus yeni çevresine uyum sağlamaya başladıkça diğer popülasyondan gittikçe daha farklı görünmeye başlarlar.",
+      "source": "fleurs:tr_tr:dev:11227152078455028798.wav"
+    }
+  ]
+}

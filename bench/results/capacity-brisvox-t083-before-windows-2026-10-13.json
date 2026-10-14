@@ -1,0 +1,192 @@
+{
+  "schema": "brisvox-bench/capacity/2",
+  "label": "base",
+  "note": null,
+  "url": "ws://127.0.0.1:60343/...",
+  "environment": {
+    "os": "windows",
+    "arch": "x86_64",
+    "logical_cores": 32,
+    "release_build": true,
+    "not_linux_run": true,
+    "banner": "**not a Linux run** (windows): timers and scheduling differ from the Linux servers the engine targets, so these numbers show trends only; numbers for comparisons (with other engines, or against latency targets) come from a Linux run"
+  },
+  "settings": {
+    "fixture": "en_two_utterances",
+    "turns_per_call": 2,
+    "steps": [
+      1200,
+      1500
+    ],
+    "rounds": 2,
+    "warmup_calls": 1,
+    "spread_ms": 4000,
+    "min_gap_ms": 4000,
+    "pause_ms": 200,
+    "cooldown_ms": 3000,
+    "floor_ms": 950,
+    "slo_over_floor_ms": 250,
+    "slo_limit_ms": 1200,
+    "max_bad_rate": 0.0,
+    "lateness_limit_ms": 100,
+    "late_share_limit": 0.01,
+    "resolution": 0,
+    "keep_going": false,
+    "target_pid": 30192,
+    "target_tree": true
+  },
+  "engine": {
+    "end_of_turn": "smart_turn",
+    "turn_silence_ms": null,
+    "vad_threshold_rms": 500,
+    "vad_start_ms": 40,
+    "vad_stop_ms": 300,
+    "stt_interim_ms": 100,
+    "stt_final_ms": 150,
+    "llm_first_token_ms": 350,
+    "llm_inter_token_ms": 30,
+    "tts_first_byte_ms": 150,
+    "tts_chunk_interval_ms": 20,
+    "pool_threads": 2,
+    "pool_queue": 1024,
+    "speculation": false,
+    "speculation_on_partial": false,
+    "speculation_gate_ms": 0,
+    "stt_interims": "lagging",
+    "end_of_turn_floor_ms": 450,
+    "floor_ms": 950
+  },
+  "warmup": {
+    "concurrent": 1,
+    "calls": 1,
+    "calls_failed": 0,
+    "failures": [],
+    "turns_expected": 2,
+    "turns_answered": 2,
+    "talked_over": 0,
+    "bot_speaking": 0,
+    "no_response": 0,
+    "bad_rate": 0.0,
+    "v2v": {
+      "count": 2,
+      "p50_us": 1000969,
+      "p90_us": 1021419,
+      "p95_us": 1021419,
+      "p99_us": 1021419,
+      "max_us": 1021419
+    },
+    "p95_over_floor_us": 71419,
+    "max_send_lateness_us": 16997,
+    "late_frames": 0,
+    "timed_frames": 732,
+    "wall_ms": 14634,
+    "rss_before_bytes": 10100736,
+    "target": {
+      "cpu_cores": 0.017473985045595847,
+      "rss_peak_bytes": 20471808,
+      "processes": 1,
+      "readings": 28
+    },
+    "client": {
+      "cpu_cores": 0.046757881552349986,
+      "rss_peak_bytes": 22540288,
+      "processes": 1,
+      "readings": 29
+    },
+    "verdict": "pass",
+    "reasons": []
+  },
+  "steps": [
+    {
+      "concurrent": 1200,
+      "calls": 2400,
+      "calls_failed": 0,
+      "failures": [],
+      "turns_expected": 4800,
+      "turns_answered": 4800,
+      "talked_over": 0,
+      "bot_speaking": 0,
+      "no_response": 0,
+      "bad_rate": 0.0,
+      "v2v": {
+        "count": 4800,
+        "p50_us": 1005807,
+        "p90_us": 1036622,
+        "p95_us": 1046817,
+        "p99_us": 1061554,
+        "max_us": 1096596
+      },
+      "p95_over_floor_us": 96817,
+      "max_send_lateness_us": 22836,
+      "late_frames": 0,
+      "timed_frames": 1756800,
+      "wall_ms": 33493,
+      "rss_before_bytes": 20336640,
+      "target": {
+        "cpu_cores": 2.079551153286429,
+        "rss_peak_bytes": 955662336,
+        "processes": 1,
+        "readings": 62
+      },
+      "client": {
+        "cpu_cores": 1.242283867145038,
+        "rss_peak_bytes": 217837568,
+        "processes": 1,
+        "readings": 65
+      },
+      "verdict": "pass",
+      "reasons": []
+    },
+    {
+      "concurrent": 1500,
+      "calls": 3000,
+      "calls_failed": 1,
+      "failures": [
+        "call: connect: IO error: Normal olarak her yuva adresi (iletişim kuralı/ağ adresi/bağlantı noktası) için yalnızca bir kullanıma izin veriliyor. (os error 10048)"
+      ],
+      "turns_expected": 6000,
+      "turns_answered": 4923,
+      "talked_over": 0,
+      "bot_speaking": 21,
+      "no_response": 1054,
+      "bad_rate": 0.1795,
+      "v2v": {
+        "count": 4923,
+        "p50_us": 1016628,
+        "p90_us": 1076796,
+        "p95_us": 2357388,
+        "p99_us": 3758331,
+        "max_us": 3843173
+      },
+      "p95_over_floor_us": 1407388,
+      "max_send_lateness_us": 20044,
+      "late_frames": 0,
+      "timed_frames": 2195268,
+      "wall_ms": 43493,
+      "rss_before_bytes": 33337344,
+      "target": {
+        "cpu_cores": 2.3597853893554985,
+        "rss_peak_bytes": 1181986816,
+        "processes": 1,
+        "readings": 79
+      },
+      "client": {
+        "cpu_cores": 1.398137187044631,
+        "rss_peak_bytes": 268845056,
+        "processes": 1,
+        "readings": 84
+      },
+      "verdict": "fail",
+      "reasons": [
+        "1 of 3000 calls failed",
+        "1077 of 6000 turns lost or not clean (0 talked over, 1054 no response, 21 bot speaking; allowed 0.0 %)",
+        "p95 V2V 2357 ms is above the limit 1200 ms (floor 950 ms + 250 ms)"
+      ]
+    }
+  ],
+  "conclusion": {
+    "max_concurrent": 1200,
+    "first_failure": 1500,
+    "limit": "found"
+  }
+}

@@ -1,0 +1,229 @@
+{
+  "schema": "brisvox-bench/capacity/2",
+  "label": "m3-old-r3",
+  "note": "m3-old-r3; Windows, no CPU limit, provisional",
+  "url": "ws://127.0.0.1:60488/...",
+  "environment": {
+    "os": "windows",
+    "arch": "x86_64",
+    "logical_cores": 32,
+    "release_build": true,
+    "not_linux_run": true,
+    "banner": "**not a Linux run** (windows): timers and scheduling differ from the Linux servers the engine targets, so these numbers show trends only; numbers for comparisons (with other engines, or against latency targets) come from a Linux run"
+  },
+  "settings": {
+    "fixture": "en_two_utterances",
+    "turns_per_call": 2,
+    "steps": [
+      1,
+      5,
+      10
+    ],
+    "rounds": 6,
+    "warmup_calls": 1,
+    "spread_ms": 4000,
+    "min_gap_ms": 4000,
+    "pause_ms": 200,
+    "cooldown_ms": 3000,
+    "floor_ms": 950,
+    "slo_over_floor_ms": 250,
+    "slo_limit_ms": 1200,
+    "max_bad_rate": 0.0,
+    "lateness_limit_ms": 100,
+    "late_share_limit": 0.01,
+    "resolution": 0,
+    "keep_going": true,
+    "target_pid": 49208,
+    "target_tree": true
+  },
+  "engine": {
+    "end_of_turn": "smart_turn",
+    "turn_silence_ms": null,
+    "vad_threshold_rms": 500,
+    "vad_start_ms": 40,
+    "vad_stop_ms": 300,
+    "stt_interim_ms": 100,
+    "stt_final_ms": 150,
+    "llm_first_token_ms": 350,
+    "llm_inter_token_ms": 30,
+    "tts_first_byte_ms": 150,
+    "tts_chunk_interval_ms": 20,
+    "pool_threads": 2,
+    "pool_queue": 8192,
+    "smart_turn_threads": 0,
+    "speculation": false,
+    "speculation_on_partial": false,
+    "speculation_gate_ms": 0,
+    "stt_interims": "lagging",
+    "end_of_turn_floor_ms": 450,
+    "floor_ms": 950,
+    "real_models": true
+  },
+  "warmup": {
+    "concurrent": 1,
+    "calls": 1,
+    "calls_failed": 0,
+    "failures": [],
+    "turns_expected": 2,
+    "turns_answered": 2,
+    "talked_over": 0,
+    "bot_speaking": 0,
+    "no_response": 0,
+    "bad_rate": 0.0,
+    "v2v": {
+      "count": 2,
+      "p50_us": 832519,
+      "p90_us": 839431,
+      "p95_us": 839431,
+      "p99_us": 839431,
+      "max_us": 839431
+    },
+    "p95_over_floor_us": -110569,
+    "max_send_lateness_us": 16743,
+    "late_frames": 0,
+    "timed_frames": 732,
+    "wall_ms": 14636,
+    "rss_before_bytes": 54272000,
+    "target": {
+      "cpu_cores": 0.03764550762943678,
+      "rss_peak_bytes": 102191104,
+      "processes": 1,
+      "readings": 27
+    },
+    "client": {
+      "cpu_cores": 0.07913105693972643,
+      "rss_peak_bytes": 13819904,
+      "processes": 1,
+      "readings": 29
+    },
+    "verdict": "pass",
+    "reasons": []
+  },
+  "steps": [
+    {
+      "concurrent": 1,
+      "calls": 6,
+      "calls_failed": 0,
+      "failures": [],
+      "turns_expected": 12,
+      "turns_answered": 12,
+      "talked_over": 0,
+      "bot_speaking": 0,
+      "no_response": 0,
+      "bad_rate": 0.0,
+      "v2v": {
+        "count": 12,
+        "p50_us": 828410,
+        "p90_us": 843306,
+        "p95_us": 859144,
+        "p99_us": 859144,
+        "max_us": 859144
+      },
+      "p95_over_floor_us": -90856,
+      "max_send_lateness_us": 16972,
+      "late_frames": 0,
+      "timed_frames": 4392,
+      "wall_ms": 88830,
+      "rss_before_bytes": 102514688,
+      "target": {
+        "cpu_cores": 0.028506830009865994,
+        "rss_peak_bytes": 105947136,
+        "processes": 1,
+        "readings": 162
+      },
+      "client": {
+        "cpu_cores": 0.06824406828443916,
+        "rss_peak_bytes": 14069760,
+        "processes": 1,
+        "readings": 173
+      },
+      "verdict": "pass",
+      "reasons": []
+    },
+    {
+      "concurrent": 5,
+      "calls": 30,
+      "calls_failed": 0,
+      "failures": [],
+      "turns_expected": 60,
+      "turns_answered": 60,
+      "talked_over": 0,
+      "bot_speaking": 0,
+      "no_response": 0,
+      "bad_rate": 0.0,
+      "v2v": {
+        "count": 60,
+        "p50_us": 822265,
+        "p90_us": 843105,
+        "p95_us": 846206,
+        "p99_us": 856747,
+        "max_us": 856747
+      },
+      "p95_over_floor_us": -103794,
+      "max_send_lateness_us": 17314,
+      "late_frames": 0,
+      "timed_frames": 21960,
+      "wall_ms": 92050,
+      "rss_before_bytes": 105902080,
+      "target": {
+        "cpu_cores": 0.10096250348780426,
+        "rss_peak_bytes": 109662208,
+        "processes": 1,
+        "readings": 170
+      },
+      "client": {
+        "cpu_cores": 0.07716097877819958,
+        "rss_peak_bytes": 15044608,
+        "processes": 1,
+        "readings": 180
+      },
+      "verdict": "pass",
+      "reasons": []
+    },
+    {
+      "concurrent": 10,
+      "calls": 60,
+      "calls_failed": 0,
+      "failures": [],
+      "turns_expected": 120,
+      "turns_answered": 120,
+      "talked_over": 0,
+      "bot_speaking": 0,
+      "no_response": 0,
+      "bad_rate": 0.0,
+      "v2v": {
+        "count": 120,
+        "p50_us": 825444,
+        "p90_us": 844137,
+        "p95_us": 845134,
+        "p99_us": 855855,
+        "max_us": 857116
+      },
+      "p95_over_floor_us": -104866,
+      "max_send_lateness_us": 17301,
+      "late_frames": 0,
+      "timed_frames": 43920,
+      "wall_ms": 92455,
+      "rss_before_bytes": 106487808,
+      "target": {
+        "cpu_cores": 0.17732474236067966,
+        "rss_peak_bytes": 113885184,
+        "processes": 1,
+        "readings": 165
+      },
+      "client": {
+        "cpu_cores": 0.10698173757392143,
+        "rss_peak_bytes": 16027648,
+        "processes": 1,
+        "readings": 180
+      },
+      "verdict": "pass",
+      "reasons": []
+    }
+  ],
+  "conclusion": {
+    "max_concurrent": 10,
+    "first_failure": null,
+    "limit": "not_reached"
+  }
+}

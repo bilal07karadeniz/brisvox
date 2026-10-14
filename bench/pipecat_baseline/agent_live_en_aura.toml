@@ -1,0 +1,57 @@
+# Live V2V comparison agent with the Deepgram Aura voice (5 concurrent calls; Cartesia's plan
+# allowed only 2 concurrent generations). BOTH systems run this file (brisvox-server as
+# BRISVOX_AGENT_FILE, the Pipecat baseline as `bot.py --agent`). Same as agent_live_en.toml except
+# the TTS (Deepgram Aura `aura-2-thalia-en`, a public model name, over the websocket):
+#   - the LLM is OpenRouter (OpenAI-compatible Chat Completions), the same model, reasoning effort
+#     and pinned upstream on both systems;
+#   - the prompt asks for one-sentence answers (short TTS, small LLM bill).
+# Keys are never in this file: DEEPGRAM_API_KEY (STT and TTS), OPENAI_COMPATIBLE_API_KEY (LLM).
+
+[agent]
+name = "bench-live-en-aura"
+language = "en"
+system_prompt = """
+You are the voice assistant of Example Shop. Answer in exactly one short spoken sentence.
+Never read out URLs or long numbers digit by digit unless asked.
+"""
+
+[turn]
+policy = "adaptive"          # Smart Turn v3.2 decides; fallback_silence_ms ends an undecided pause
+fallback_silence_ms = 3000
+
+[interruption]
+preset = "recommended"
+backchannels = ["en"]
+
+[speculation]
+enabled = false              # apples to apples
+
+[stt]
+provider = "deepgram"
+api_key_env = "DEEPGRAM_API_KEY"
+
+[stt.deepgram]
+model = "nova-3"
+endpointing_ms = 300
+
+[llm]
+provider = "openai_compatible"
+api_key_env = "OPENAI_COMPATIBLE_API_KEY"
+
+[llm.openai_compatible]
+base_url = "https://openrouter.ai/api/v1"
+model = "openai/gpt-6-luna"
+max_tokens = 120
+reasoning_effort = "none"  # openai/gpt-6-luna thinks by default (+1 s first token); voice turns must not
+# OpenRouter routing: the same upstream for every request, no silent fallback. "openai" is the
+# model vendor's own endpoint (its base slug matches the standard tier; openai/fast and openai/flex
+# are separate service-tier endpoints that a base slug does not select). Both systems send
+# {"provider": {"order": ["openai"], "allow_fallbacks": false}}.
+openrouter_order = ["openai"]
+openrouter_allow_fallbacks = false
+
+[tts]
+provider = "deepgram_aura"
+api_key_env = "DEEPGRAM_API_KEY"
+voice = "aura-2-thalia-en"   # the Aura model string carries voice and language; no secret
+sample_rate = 24000

@@ -1,0 +1,93 @@
+models: Silero VAD (tract) and Smart Turn v3.2 (ONNX Runtime) for every call
+capacity (m2-new-r2): steps [200, 250, 300, 350], 2 call(s) per slot of en_two_utterances, SLO p95 <= 1200 ms (floor 950 ms + 250 ms) ...
+stats calls 1 pool: 50 jobs/s busy 0% run 185.9 us/job wait 17 us/job queue 0 (max 2) rejected 0 (high 0) timed_out 0 skipped 0 | vad wait 17 us/window (max 0.1 ms) | tokio: 25 tasks, global queue 0
+   smart turn: 0.1 analyses/s, 20.57 ms/analysis, 0% of the 2 threads it runs on; VAD windows and features: 0% of the pool's 2
+totals pool: 500 jobs, run 0.1 s (0.186 ms/job), wait 0.0 s | smart turn: 1 analyses, model run 0.0 s (20.57 ms/analysis, wall time on the pool thread) | the rest of the pool's run time (VAD windows, features): 0.1 s
+totals vad windows (priority line): 497 started, wait 17.3 us mean, 0.06 ms max, rejected 0
+totals smart turn executor: 2 jobs, run 0.1 s (29.13 ms/job), wait 0.02 ms mean, 0.0 ms max, rejected 0, timed_out 0, skipped 0, max queue 1
+     1 concurrent (warm-up, not counted): 2/2 turns answered, 0 calls failed, p95 836 ms, target CPU 0.02 cores, harness 0.09 cores, pass
+stats calls 112 pool: 642 jobs/s busy 2% run 55.0 us/job wait 342 us/job queue 0 (max 64) rejected 0 (high 0) timed_out 0 skipped 0 | vad wait 342 us/window (max 1.2 ms) | tokio: 2349 tasks, global queue 0
+   smart turn: 0.1 analyses/s, 21.06 ms/analysis, 0% of the 2 threads it runs on; VAD windows and features: 2% of the pool's 2
+totals pool: 6935 jobs, run 0.4 s (0.064 ms/job), wait 2.2 s | smart turn: 2 analyses, model run 0.0 s (20.81 ms/analysis, wall time on the pool thread) | the rest of the pool's run time (VAD windows, features): 0.4 s
+totals vad windows (priority line): 6932 started, wait 318.5 us mean, 1.24 ms max, rejected 0
+totals smart turn executor: 3 jobs, run 0.1 s (26.92 ms/job), wait 0.01 ms mean, 0.0 ms max, rejected 0, timed_out 0, skipped 0, max queue 1
+stats calls 200 pool: 9627 jobs/s busy 21% run 43.1 us/job wait 728 us/job queue 52 (max 135) rejected 0 (high 0) timed_out 0 skipped 0 | vad wait 729 us/window (max 3.3 ms) | tokio: 4403 tasks, global queue 3
+   smart turn: 20.0 analyses/s, 23.11 ms/analysis, 23% of the 2 threads it runs on; VAD windows and features: 21% of the pool's 2
+totals pool: 103222 jobs, run 4.6 s (0.045 ms/job), wait 72.3 s | smart turn: 202 analyses, model run 4.7 s (23.09 ms/analysis, wall time on the pool thread) | the rest of the pool's run time (VAD windows, features): 4.6 s
+totals vad windows (priority line): 103020 started, wait 701.0 us mean, 3.30 ms max, rejected 0
+totals smart turn executor: 203 jobs, run 5.1 s (24.91 ms/job), wait 0.43 ms mean, 11.6 ms max, rejected 0, timed_out 0, skipped 0, max queue 1
+stats calls 200 pool: 9769 jobs/s busy 20% run 40.1 us/job wait 741 us/job queue 0 (max 161) rejected 0 (high 0) timed_out 0 skipped 39 | vad wait 741 us/window (max 3.4 ms) | tokio: 4240 tasks, global queue 0
+   smart turn: 22.8 analyses/s, 20.71 ms/analysis, 24% of the 2 threads it runs on; VAD windows and features: 20% of the pool's 2
+totals pool: 201042 jobs, run 8.5 s (0.042 ms/job), wait 144.7 s | smart turn: 430 analyses, model run 9.4 s (21.83 ms/analysis, wall time on the pool thread) | the rest of the pool's run time (VAD windows, features): 8.5 s
+totals vad windows (priority line): 200839 started, wait 720.3 us mean, 3.43 ms max, rejected 0
+totals smart turn executor: 431 jobs, run 10.1 s (23.51 ms/job), wait 0.38 ms mean, 11.6 ms max, rejected 0, timed_out 0, skipped 0, max queue 2
+stats calls 61 pool: 9055 jobs/s busy 19% run 41.4 us/job wait 774 us/job queue 0 (max 161) rejected 0 (high 0) timed_out 0 skipped 69 | vad wait 775 us/window (max 3.4 ms) | tokio: 1383 tasks, global queue 0
+   smart turn: 36.3 analyses/s, 20.79 ms/analysis, 38% of the 2 threads it runs on; VAD windows and features: 19% of the pool's 2
+totals pool: 291659 jobs, run 12.3 s (0.042 ms/job), wait 214.8 s | smart turn: 793 analyses, model run 16.9 s (21.35 ms/analysis, wall time on the pool thread) | the rest of the pool's run time (VAD windows, features): 12.3 s
+totals vad windows (priority line): 291256 started, wait 737.4 us mean, 3.43 ms max, rejected 0
+totals smart turn executor: 794 jobs, run 18.3 s (23.00 ms/job), wait 0.65 ms mean, 23.1 ms max, rejected 0, timed_out 0, skipped 0, max queue 2
+   200 concurrent: 800/800 turns answered, 0 calls failed, p95 840 ms, target CPU 2.16 cores, harness 0.43 cores, pass
+stats calls 250 pool: 4824 jobs/s busy 10% run 42.1 us/job wait 704 us/job queue 0 (max 161) rejected 0 (high 0) timed_out 0 skipped 31 | vad wait 704 us/window (max 3.4 ms) | tokio: 5253 tasks, global queue 0
+   smart turn: 0.9 analyses/s, 22.32 ms/analysis, 1% of the 2 threads it runs on; VAD windows and features: 10% of the pool's 2
+totals pool: 339943 jobs, run 14.3 s (0.042 ms/job), wait 248.8 s | smart turn: 802 analyses, model run 17.1 s (21.37 ms/analysis, wall time on the pool thread) | the rest of the pool's run time (VAD windows, features): 14.3 s
+totals vad windows (priority line): 339540 started, wait 732.7 us mean, 3.43 ms max, rejected 0
+totals smart turn executor: 803 jobs, run 18.5 s (23.01 ms/job), wait 0.65 ms mean, 23.1 ms max, rejected 0, timed_out 0, skipped 0, max queue 2
+stats calls 237 pool: 12467 jobs/s busy 27% run 43.3 us/job wait 868 us/job queue 58 (max 161) rejected 0 (high 0) timed_out 0 skipped 47 | vad wait 870 us/window (max 3.9 ms) | tokio: 5205 tasks, global queue 0
+   smart turn: 38.4 analyses/s, 23.89 ms/analysis, 46% of the 2 threads it runs on; VAD windows and features: 27% of the pool's 2
+totals pool: 464635 jobs, run 19.7 s (0.042 ms/job), wait 357.1 s | smart turn: 1186 analyses, model run 26.3 s (22.18 ms/analysis, wall time on the pool thread) | the rest of the pool's run time (VAD windows, features): 19.7 s
+totals vad windows (priority line): 463984 started, wait 769.5 us mean, 3.87 ms max, rejected 0
+totals smart turn executor: 1187 jobs, run 28.4 s (23.88 ms/job), wait 1.75 ms mean, 36.4 ms max, rejected 0, timed_out 0, skipped 0, max queue 3
+stats calls 250 pool: 12309 jobs/s busy 27% run 43.3 us/job wait 850 us/job queue 76 (max 164) rejected 0 (high 0) timed_out 0 skipped 73 | vad wait 851 us/window (max 3.9 ms) | tokio: 5488 tasks, global queue 0
+   smart turn: 36.6 analyses/s, 24.00 ms/analysis, 44% of the 2 threads it runs on; VAD windows and features: 27% of the pool's 2
+totals pool: 587735 jobs, run 25.0 s (0.043 ms/job), wait 461.8 s | smart turn: 1552 analyses, model run 35.1 s (22.61 ms/analysis, wall time on the pool thread) | the rest of the pool's run time (VAD windows, features): 25.0 s
+totals vad windows (priority line): 586870 started, wait 786.7 us mean, 3.87 ms max, rejected 0
+totals smart turn executor: 1553 jobs, run 37.8 s (24.34 ms/job), wait 2.25 ms mean, 36.4 ms max, rejected 0, timed_out 0, skipped 0, max queue 3
+   250 concurrent: 1000/1000 turns answered, 0 calls failed, p95 840 ms, target CPU 2.66 cores, harness 0.45 cores, pass
+stats calls 0 pool: 7166 jobs/s busy 16% run 43.7 us/job wait 786 us/job queue 0 (max 164) rejected 0 (high 0) timed_out 0 skipped 167 | vad wait 787 us/window (max 3.9 ms) | tokio: 3 tasks, global queue 0
+   smart turn: 25.0 analyses/s, 23.14 ms/analysis, 29% of the 2 threads it runs on; VAD windows and features: 16% of the pool's 2
+totals pool: 659478 jobs, run 28.2 s (0.043 ms/job), wait 518.2 s | smart turn: 1802 analyses, model run 40.9 s (22.69 ms/analysis, wall time on the pool thread) | the rest of the pool's run time (VAD windows, features): 28.2 s
+totals vad windows (priority line): 658575 started, wait 786.7 us mean, 3.87 ms max, rejected 0
+totals smart turn executor: 1803 jobs, run 44.1 s (24.44 ms/job), wait 2.92 ms mean, 54.2 ms max, rejected 0, timed_out 0, skipped 0, max queue 3
+stats calls 300 pool: 10760 jobs/s busy 22% run 40.4 us/job wait 893 us/job queue 0 (max 174) rejected 0 (high 0) timed_out 0 skipped 0 | vad wait 893 us/window (max 3.9 ms) | tokio: 6461 tasks, global queue 0
+   smart turn: 17.6 analyses/s, 21.55 ms/analysis, 19% of the 2 threads it runs on; VAD windows and features: 22% of the pool's 2
+totals pool: 767170 jobs, run 32.5 s (0.042 ms/job), wait 614.3 s | smart turn: 1978 analyses, model run 44.7 s (22.58 ms/analysis, wall time on the pool thread) | the rest of the pool's run time (VAD windows, features): 32.5 s
+totals vad windows (priority line): 766138 started, wait 801.6 us mean, 3.87 ms max, rejected 0
+totals smart turn executor: 1979 jobs, run 48.2 s (24.34 ms/job), wait 3.13 ms mean, 54.2 ms max, rejected 0, timed_out 0, skipped 0, max queue 3
+stats calls 300 pool: 14689 jobs/s busy 30% run 40.3 us/job wait 918 us/job queue 43 (max 179) rejected 0 (high 0) timed_out 0 skipped 218 | vad wait 919 us/window (max 5.0 ms) | tokio: 6303 tasks, global queue 0
+   smart turn: 42.4 analyses/s, 22.59 ms/analysis, 48% of the 2 threads it runs on; VAD windows and features: 30% of the pool's 2
+totals pool: 914088 jobs, run 38.5 s (0.042 ms/job), wait 749.2 s | smart turn: 2402 analyses, model run 54.3 s (22.59 ms/analysis, wall time on the pool thread) | the rest of the pool's run time (VAD windows, features): 38.5 s
+totals vad windows (priority line): 912887 started, wait 820.5 us mean, 4.97 ms max, rejected 0
+totals smart turn executor: 2403 jobs, run 58.6 s (24.37 ms/job), wait 4.20 ms mean, 54.2 ms max, rejected 0, timed_out 0, skipped 0, max queue 4
+stats calls 300 pool: 15021 jobs/s busy 30% run 39.8 us/job wait 980 us/job queue 41 (max 184) rejected 0 (high 0) timed_out 0 skipped 0 | vad wait 982 us/window (max 5.0 ms) | tokio: 6661 tasks, global queue 2
+   smart turn: 35.6 analyses/s, 22.26 ms/analysis, 40% of the 2 threads it runs on; VAD windows and features: 30% of the pool's 2
+totals pool: 1064311 jobs, run 44.4 s (0.042 ms/job), wait 896.4 s | smart turn: 2759 analyses, model run 62.2 s (22.54 ms/analysis, wall time on the pool thread) | the rest of the pool's run time (VAD windows, features): 44.4 s
+totals vad windows (priority line): 1062810 started, wait 843.3 us mean, 4.97 ms max, rejected 0
+totals smart turn executor: 2760 jobs, run 67.2 s (24.34 ms/job), wait 4.95 ms mean, 54.2 ms max, rejected 0, timed_out 0, skipped 0, max queue 4
+   300 concurrent: 1200/1200 turns answered, 0 calls failed, p95 837 ms, target CPU 2.90 cores, harness 0.62 cores, pass
+stats calls 234 pool: 4966 jobs/s busy 11% run 44.3 us/job wait 768 us/job queue 0 (max 184) rejected 0 (high 0) timed_out 0 skipped 160 | vad wait 768 us/window (max 5.0 ms) | tokio: 4904 tasks, global queue 0
+   smart turn: 24.4 analyses/s, 22.31 ms/analysis, 27% of the 2 threads it runs on; VAD windows and features: 11% of the pool's 2
+totals pool: 1114017 jobs, run 46.6 s (0.042 ms/job), wait 934.5 s | smart turn: 3002 analyses, model run 67.6 s (22.52 ms/analysis, wall time on the pool thread) | the rest of the pool's run time (VAD windows, features): 46.6 s
+totals vad windows (priority line): 1112516 started, wait 839.9 us mean, 4.97 ms max, rejected 0
+totals smart turn executor: 3003 jobs, run 73.0 s (24.32 ms/job), wait 5.26 ms mean, 54.2 ms max, rejected 0, timed_out 0, skipped 0, max queue 4
+stats calls 350 pool: 17136 jobs/s busy 35% run 40.4 us/job wait 1054 us/job queue 0 (max 201) rejected 0 (high 0) timed_out 0 skipped 0 | vad wait 1055 us/window (max 5.0 ms) | tokio: 7703 tasks, global queue 0
+   smart turn: 35.0 analyses/s, 23.42 ms/analysis, 41% of the 2 threads it runs on; VAD windows and features: 35% of the pool's 2
+totals pool: 1285560 jobs, run 53.6 s (0.042 ms/job), wait 1115.4 s | smart turn: 3352 analyses, model run 75.8 s (22.62 ms/analysis, wall time on the pool thread) | the rest of the pool's run time (VAD windows, features): 53.6 s
+totals vad windows (priority line): 1283708 started, wait 868.6 us mean, 4.97 ms max, rejected 0
+totals smart turn executor: 3353 jobs, run 81.9 s (24.43 ms/job), wait 27.44 ms mean, 443.3 ms max, rejected 0, timed_out 0, skipped 0, max queue 35
+stats calls 350 pool: 17106 jobs/s busy 37% run 43.6 us/job wait 966 us/job queue 0 (max 312) rejected 0 (high 0) timed_out 0 skipped 174 | vad wait 966 us/window (max 7.7 ms) | tokio: 7430 tasks, global queue 0
+   smart turn: 42.8 analyses/s, 24.64 ms/analysis, 53% of the 2 threads it runs on; VAD windows and features: 37% of the pool's 2
+totals pool: 1456816 jobs, run 61.0 s (0.042 ms/job), wait 1280.8 s | smart turn: 3780 analyses, model run 86.4 s (22.85 ms/analysis, wall time on the pool thread) | the rest of the pool's run time (VAD windows, features): 61.0 s
+totals vad windows (priority line): 1454928 started, wait 880.0 us mean, 7.70 ms max, rejected 0
+totals smart turn executor: 3781 jobs, run 93.4 s (24.69 ms/job), wait 61.37 ms mean, 729.9 ms max, rejected 0, timed_out 0, skipped 0, max queue 56
+stats calls 73 pool: 15243 jobs/s busy 35% run 45.7 us/job wait 990 us/job queue 0 (max 312) rejected 0 (high 0) timed_out 0 skipped 168 | vad wait 991 us/window (max 7.7 ms) | tokio: 1691 tasks, global queue 0
+   smart turn: 60.3 analyses/s, 24.03 ms/analysis, 72% of the 2 threads it runs on; VAD windows and features: 35% of the pool's 2
+totals pool: 1609294 jobs, run 68.0 s (0.042 ms/job), wait 1431.8 s | smart turn: 4383 analyses, model run 100.9 s (23.01 ms/analysis, wall time on the pool thread) | the rest of the pool's run time (VAD windows, features): 68.0 s
+totals vad windows (priority line): 1607092 started, wait 890.6 us mean, 7.70 ms max, rejected 0
+totals smart turn executor: 4384 jobs, run 109.1 s (24.89 ms/job), wait 90.54 ms mean, 729.9 ms max, rejected 0, timed_out 0, skipped 0, max queue 56
+   350 concurrent: 1400/1400 turns answered, 0 calls failed, p95 1265 ms, target CPU 3.58 cores, harness 0.85 cores, FAIL
+         - p95 V2V 1265 ms is above the limit 1200 ms (floor 950 ms + 250 ms)
+totals pool: 1611072 jobs, run 68.1 s (0.042 ms/job), wait 1432.7 s | smart turn: 4402 analyses, model run 101.3 s (23.00 ms/analysis, wall time on the pool thread) | the rest of the pool's run time (VAD windows, features): 68.1 s
+totals vad windows (priority line): 1608869 started, wait 890.1 us mean, 7.70 ms max, rejected 0
+totals smart turn executor: 4403 jobs, run 109.6 s (24.88 ms/job), wait 91.31 ms mean, 729.9 ms max, rejected 0, timed_out 0, skipped 0, max queue 56
+wrote bench/results/m2-new-r2.json
+wrote bench/results/m2-new-r2.md

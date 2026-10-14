@@ -1,0 +1,96 @@
+{
+ "model_sha256": "2bb026316b14a660486a75b1733cd3fbab8c2fd0314dc9af7be49f8cca967e4f",
+ "pipecat_commit": "3b2dccd843c65d1632631ceac248a5128fb32242",
+ "onnxruntime": "1.28.0",
+ "cases": {
+  "en_two_utterances/0/complete": {
+   "fixture": "en_two_utterances",
+   "start": 0,
+   "end": 106720,
+   "probability": 0.9357357,
+   "features_fnv1a64": "54ced613e2ac1cc5"
+  },
+  "en_two_utterances/0/cut": {
+   "fixture": "en_two_utterances",
+   "start": 0,
+   "end": 62296,
+   "probability": 0.8285645,
+   "features_fnv1a64": "f3fb545a346f25b1"
+  },
+  "en_two_utterances/1/complete": {
+   "fixture": "en_two_utterances",
+   "start": 122720,
+   "end": 174880,
+   "probability": 0.9836375,
+   "features_fnv1a64": "d96c9f44aa52377d"
+  },
+  "en_two_utterances/1/cut": {
+   "fixture": "en_two_utterances",
+   "start": 122720,
+   "end": 155008,
+   "probability": 0.0098704,
+   "features_fnv1a64": "29f211ec384b36e1"
+  },
+  "tr_two_utterances/0/complete": {
+   "fixture": "tr_two_utterances",
+   "start": 0,
+   "end": 100800,
+   "probability": 0.9889054,
+   "features_fnv1a64": "4007c9dc03047d52"
+  },
+  "tr_two_utterances/0/cut": {
+   "fixture": "tr_two_utterances",
+   "start": 0,
+   "end": 59040,
+   "probability": 0.9357357,
+   "features_fnv1a64": "f354d1c6ebb046e3"
+  },
+  "tr_two_utterances/1/complete": {
+   "fixture": "tr_two_utterances",
+   "start": 116800,
+   "end": 233440,
+   "probability": 0.9880069,
+   "features_fnv1a64": "d69d5e3f05544019"
+  },
+  "tr_two_utterances/1/cut": {
+   "fixture": "tr_two_utterances",
+   "start": 116800,
+   "end": 184552,
+   "probability": 0.9884648,
+   "features_fnv1a64": "e895b4484a5209af"
+  },
+  "en_tr_mixed/0/complete": {
+   "fixture": "en_tr_mixed",
+   "start": 0,
+   "end": 71200,
+   "probability": 0.9403132,
+   "features_fnv1a64": "c763e1e31f5fa649"
+  },
+  "en_tr_mixed/0/cut": {
+   "fixture": "en_tr_mixed",
+   "start": 0,
+   "end": 42040,
+   "probability": 0.1357324,
+   "features_fnv1a64": "59366f9a025125ff"
+  },
+  "en_tr_mixed/1/complete": {
+   "fixture": "en_tr_mixed",
+   "start": 79200,
+   "end": 175040,
+   "probability": 0.9108326,
+   "features_fnv1a64": "07a5bc214c1aa230"
+  },
+  "en_tr_mixed/1/cut": {
+   "fixture": "en_tr_mixed",
+   "start": 79200,
+   "end": 135512,
+   "probability": 0.977712,
+   "features_fnv1a64": "3bbb974df69a9a1c"
+  }
+ },
+ "features_case": "en_two_utterances/0/complete",
+ "features_shape": [
+  80,
+  800
+ ]
+}

@@ -1,0 +1,8 @@
+# Test-only TLS material (self-signed CA and leaf for the local TLS tests in
+# crates/brisvox-providers/src/net). It protects nothing; never use it outside tests.
+[extend]
+useDefault = true
+
+[allowlist]
+description = "test-only TLS fixtures"
+paths = ['''crates/brisvox-providers/src/net/testdata/.*\.pem''']

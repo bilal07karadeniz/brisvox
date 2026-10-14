@@ -1,0 +1,163 @@
+{
+  "schema": "brisvox-bench/capacity/2",
+  "label": "livekit-default-models (4 CPUs, 4g, Linux)",
+  "note": "run 1 of 3; LiveKit Agents 1.8.7 (livekit-server livekit/livekit-server:v1.13.9, livekit/livekit-server@sha256:d0c04791bf63ca8dcea123571827d56ba9504bd57c8d5de60ee03b5408cc3154) variant default: framework defaults (worker and session); Linux kernel 6.6.87.2-microsoft-standard-WSL2; worker container --cpus=4 --cpuset-cpus=0-3 --memory=4g --memory-swap=4g --network host, load generator cores 4-11 (8 processes), SFU container on cores 12-15, no CPU limit; host load 4% (Windows total, 12 s mean) before the run; load average 0.76 1.95 1.24 (bench/livekit_baseline/capacity_livekit.sh)",
+  "url": "ws://127.0.0.1:7880",
+  "environment": {
+    "os": "linux",
+    "arch": "x86_64",
+    "logical_cores": 8,
+    "release_build": true,
+    "not_linux_run": false,
+    "banner": null
+  },
+  "settings": {
+    "fixture": "en_two_utterances",
+    "turns_per_call": 2,
+    "steps": [
+      1,
+      5,
+      10,
+      15,
+      20,
+      25,
+      30,
+      40,
+      50,
+      60,
+      80
+    ],
+    "rounds": 2,
+    "warmup_calls": 1,
+    "spread_ms": 4000,
+    "min_gap_ms": 4000,
+    "pause_ms": 200,
+    "cooldown_ms": 3000,
+    "floor_ms": 950,
+    "slo_over_floor_ms": 250,
+    "slo_limit_ms": 1200,
+    "max_bad_rate": 0.0,
+    "lateness_limit_ms": 100,
+    "late_share_limit": 0.01,
+    "resolution": 2,
+    "keep_going": false,
+    "target_pid": 24072,
+    "target_tree": true
+  },
+  "engine": null,
+  "warmup": {
+    "concurrent": 1,
+    "calls": 1,
+    "calls_failed": 0,
+    "failures": [],
+    "turns_expected": 2,
+    "turns_answered": 2,
+    "talked_over": 0,
+    "bot_speaking": 0,
+    "no_response": 0,
+    "bad_rate": 0.0,
+    "v2v": {
+      "count": 2,
+      "p50_us": 1084425,
+      "p90_us": 2804374,
+      "p95_us": 2804374,
+      "p99_us": 2804374,
+      "max_us": 2804374
+    },
+    "p95_over_floor_us": 1854374,
+    "max_send_lateness_us": 1488,
+    "late_frames": 0,
+    "timed_frames": 732,
+    "wall_ms": 16111,
+    "rss_before_bytes": 515663872,
+    "target": {
+      "cpu_cores": 0.11249060398324977,
+      "rss_peak_bytes": 565946368,
+      "processes": 8,
+      "readings": 32,
+      "rss_sum_peak_bytes": 2167173120,
+      "cgroup_memory_peak_bytes": 518483968
+    },
+    "client": {
+      "cpu_cores": 0.12421136555896908,
+      "rss_peak_bytes": 311702528,
+      "processes": 11,
+      "readings": 32,
+      "rss_sum_peak_bytes": 501198848,
+      "cgroup_memory_peak_bytes": 298745856
+    },
+    "verdict": "fail",
+    "reasons": [
+      "p95 V2V 2804 ms is above the limit 1200 ms (floor 950 ms + 250 ms)"
+    ],
+    "sfu": {
+      "cpu_cores": 0.024451379432086584,
+      "rss_peak_bytes": 64978944,
+      "processes": 1,
+      "readings": 32,
+      "rss_sum_peak_bytes": 63963136,
+      "cgroup_memory_peak_bytes": 24256512
+    }
+  },
+  "steps": [
+    {
+      "concurrent": 1,
+      "calls": 2,
+      "calls_failed": 0,
+      "failures": [],
+      "turns_expected": 4,
+      "turns_answered": 4,
+      "talked_over": 0,
+      "bot_speaking": 0,
+      "no_response": 0,
+      "bad_rate": 0.0,
+      "v2v": {
+        "count": 4,
+        "p50_us": 1153156,
+        "p90_us": 2893136,
+        "p95_us": 2893136,
+        "p99_us": 2893136,
+        "max_us": 2893136
+      },
+      "p95_over_floor_us": 1943136,
+      "max_send_lateness_us": 2067,
+      "late_frames": 0,
+      "timed_frames": 1464,
+      "wall_ms": 32937,
+      "rss_before_bytes": 566621184,
+      "target": {
+        "cpu_cores": 0.1326508256427962,
+        "rss_peak_bytes": 623939584,
+        "processes": 9,
+        "readings": 66,
+        "rss_sum_peak_bytes": 2537185280,
+        "cgroup_memory_peak_bytes": 576434176
+      },
+      "client": {
+        "cpu_cores": 0.12009831588484915,
+        "rss_peak_bytes": 308882432,
+        "processes": 11,
+        "readings": 66,
+        "rss_sum_peak_bytes": 503734272,
+        "cgroup_memory_peak_bytes": 300621824
+      },
+      "verdict": "fail",
+      "reasons": [
+        "p95 V2V 2893 ms is above the limit 1200 ms (floor 950 ms + 250 ms)"
+      ],
+      "sfu": {
+        "cpu_cores": 0.02625675875076499,
+        "rss_peak_bytes": 71958528,
+        "processes": 1,
+        "readings": 66,
+        "rss_sum_peak_bytes": 71041024,
+        "cgroup_memory_peak_bytes": 31219712
+      }
+    }
+  ],
+  "conclusion": {
+    "max_concurrent": null,
+    "first_failure": 1,
+    "limit": "first_step_failed"
+  }
+}

@@ -1,0 +1,65 @@
+{
+  "schema": "brisvox-bench/capacity-summary/1",
+  "system": "livekit-models",
+  "date": "2026-10-14",
+  "label": "livekit-models (4 CPUs, 4g, Linux)",
+  "environment": {
+    "os": "linux",
+    "arch": "x86_64",
+    "logical_cores": 8,
+    "release_build": true,
+    "not_linux_run": false,
+    "banner": null
+  },
+  "note": "LiveKit Agents 1.8.7 (livekit-server livekit/livekit-server:v1.13.9, livekit/livekit-server@sha256:d0c04791bf63ca8dcea123571827d56ba9504bd57c8d5de60ee03b5408cc3154) variant tuned: turn detector unlikely_threshold 0.05 and worker load_threshold 1.0; Linux kernel 6.6.87.2-microsoft-standard-WSL2; worker container --cpus=4 --cpuset-cpus=0-3 --memory=4g --memory-swap=4g --network host, load generator cores 4-11 (8 processes), SFU container on cores 12-15, no CPU limit; host load 8% (Windows total, 12 s mean) before the run; load average 0.28 0.93 0.99 (bench/livekit_baseline/capacity_livekit.sh)",
+  "runs": [
+    {
+      "file": "capacity-livekit-models-linux-2026-10-14-run1.json",
+      "max_concurrent": 22,
+      "first_failure": 23,
+      "limit": "found",
+      "failure_reason": "6 of 46 calls failed; 12 of 92 turns lost or not clean (0 talked over, 0 no response, 0 bot speaking; allowed 0.0 %)",
+      "p95_v2v_ms": 1171,
+      "p50_v2v_ms": 1140,
+      "server_cpu_cores": 2.09,
+      "mcores_per_call": 94.91,
+      "rss_peak_mb": 18012,
+      "generator_cpu_cores": 2.33,
+      "max_send_lateness_ms": 29,
+      "pss_peak_mb": 2935
+    },
+    {
+      "file": "capacity-livekit-models-linux-2026-10-14-run2.json",
+      "max_concurrent": 23,
+      "first_failure": 25,
+      "limit": "found",
+      "failure_reason": "9 of 50 calls failed; 18 of 100 turns lost or not clean (0 talked over, 0 no response, 0 bot speaking; allowed 0.0 %); p95 V2V 1222 ms is above the limit 1200 ms (floor 950 ms + 250 ms)",
+      "p95_v2v_ms": 1171,
+      "p50_v2v_ms": 1139,
+      "server_cpu_cores": 2.08,
+      "mcores_per_call": 90.34,
+      "rss_peak_mb": 18692,
+      "generator_cpu_cores": 2.36,
+      "max_send_lateness_ms": 62,
+      "pss_peak_mb": 3023
+    },
+    {
+      "file": "capacity-livekit-models-linux-2026-10-14-run3.json",
+      "max_concurrent": 25,
+      "first_failure": 27,
+      "limit": "found",
+      "failure_reason": "11 of 54 calls failed; 22 of 108 turns lost or not clean (0 talked over, 0 no response, 0 bot speaking; allowed 0.0 %)",
+      "p95_v2v_ms": 1192,
+      "p50_v2v_ms": 1138,
+      "server_cpu_cores": 2.22,
+      "mcores_per_call": 88.71,
+      "rss_peak_mb": 20232,
+      "generator_cpu_cores": 2.55,
+      "max_send_lateness_ms": 53,
+      "pss_peak_mb": 3269
+    }
+  ],
+  "median_max_concurrent": 23,
+  "min_max_concurrent": 22,
+  "max_max_concurrent": 25
+}

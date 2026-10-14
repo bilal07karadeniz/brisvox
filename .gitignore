@@ -1,0 +1,37 @@
+# Build output
+/target/
+**/node_modules/
+sdk/typescript/dist/
+sdk/web/dist/
+**/__pycache__/
+*.py[cod]
+.venv/
+venv/
+
+# Secrets and local configuration (use .env.example as the template)
+.env
+.env.*
+!.env.example
+**/*.env
+!**/*.env.example
+
+# Downloaded on-device models (scripts/models/fetch_models.py) and large fixtures
+/models/
+fixtures/large/
+
+# Benchmark scratch output and provider audio written by the live checks (not redistributable)
+bench/results/raw/
+bench/results/live-audio/
+*.wav.tmp
+
+# Editors and OS files
+.idea/
+.vscode/
+*.swp
+*~
+.DS_Store
+Thumbs.db
+
+# Local AI coding agent state
+.claude/
+.agent/

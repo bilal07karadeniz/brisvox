@@ -1,0 +1,1754 @@
+{
+  "$defs": {
+    "AgentLinkSection": {
+      "additionalProperties": false,
+      "description": "`[agent_link]`: where the out-of-process agent of this definition's calls listens\n(`docs/AGENT_PROTOCOL.md`). Without it the server-wide `BRISVOX_AGENT_URL` applies.",
+      "properties": {
+        "allow_insecure": {
+          "description": "Accept a plaintext `ws://` URL to a host outside the private networks (loopback,\nRFC 1918, link-local, `*.internal`, ...). Default `false`: such a URL is refused at\nstartup, because the link carries transcripts and tool calls. Also\n`BRISVOX_AGENT_ALLOW_INSECURE=1`.",
+          "type": "boolean"
+        },
+        "caller_identity": {
+          "description": "Give this definition's agent process the caller's number, the called number and the\ncarrier's call id in `session.start.call` (telephony calls only; `docs/AGENT_PROTOCOL.md`,\n\"Caller identity\"). Default: `BRISVOX_AGENT_CALLER_IDENTITY`, else `false`. The numbers\nare withheld while the server redacts phone numbers (`docs/PRIVACY.md`).",
+          "type": "boolean"
+        },
+        "routes": {
+          "description": "Other agent processes a call may pick by name in its start message (the websocket\nstart message's metadata key `agent_route`, the TwiML parameter `agent_route`).",
+          "items": {
+            "$ref": "#/$defs/AgentRouteEntry"
+          },
+          "type": "array"
+        },
+        "token_env": {
+          "description": "Environment variable holding the bearer token for `url`. Default: the value of\n`BRISVOX_AGENT_TOKEN`.",
+          "examples": [
+            "DEEPGRAM_API_KEY"
+          ],
+          "pattern": "^[A-Za-z_][A-Za-z0-9_]{0,127}$",
+          "type": "string"
+        },
+        "url": {
+          "description": "The agent process's `ws://` or `wss://` URL; wins over `BRISVOX_AGENT_URL`.",
+          "pattern": "^wss?://[^\\s\\u0000-\\u001f/?#@:][^\\s\\u0000-\\u001f/?#@]*(?:[/?#][^\\s\\u0000-\\u001f]*)?$",
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "AgentRouteEntry": {
+      "additionalProperties": false,
+      "description": "One `[[agent_link.routes]]` entry.",
+      "properties": {
+        "allow_insecure": {
+          "description": "As `[agent_link] allow_insecure`, for this route only.",
+          "type": "boolean"
+        },
+        "caller_identity": {
+          "description": "As `[agent_link] caller_identity`, for this route only. Never inherited from the\nsection or the environment: a route may be another team's agent, which gets the\ncaller's number only when its own entry says so. Default `false`.",
+          "type": "boolean"
+        },
+        "name": {
+          "description": "The name a start message uses (1-32 letters, digits, `_`, `-`).",
+          "pattern": "^[A-Za-z0-9_\\-]{1,32}$",
+          "type": "string"
+        },
+        "token_env": {
+          "description": "Environment variable holding this route's bearer token. A route never gets the default\ntoken: it may be another team's agent.",
+          "examples": [
+            "DEEPGRAM_API_KEY"
+          ],
+          "pattern": "^[A-Za-z_][A-Za-z0-9_]{0,127}$",
+          "type": "string"
+        },
+        "url": {
+          "description": "The agent process's `ws://` or `wss://` URL.",
+          "pattern": "^wss?://[^\\s\\u0000-\\u001f/?#@:][^\\s\\u0000-\\u001f/?#@]*(?:[/?#][^\\s\\u0000-\\u001f]*)?$",
+          "type": "string"
+        }
+      },
+      "required": [
+        "name",
+        "url"
+      ],
+      "type": "object"
+    },
+    "AgentSection": {
+      "additionalProperties": false,
+      "description": "`[agent]`.",
+      "properties": {
+        "confirm_tools": {
+          "default": [],
+          "description": "Tools of `tools` that are held for the user's confirmation: when the model calls one, it\ndoes not run; the model is told to ask the user, and the tool runs only after the user's\nnext reply confirms (`docs/TOOLS.md`, \"Confirmation gate\"). Each must be a SideEffect\ntool and be listed in `tools`. Use it for tools whose misuse costs something: a transfer,\na payment, a booking.",
+          "items": {
+            "pattern": "^[A-Za-z0-9_\\-]{1,64}$",
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "language": {
+          "description": "Conversation language: `en` or `tr` (optionally with a region, `tr-TR`). Selects the\nsegmenter's abbreviations and the speech normalizer, and is the default STT and TTS\nlanguage.",
+          "examples": [
+            "en",
+            "tr",
+            "tr-TR"
+          ],
+          "pattern": "^[A-Za-z]{2,3}(-[A-Za-z0-9]{1,8})*$",
+          "type": "string"
+        },
+        "name": {
+          "description": "Agent name (1-64 letters, digits, `_`, `-`), used in logs and metrics.",
+          "pattern": "^[A-Za-z0-9_\\-]{1,64}$",
+          "type": "string"
+        },
+        "system_prompt": {
+          "description": "The system prompt (non-empty, at most 100 000 bytes).",
+          "maxLength": 100000,
+          "minLength": 1,
+          "type": "string"
+        },
+        "tools": {
+          "default": [],
+          "description": "Tools the agent may call, by name (1-64 letters, digits, `_`, `-`; checked after reading\nso a bad entry is reported at its own position). The deployment registers their\nimplementations; `AgentConfig::check_tools` checks\nthey exist.",
+          "items": {
+            "pattern": "^[A-Za-z0-9_\\-]{1,64}$",
+            "type": "string"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "name",
+        "language",
+        "system_prompt"
+      ],
+      "type": "object"
+    },
+    "AnthropicEffort": {
+      "description": "`llm.anthropic.effort`.",
+      "oneOf": [
+        {
+          "const": "low",
+          "description": "Low.",
+          "type": "string"
+        },
+        {
+          "const": "medium",
+          "description": "Medium.",
+          "type": "string"
+        },
+        {
+          "const": "high",
+          "description": "High.",
+          "type": "string"
+        },
+        {
+          "const": "xhigh",
+          "description": "Extra high.",
+          "type": "string"
+        },
+        {
+          "const": "max",
+          "description": "Maximum.",
+          "type": "string"
+        }
+      ]
+    },
+    "AnthropicOptions": {
+      "additionalProperties": false,
+      "description": "`[llm.anthropic]`.",
+      "properties": {
+        "base_url": {
+          "description": "Replaces `https://api.anthropic.com`.",
+          "maxLength": 2048,
+          "pattern": "^(?:https://[^\\s\\u0000-\\u001f\\u007f-\\u009f/?#@:][^\\s\\u0000-\\u001f\\u007f-\\u009f]*|http://(?:[^\\s\\u0000-\\u001f\\u007f-\\u009f/?#@]*@)?(?:[Ll][Oo][Cc][Aa][Ll][Hh][Oo][Ss][Tt]|127(?:\\.[0-9]{1,3}){3}|\\[::1\\])(?::[0-9]+)?([/?#][^\\s\\u0000-\\u001f\\u007f-\\u009f]*)?)$",
+          "type": "string"
+        },
+        "effort": {
+          "$ref": "#/$defs/AnthropicEffort",
+          "description": "`effort`."
+        },
+        "max_tokens": {
+          "description": "`max_tokens`. Default 1024.",
+          "maximum": 1000000,
+          "minimum": 1,
+          "type": "integer"
+        },
+        "model": {
+          "description": "Model. Default: the adapter's.",
+          "maxLength": 256,
+          "minLength": 1,
+          "pattern": "^[^\\s\\u0000-\\u001f\\u007f-\\u009f]+$",
+          "type": "string"
+        },
+        "thinking": {
+          "$ref": "#/$defs/AnthropicThinking",
+          "description": "Thinking mode."
+        }
+      },
+      "type": "object"
+    },
+    "AnthropicThinking": {
+      "description": "`llm.anthropic.thinking`.",
+      "oneOf": [
+        {
+          "const": "disabled",
+          "description": "No thinking.",
+          "type": "string"
+        },
+        {
+          "const": "adaptive",
+          "description": "The model decides.",
+          "type": "string"
+        },
+        {
+          "const": "between_tools",
+          "description": "Think only between tool calls.",
+          "type": "string"
+        },
+        {
+          "const": "model_default",
+          "description": "Send nothing; the model's default applies.",
+          "type": "string"
+        }
+      ]
+    },
+    "AssemblyAiOptions": {
+      "additionalProperties": false,
+      "description": "`[stt.assemblyai]`.",
+      "properties": {
+        "base_url": {
+          "description": "Replaces the region's endpoint.",
+          "maxLength": 2048,
+          "pattern": "^(?:wss://[^\\s\\u0000-\\u001f\\u007f-\\u009f/?#@:][^\\s\\u0000-\\u001f\\u007f-\\u009f]*|ws://(?:[^\\s\\u0000-\\u001f\\u007f-\\u009f/?#@]*@)?(?:[Ll][Oo][Cc][Aa][Ll][Hh][Oo][Ss][Tt]|127(?:\\.[0-9]{1,3}){3}|\\[::1\\])(?::[0-9]+)?([/?#][^\\s\\u0000-\\u001f\\u007f-\\u009f]*)?)$",
+          "type": "string"
+        },
+        "format_turns": {
+          "description": "`format_turns`.",
+          "type": "boolean"
+        },
+        "keyterms": {
+          "description": "Keyterm prompting, at most 100 terms.",
+          "items": {
+            "type": "string"
+          },
+          "maxItems": 100,
+          "type": "array"
+        },
+        "max_turn_silence_ms": {
+          "description": "`max_turn_silence` in ms; at least `min_turn_silence_ms`.",
+          "maximum": 30000,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "min_turn_silence_ms": {
+          "description": "`min_turn_silence` in ms.",
+          "maximum": 10000,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "region": {
+          "$ref": "#/$defs/AssemblyAiRegion",
+          "description": "Hosting region. Default `edge`."
+        },
+        "speech_model": {
+          "description": "`speech_model`. Default `universal-3-6-pro`.",
+          "maxLength": 256,
+          "minLength": 1,
+          "pattern": "^[^\\s\\u0000-\\u001f\\u007f-\\u009f]+$",
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "AssemblyAiRegion": {
+      "description": "`stt.assemblyai.region`.",
+      "oneOf": [
+        {
+          "const": "edge",
+          "description": "The nearest edge.",
+          "type": "string"
+        },
+        {
+          "const": "us",
+          "description": "United States.",
+          "type": "string"
+        },
+        {
+          "const": "eu",
+          "description": "European Union.",
+          "type": "string"
+        }
+      ]
+    },
+    "AudioSection": {
+      "additionalProperties": false,
+      "description": "`[audio]`.",
+      "properties": {
+        "call_sample_rate": {
+          "description": "Call rate (both directions) assumed when the transport reports none (telephony\ntransports report 8000 themselves). Default 16000.",
+          "enum": [
+            8000,
+            16000,
+            22050,
+            24000,
+            44100,
+            48000,
+            null
+          ],
+          "type": "integer"
+        },
+        "frame_ms": {
+          "description": "Length of one audio frame. Default 20; must be a whole number of samples at 16 kHz and\nat `call_sample_rate`.",
+          "maximum": 100,
+          "minimum": 5,
+          "type": "integer"
+        }
+      },
+      "type": "object"
+    },
+    "BackchannelSet": {
+      "description": "The backchannel phrase sets a definition may name (`interruption.backchannels`; the reader\ncompares case-insensitively). Schema only.",
+      "oneOf": [
+        {
+          "const": "en",
+          "description": "English phrases.",
+          "type": "string"
+        },
+        {
+          "const": "tr",
+          "description": "Turkish phrases.",
+          "type": "string"
+        }
+      ]
+    },
+    "CartesiaOptions": {
+      "additionalProperties": false,
+      "description": "`[tts.cartesia]`.",
+      "properties": {
+        "max_buffer_delay_ms": {
+          "description": "Server-side text buffering (0..=5000 ms).",
+          "maximum": 5000,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "model": {
+          "description": "Model. Default: the adapter's (`sonic-3.6`).",
+          "maxLength": 256,
+          "minLength": 1,
+          "pattern": "^[^\\s\\u0000-\\u001f\\u007f-\\u009f]+$",
+          "type": "string"
+        },
+        "url": {
+          "description": "Replaces the WebSocket URL.",
+          "maxLength": 2048,
+          "pattern": "^(?:wss://[^\\s\\u0000-\\u001f\\u007f-\\u009f/?#@:][^\\s\\u0000-\\u001f\\u007f-\\u009f]*|ws://(?:[^\\s\\u0000-\\u001f\\u007f-\\u009f/?#@]*@)?(?:[Ll][Oo][Cc][Aa][Ll][Hh][Oo][Ss][Tt]|127(?:\\.[0-9]{1,3}){3}|\\[::1\\])(?::[0-9]+)?([/?#][^\\s\\u0000-\\u001f\\u007f-\\u009f]*)?)$",
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "CompatiblePreset": {
+      "description": "`llm.openai_compatible.preset`.",
+      "oneOf": [
+        {
+          "const": "groq",
+          "description": "Groq.",
+          "type": "string"
+        },
+        {
+          "const": "together",
+          "description": "Together AI.",
+          "type": "string"
+        },
+        {
+          "const": "fireworks",
+          "description": "Fireworks AI.",
+          "type": "string"
+        },
+        {
+          "const": "vllm",
+          "description": "A local vLLM server.",
+          "type": "string"
+        },
+        {
+          "const": "ollama",
+          "description": "A local Ollama server.",
+          "type": "string"
+        },
+        {
+          "const": "openrouter",
+          "description": "OpenRouter (`https://openrouter.ai/api/v1`); needs `api_key_env` and a `model`.",
+          "type": "string"
+        }
+      ]
+    },
+    "ConfirmKind": {
+      "description": "`interruption.confirm`.",
+      "oneOf": [
+        {
+          "const": "all",
+          "description": "Both `min_speech_ms` and `min_words` must hold.",
+          "type": "string"
+        },
+        {
+          "const": "any",
+          "description": "Either is enough.",
+          "type": "string"
+        }
+      ]
+    },
+    "DeepgramAuraOptions": {
+      "additionalProperties": false,
+      "description": "`[tts.deepgram_aura]`.",
+      "properties": {
+        "speed": {
+          "description": "Speaking rate (0.7..=1.5).",
+          "maximum": 1.5,
+          "minimum": 0.7,
+          "type": "number"
+        },
+        "url": {
+          "description": "Replaces the WebSocket URL.",
+          "maxLength": 2048,
+          "pattern": "^(?:wss://[^\\s\\u0000-\\u001f\\u007f-\\u009f/?#@:][^\\s\\u0000-\\u001f\\u007f-\\u009f]*|ws://(?:[^\\s\\u0000-\\u001f\\u007f-\\u009f/?#@]*@)?(?:[Ll][Oo][Cc][Aa][Ll][Hh][Oo][Ss][Tt]|127(?:\\.[0-9]{1,3}){3}|\\[::1\\])(?::[0-9]+)?([/?#][^\\s\\u0000-\\u001f\\u007f-\\u009f]*)?)$",
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "DeepgramOptions": {
+      "additionalProperties": false,
+      "description": "`[stt.deepgram]`.",
+      "properties": {
+        "base_url": {
+          "description": "Replaces `wss://<region host>`.",
+          "maxLength": 2048,
+          "pattern": "^(?:wss://[^\\s\\u0000-\\u001f\\u007f-\\u009f/?#@:][^\\s\\u0000-\\u001f\\u007f-\\u009f]*|ws://(?:[^\\s\\u0000-\\u001f\\u007f-\\u009f/?#@]*@)?(?:[Ll][Oo][Cc][Aa][Ll][Hh][Oo][Ss][Tt]|127(?:\\.[0-9]{1,3}){3}|\\[::1\\])(?::[0-9]+)?([/?#][^\\s\\u0000-\\u001f\\u007f-\\u009f]*)?)$",
+          "type": "string"
+        },
+        "endpointing_ms": {
+          "description": "Provider endpointing silence; 0 turns it off. Default 300.",
+          "maximum": 10000,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "keyterms": {
+          "description": "Keyterm prompting (Nova-3), at most 100 terms.",
+          "items": {
+            "type": "string"
+          },
+          "maxItems": 100,
+          "type": "array"
+        },
+        "model": {
+          "description": "Model. Default `nova-3`.",
+          "maxLength": 256,
+          "minLength": 1,
+          "pattern": "^[^\\s\\u0000-\\u001f\\u007f-\\u009f]+$",
+          "type": "string"
+        },
+        "region": {
+          "$ref": "#/$defs/DeepgramRegion",
+          "description": "Hosting region. Default `global`."
+        },
+        "smart_format": {
+          "description": "`smart_format`. Default `true`.",
+          "type": "boolean"
+        },
+        "utterance_end_ms": {
+          "description": "`utterance_end_ms` (1000..=5000).",
+          "maximum": 5000,
+          "minimum": 1000,
+          "type": "integer"
+        }
+      },
+      "type": "object"
+    },
+    "DeepgramRegion": {
+      "description": "`stt.deepgram.region`.",
+      "oneOf": [
+        {
+          "const": "global",
+          "description": "`api.deepgram.com`.",
+          "type": "string"
+        },
+        {
+          "const": "eu",
+          "description": "`api.eu.deepgram.com`.",
+          "type": "string"
+        },
+        {
+          "const": "au",
+          "description": "`api.au.deepgram.com`.",
+          "type": "string"
+        },
+        {
+          "const": "india",
+          "description": "`api.in.deepgram.com`.",
+          "type": "string"
+        }
+      ]
+    },
+    "DestinationEntry": {
+      "additionalProperties": false,
+      "description": "One `[[telephony.destinations]]` entry.",
+      "properties": {
+        "description": {
+          "default": "",
+          "description": "When to use it, shown to the model (cut to 120 characters).",
+          "type": "string"
+        },
+        "name": {
+          "description": "The name the model uses (1-32 letters, digits, `_`, `-`).",
+          "pattern": "^[A-Za-z0-9_\\-]{1,32}$",
+          "type": "string"
+        },
+        "number": {
+          "description": "The E.164 number (`+` and 8 to 15 digits).",
+          "pattern": "^\\+[0-9]{8,15}$",
+          "type": "string"
+        }
+      },
+      "required": [
+        "name",
+        "number"
+      ],
+      "type": "object"
+    },
+    "EarlyAnalysisSection": {
+      "additionalProperties": false,
+      "description": "`[early_analysis]`.",
+      "properties": {
+        "enabled": {
+          "description": "Master switch. Default `false`; needs `turn.policy = \"adaptive\"`.",
+          "type": "boolean"
+        },
+        "fall_delay_ms": {
+          "description": "Time below the VAD threshold before the hint. Default 64.",
+          "maximum": 1000,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "max_per_turn": {
+          "description": "Early analyses per user turn. Default 4.",
+          "maximum": 32,
+          "minimum": 1,
+          "type": "integer"
+        },
+        "max_tail_ms": {
+          "description": "Most audio since the snapshot for the verdict to be reused. Default 300.",
+          "maximum": 5000,
+          "minimum": 1,
+          "type": "integer"
+        }
+      },
+      "type": "object"
+    },
+    "ElevenLabsOptions": {
+      "additionalProperties": false,
+      "description": "`[tts.elevenlabs]`.",
+      "properties": {
+        "model": {
+          "description": "Model. Default: the adapter's (`eleven_flash_v2_5`).",
+          "maxLength": 256,
+          "minLength": 1,
+          "pattern": "^[^\\s\\u0000-\\u001f\\u007f-\\u009f]+$",
+          "type": "string"
+        },
+        "similarity_boost": {
+          "description": "Similarity boost (0..=1).",
+          "maximum": 1.0,
+          "minimum": 0.0,
+          "type": "number"
+        },
+        "speed": {
+          "description": "Speaking rate (0.7..=1.2).",
+          "maximum": 1.2,
+          "minimum": 0.7,
+          "type": "number"
+        },
+        "stability": {
+          "description": "Voice stability (0..=1).",
+          "maximum": 1.0,
+          "minimum": 0.0,
+          "type": "number"
+        },
+        "style": {
+          "description": "Style exaggeration (0..=1).",
+          "maximum": 1.0,
+          "minimum": 0.0,
+          "type": "number"
+        },
+        "url": {
+          "description": "Replaces the WebSocket base URL.",
+          "maxLength": 2048,
+          "pattern": "^(?:wss://[^\\s\\u0000-\\u001f\\u007f-\\u009f/?#@:][^\\s\\u0000-\\u001f\\u007f-\\u009f]*|ws://(?:[^\\s\\u0000-\\u001f\\u007f-\\u009f/?#@]*@)?(?:[Ll][Oo][Cc][Aa][Ll][Hh][Oo][Ss][Tt]|127(?:\\.[0-9]{1,3}){3}|\\[::1\\])(?::[0-9]+)?([/?#][^\\s\\u0000-\\u001f\\u007f-\\u009f]*)?)$",
+          "type": "string"
+        },
+        "use_speaker_boost": {
+          "description": "Speaker boost.",
+          "type": "boolean"
+        }
+      },
+      "type": "object"
+    },
+    "FillerSection": {
+      "additionalProperties": false,
+      "description": "`[filler]`: when a slow tool round is announced with a filler phrase. The phrase\nitself (and its pre-rendered clip) is set in code (`SessionBuilder::with_filler_policy`,\n`with_filler_clips`); the default is \"One moment, please.\".",
+      "properties": {
+        "delay_ms": {
+          "description": "Time without a tool result before the filler, the same for every tool that has a filler.\nDefault 1200.",
+          "maximum": 10000,
+          "minimum": 100,
+          "type": "integer"
+        },
+        "enabled": {
+          "description": "Master switch. Default `true`.",
+          "type": "boolean"
+        },
+        "per_tool": {
+          "description": "`true`: each tool's own delay (its `filler_after`, 700 ms unless the tool sets another)\ninstead of `delay_ms`. Default `false`; cannot be combined with `delay_ms`.",
+          "type": "boolean"
+        }
+      },
+      "type": "object"
+    },
+    "GeminiOptions": {
+      "additionalProperties": false,
+      "description": "`[llm.gemini]`.",
+      "properties": {
+        "base_url": {
+          "description": "Replaces the Gemini API base URL.",
+          "maxLength": 2048,
+          "pattern": "^(?:https://[^\\s\\u0000-\\u001f\\u007f-\\u009f/?#@:][^\\s\\u0000-\\u001f\\u007f-\\u009f]*|http://(?:[^\\s\\u0000-\\u001f\\u007f-\\u009f/?#@]*@)?(?:[Ll][Oo][Cc][Aa][Ll][Hh][Oo][Ss][Tt]|127(?:\\.[0-9]{1,3}){3}|\\[::1\\])(?::[0-9]+)?([/?#][^\\s\\u0000-\\u001f\\u007f-\\u009f]*)?)$",
+          "type": "string"
+        },
+        "max_output_tokens": {
+          "description": "Output token cap.",
+          "maximum": 1000000,
+          "minimum": 1,
+          "type": "integer"
+        },
+        "model": {
+          "description": "Model. Default: the adapter's.",
+          "maxLength": 256,
+          "minLength": 1,
+          "pattern": "^[^\\s\\u0000-\\u001f\\u007f-\\u009f]+$",
+          "type": "string"
+        },
+        "temperature": {
+          "description": "Sampling temperature (0..=2).",
+          "maximum": 2.0,
+          "minimum": 0.0,
+          "type": "number"
+        },
+        "thinking_level": {
+          "$ref": "#/$defs/GeminiThinkingLevel",
+          "description": "Thinking level."
+        }
+      },
+      "type": "object"
+    },
+    "GeminiThinkingLevel": {
+      "description": "`llm.gemini.thinking_level`.",
+      "oneOf": [
+        {
+          "const": "minimal",
+          "description": "Minimal.",
+          "type": "string"
+        },
+        {
+          "const": "low",
+          "description": "Low.",
+          "type": "string"
+        },
+        {
+          "const": "medium",
+          "description": "Medium.",
+          "type": "string"
+        },
+        {
+          "const": "high",
+          "description": "High.",
+          "type": "string"
+        }
+      ]
+    },
+    "GladiaOptions": {
+      "additionalProperties": false,
+      "description": "`[stt.gladia]`.",
+      "properties": {
+        "base_url": {
+          "description": "Replaces the API base URL.",
+          "maxLength": 2048,
+          "pattern": "^(?:https://[^\\s\\u0000-\\u001f\\u007f-\\u009f/?#@:][^\\s\\u0000-\\u001f\\u007f-\\u009f]*|http://(?:[^\\s\\u0000-\\u001f\\u007f-\\u009f/?#@]*@)?(?:[Ll][Oo][Cc][Aa][Ll][Hh][Oo][Ss][Tt]|127(?:\\.[0-9]{1,3}){3}|\\[::1\\])(?::[0-9]+)?([/?#][^\\s\\u0000-\\u001f\\u007f-\\u009f]*)?)$",
+          "type": "string"
+        },
+        "code_switching": {
+          "description": "Let Gladia switch languages inside a session.",
+          "type": "boolean"
+        },
+        "endpointing_ms": {
+          "description": "Endpointing silence (10..=10000 ms).",
+          "maximum": 10000,
+          "minimum": 10,
+          "type": "integer"
+        },
+        "model": {
+          "description": "Model. Default `solaria-1`.",
+          "maxLength": 256,
+          "minLength": 1,
+          "pattern": "^[^\\s\\u0000-\\u001f\\u007f-\\u009f]+$",
+          "type": "string"
+        },
+        "region": {
+          "$ref": "#/$defs/GladiaRegion",
+          "description": "Region. Default: Gladia's choice."
+        },
+        "vocabulary": {
+          "description": "Custom vocabulary, at most 100 entries.",
+          "items": {
+            "type": "string"
+          },
+          "maxItems": 100,
+          "type": "array"
+        }
+      },
+      "type": "object"
+    },
+    "GladiaRegion": {
+      "description": "`stt.gladia.region`.",
+      "oneOf": [
+        {
+          "const": "us_west",
+          "description": "`us-west`.",
+          "type": "string"
+        },
+        {
+          "const": "eu_west",
+          "description": "`eu-west`.",
+          "type": "string"
+        }
+      ]
+    },
+    "InterruptionPreset": {
+      "description": "`interruption.preset`.",
+      "oneOf": [
+        {
+          "const": "recommended",
+          "description": "The recommended guards (300 ms speech, echo window, backchannels).",
+          "type": "string"
+        },
+        {
+          "const": "off",
+          "description": "Every guard off: any barge-in interrupts at once.",
+          "type": "string"
+        }
+      ]
+    },
+    "InterruptionSection": {
+      "additionalProperties": false,
+      "description": "`[interruption]`: the preset, then per-field overrides.",
+      "properties": {
+        "backchannel_max_speech_ms": {
+          "description": "Speech after which a backchannel verdict stops blocking (0: no cap).",
+          "maximum": 10000,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "backchannel_wait_ms": {
+          "description": "Wait for a first interim before a candidate is assumed not to be a backchannel.",
+          "maximum": 5000,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "backchannels": {
+          "description": "Backchannel phrase sets: any of `\"en\"`, `\"tr\"`; `[]` turns them off.",
+          "items": {
+            "$ref": "#/$defs/BackchannelSet"
+          },
+          "type": "array"
+        },
+        "confirm": {
+          "$ref": "#/$defs/ConfirmKind",
+          "description": "How the two guards combine."
+        },
+        "echo_guard_ms": {
+          "description": "Echo window at the start of the bot's audio (0: off).",
+          "maximum": 5000,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "echo_min_words": {
+          "description": "Words STT must confirm inside the echo window.",
+          "maximum": 20,
+          "minimum": 1,
+          "type": "integer"
+        },
+        "min_speech_ms": {
+          "description": "VAD must stay active this long before a barge-in interrupts (0: off).",
+          "maximum": 5000,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "min_words": {
+          "description": "Interim words needed before a barge-in interrupts (0: off).",
+          "maximum": 20,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "preset": {
+          "$ref": "#/$defs/InterruptionPreset",
+          "description": "Default `recommended`."
+        },
+        "vad_hangover_ms": {
+          "description": "The VAD's minimum silence before it reports the stop.",
+          "maximum": 2000,
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "type": "object"
+    },
+    "LlmProviderKind": {
+      "description": "`llm.provider`.",
+      "oneOf": [
+        {
+          "const": "openai",
+          "description": "OpenAI Responses API.",
+          "type": "string"
+        },
+        {
+          "const": "anthropic",
+          "description": "Anthropic Messages API.",
+          "type": "string"
+        },
+        {
+          "const": "gemini",
+          "description": "Google Gemini.",
+          "type": "string"
+        },
+        {
+          "const": "openai_compatible",
+          "description": "Any OpenAI Chat Completions compatible server (Groq, Together, Fireworks, vLLM, Ollama, OpenRouter).",
+          "type": "string"
+        }
+      ]
+    },
+    "LlmSection": {
+      "additionalProperties": false,
+      "description": "`[llm]`: the provider, its key, the runner settings and one options table named after it.",
+      "properties": {
+        "anthropic": {
+          "$ref": "#/$defs/AnthropicOptions",
+          "description": "`[llm.anthropic]` options."
+        },
+        "api_key_env": {
+          "description": "Environment variable holding the API key. Required except for `openai_compatible`\n(a local vLLM or Ollama needs none).",
+          "examples": [
+            "DEEPGRAM_API_KEY"
+          ],
+          "pattern": "^[A-Za-z_][A-Za-z0-9_]{0,127}$",
+          "type": "string"
+        },
+        "context_window_tokens": {
+          "description": "Token budget of the context window. Default 4000.",
+          "maximum": 2000000,
+          "minimum": 256,
+          "type": "integer"
+        },
+        "gemini": {
+          "$ref": "#/$defs/GeminiOptions",
+          "description": "`[llm.gemini]` options."
+        },
+        "max_tool_rounds": {
+          "description": "Model calls per user turn that may request tools. Default 6.",
+          "maximum": 32,
+          "minimum": 1,
+          "type": "integer"
+        },
+        "openai": {
+          "$ref": "#/$defs/OpenAiOptions",
+          "description": "`[llm.openai]` options."
+        },
+        "openai_compatible": {
+          "$ref": "#/$defs/OpenAiCompatibleOptions",
+          "description": "`[llm.openai_compatible]` options."
+        },
+        "provider": {
+          "$ref": "#/$defs/LlmProviderKind",
+          "description": "Which adapter."
+        },
+        "secondary": {
+          "$ref": "#/$defs/LlmSection",
+          "description": "`[llm.secondary]`: a second LLM provider that takes over a request the primary\nfailed before any content. Takes the keys above except `max_tool_rounds`,\n`context_window_tokens` (the call's, from the primary's table) and `secondary`."
+        }
+      },
+      "required": [
+        "provider"
+      ],
+      "type": "object"
+    },
+    "OpenAiCompatibleOptions": {
+      "additionalProperties": false,
+      "description": "`[llm.openai_compatible]`: a `preset`, or a `base_url` and a `model`.",
+      "properties": {
+        "base_url": {
+          "description": "Server base URL (overrides the preset's).",
+          "maxLength": 2048,
+          "pattern": "^(?:https://[^\\s\\u0000-\\u001f\\u007f-\\u009f/?#@:][^\\s\\u0000-\\u001f\\u007f-\\u009f]*|http://(?:[^\\s\\u0000-\\u001f\\u007f-\\u009f/?#@]*@)?(?:[Ll][Oo][Cc][Aa][Ll][Hh][Oo][Ss][Tt]|127(?:\\.[0-9]{1,3}){3}|\\[::1\\])(?::[0-9]+)?([/?#][^\\s\\u0000-\\u001f\\u007f-\\u009f]*)?)$",
+          "type": "string"
+        },
+        "max_tokens": {
+          "description": "Output token cap.",
+          "maximum": 1000000,
+          "minimum": 1,
+          "type": "integer"
+        },
+        "model": {
+          "description": "Model (overrides the preset's suggestion).",
+          "maxLength": 256,
+          "minLength": 1,
+          "pattern": "^[^\\s\\u0000-\\u001f\\u007f-\\u009f]+$",
+          "type": "string"
+        },
+        "openrouter_allow_fallbacks": {
+          "description": "OpenRouter `provider.allow_fallbacks` (OpenRouter's default is `true`; OpenRouter-only like\n`openrouter_order`). Sent only together with `openrouter_order`.",
+          "type": "boolean"
+        },
+        "openrouter_order": {
+          "description": "OpenRouter provider routing (OpenRouter-only: an error unless `preset = \"openrouter\"` or\n`base_url` is on openrouter.ai): the upstream providers to try in this order, sent as\n`provider.order` in the request body (slugs as on the model's page, e.g. `openai`; at\nmost 100). With `openrouter_allow_fallbacks = false` the request is served by one of them\nor refused. Left out when unset.",
+          "items": {
+            "type": "string"
+          },
+          "maxItems": 100,
+          "type": "array"
+        },
+        "preset": {
+          "$ref": "#/$defs/CompatiblePreset",
+          "description": "Vendor preset (base URL, suggested model and quirks)."
+        },
+        "reasoning_effort": {
+          "description": "Sent as the top-level request field `reasoning_effort` (OpenRouter, vLLM, OpenAI and other\nservers whose reasoning models think by default: `none` or `low` keeps the first token\nfast). Left out when unset; a server that does not know the field may refuse the request.",
+          "maxLength": 256,
+          "minLength": 1,
+          "pattern": "^[^\\s\\u0000-\\u001f\\u007f-\\u009f]+$",
+          "type": "string"
+        },
+        "temperature": {
+          "description": "Sampling temperature (0..=2).",
+          "maximum": 2.0,
+          "minimum": 0.0,
+          "type": "number"
+        }
+      },
+      "type": "object"
+    },
+    "OpenAiOptions": {
+      "additionalProperties": false,
+      "description": "`[llm.openai]`.",
+      "properties": {
+        "base_url": {
+          "description": "Replaces `https://api.openai.com/v1`.",
+          "maxLength": 2048,
+          "pattern": "^(?:https://[^\\s\\u0000-\\u001f\\u007f-\\u009f/?#@:][^\\s\\u0000-\\u001f\\u007f-\\u009f]*|http://(?:[^\\s\\u0000-\\u001f\\u007f-\\u009f/?#@]*@)?(?:[Ll][Oo][Cc][Aa][Ll][Hh][Oo][Ss][Tt]|127(?:\\.[0-9]{1,3}){3}|\\[::1\\])(?::[0-9]+)?([/?#][^\\s\\u0000-\\u001f\\u007f-\\u009f]*)?)$",
+          "type": "string"
+        },
+        "max_output_tokens": {
+          "description": "Output token cap.",
+          "maximum": 1000000,
+          "minimum": 1,
+          "type": "integer"
+        },
+        "model": {
+          "description": "Model. Default: the adapter's.",
+          "maxLength": 256,
+          "minLength": 1,
+          "pattern": "^[^\\s\\u0000-\\u001f\\u007f-\\u009f]+$",
+          "type": "string"
+        },
+        "parallel_tool_calls": {
+          "description": "Let the model call several tools at once.",
+          "type": "boolean"
+        },
+        "reasoning_effort": {
+          "$ref": "#/$defs/OpenAiReasoningEffort",
+          "description": "Reasoning effort. Default: the model's."
+        },
+        "service_tier": {
+          "description": "`service_tier`.",
+          "maxLength": 256,
+          "minLength": 1,
+          "pattern": "^[^\\s\\u0000-\\u001f\\u007f-\\u009f]+$",
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "OpenAiRealtimeSttOptions": {
+      "additionalProperties": false,
+      "description": "`[stt.openai_realtime_stt]`: a server speaking the OpenAI Realtime transcription protocol\n(`docs/providers/openai-realtime-stt.md`).",
+      "properties": {
+        "base_url": {
+          "description": "Server address, `ws[s]://host[:port]`. Default: the dialect's (OpenAI's cloud,\n`ws://127.0.0.1:9000` for NIM, `ws://127.0.0.1:8000` for Speaches and vLLM).",
+          "examples": [
+            "ws://127.0.0.1:6006"
+          ],
+          "maxLength": 2048,
+          "pattern": "^wss?://[^\\s\\u0000-\\u001f\\u007f-\\u009f/?#@:][^\\s\\u0000-\\u001f\\u007f-\\u009f/?#@]*$",
+          "type": "string"
+        },
+        "delta_replaces": {
+          "description": "A delta replaces the hypothesis so far instead of extending it. Default: extend.",
+          "type": "boolean"
+        },
+        "dialect": {
+          "$ref": "#/$defs/SttDialect",
+          "description": "The server's dialect. Default `openai`."
+        },
+        "finalize_timeout_ms": {
+          "description": "How long to wait for the answer to a commit (100..=10000 ms). Default 2000.",
+          "maximum": 10000,
+          "minimum": 100,
+          "type": "integer"
+        },
+        "min_commit_ms": {
+          "description": "The least audio a commit may hold (0..=2000 ms); less is answered empty without a\nround trip. Default: the dialect's (100 ms for OpenAI and Speaches).",
+          "maximum": 2000,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "model": {
+          "description": "The transcription model. Default: OpenAI `gpt-live-transcribe`, NIM the server's own;\nrequired for `speaches` and `vllm`.",
+          "maxLength": 256,
+          "minLength": 1,
+          "pattern": "^[^\\s\\u0000-\\u001f\\u007f-\\u009f]+$",
+          "type": "string"
+        },
+        "path_and_query": {
+          "description": "Replaces the dialect's path and query (`/v1/realtime?...`).",
+          "maxLength": 256,
+          "minLength": 1,
+          "pattern": "^[^\\s\\u0000-\\u001f\\u007f-\\u009f]+$",
+          "type": "string"
+        },
+        "prompt": {
+          "description": "Transcription prompt (OpenAI, NIM), at most 4096 bytes.",
+          "maxLength": 4096,
+          "type": "string"
+        },
+        "punctuation": {
+          "description": "NIM: automatic punctuation. Default `true`.",
+          "type": "boolean"
+        },
+        "sample_rate": {
+          "description": "Rate of the audio sent. Default: the dialect's (24000 OpenAI and Speaches, 16000 NIM and\nvLLM).",
+          "enum": [
+            8000,
+            16000,
+            22050,
+            24000,
+            44100,
+            48000,
+            null
+          ],
+          "type": "integer"
+        }
+      },
+      "type": "object"
+    },
+    "OpenAiReasoningEffort": {
+      "description": "`llm.openai.reasoning_effort`.",
+      "oneOf": [
+        {
+          "const": "disabled",
+          "description": "No reasoning.",
+          "type": "string"
+        },
+        {
+          "const": "low",
+          "description": "Low.",
+          "type": "string"
+        },
+        {
+          "const": "medium",
+          "description": "Medium.",
+          "type": "string"
+        },
+        {
+          "const": "high",
+          "description": "High.",
+          "type": "string"
+        },
+        {
+          "const": "xhigh",
+          "description": "Extra high.",
+          "type": "string"
+        },
+        {
+          "const": "max",
+          "description": "Maximum.",
+          "type": "string"
+        }
+      ]
+    },
+    "OpenAiSpeechOptions": {
+      "additionalProperties": false,
+      "description": "`[tts.openai_speech]`: the server's `base_url`, and optionally a `preset` and overrides.",
+      "properties": {
+        "base_url": {
+          "description": "The API base including its version prefix, e.g. `http://localhost:8880/v1`. Required.",
+          "examples": [
+            "http://localhost:8880/v1"
+          ],
+          "maxLength": 2048,
+          "pattern": "^https?://[^\\s\\u0000-\\u001f\\u007f-\\u009f/?#@:][^\\s\\u0000-\\u001f\\u007f-\\u009f/?#@]*([/?#][^\\s\\u0000-\\u001f\\u007f-\\u009f]*)?$",
+          "type": "string"
+        },
+        "first_audio_timeout_ms": {
+          "description": "Longest wait from sending a segment to its first audio byte (default 15000 ms; raise it\nfor a CPU server, or one that answers only when the whole segment is synthesized).",
+          "maximum": 120000,
+          "minimum": 500,
+          "type": "integer"
+        },
+        "format": {
+          "$ref": "#/$defs/SpeechFormat",
+          "description": "Audio format (overrides the preset's)."
+        },
+        "model": {
+          "description": "Model id (overrides the preset's; required for `generic`).",
+          "maxLength": 256,
+          "minLength": 1,
+          "pattern": "^[^\\s\\u0000-\\u001f\\u007f-\\u009f]+$",
+          "type": "string"
+        },
+        "preset": {
+          "$ref": "#/$defs/SpeechPreset",
+          "description": "Server quirks (model id, audio format, request fields). Default: `generic`."
+        },
+        "speed": {
+          "description": "Speaking rate (0.25..=4).",
+          "maximum": 4.0,
+          "minimum": 0.25,
+          "type": "number"
+        },
+        "warm_interval_ms": {
+          "description": "At most one warm-up per this many ms (default 60000), however many calls start.",
+          "maximum": 3600000,
+          "minimum": 1000,
+          "type": "integer"
+        },
+        "warm_text": {
+          "description": "Text of the background model warm-up request started at call start (audio discarded; at\nmost 200 bytes; `\"\"` turns it off). Default: `\"Hi.\"` for the `kokoro` preset, off for the\nothers. Hides the cold start of a GPU server that has idled (Kokoro: 2.8 s).",
+          "maxLength": 200,
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "PiiKind": {
+      "description": "A kind of identifier the filter recognises (the `redact_kinds` of the `[recording]` table).",
+      "oneOf": [
+        {
+          "const": "email",
+          "description": "Email addresses.",
+          "type": "string"
+        },
+        {
+          "const": "iban",
+          "description": "IBANs.",
+          "type": "string"
+        },
+        {
+          "const": "id",
+          "description": "Turkish national ID numbers.",
+          "type": "string"
+        },
+        {
+          "const": "card",
+          "description": "Payment card numbers.",
+          "type": "string"
+        },
+        {
+          "const": "phone",
+          "description": "Phone numbers.",
+          "type": "string"
+        },
+        {
+          "const": "number",
+          "description": "Any other long digit run.",
+          "type": "string"
+        }
+      ]
+    },
+    "RecordingSection": {
+      "additionalProperties": false,
+      "description": "`[recording]`: what call recording keeps (docs/PRIVACY.md). Recording itself is\nswitched on by the environment (`BRISVOX_RECORDING_DIR`, the directory is not an agent\nsetting); a key set here wins over the matching environment variable. A `[recording]` table\nwithout the directory is an error at startup, not a silently ignored privacy setting.",
+      "properties": {
+        "audio": {
+          "description": "Write each call's audio (two WAV files; audio cannot be redacted). Default `false`.",
+          "type": "boolean"
+        },
+        "redact": {
+          "description": "Replace identifiers in the transcript before it is written. Default `true`.",
+          "type": "boolean"
+        },
+        "redact_kinds": {
+          "description": "Which kinds the redaction replaces: any of `email`, `iban`, `id`, `card`, `phone`,\n`number`. Default all. Not empty while `redact` is on.",
+          "items": {
+            "$ref": "#/$defs/PiiKind"
+          },
+          "type": "array"
+        },
+        "retention_days": {
+          "description": "Delete recordings older than this many days (1 to 3650). Default 30 (the environment's\n`BRISVOX_RECORDING_RETENTION` can say `forever`; the file cannot).",
+          "format": "uint32",
+          "maximum": 3650,
+          "minimum": 1,
+          "type": "integer"
+        },
+        "transcript": {
+          "description": "Write each call's transcript. Default `true`.",
+          "type": "boolean"
+        }
+      },
+      "type": "object"
+    },
+    "SherpaOnnxOptions": {
+      "additionalProperties": false,
+      "description": "`[stt.sherpa_onnx]`: a self-hosted sherpa-onnx streaming WebSocket server\n(`docs/providers/sherpa-onnx.md`). The model decides the language; `stt.language` is not sent.",
+      "properties": {
+        "base_url": {
+          "description": "Server address, `ws://host[:port]`. Default `ws://127.0.0.1:6006`.",
+          "examples": [
+            "ws://127.0.0.1:6006"
+          ],
+          "maxLength": 2048,
+          "pattern": "^wss?://[^\\s\\u0000-\\u001f\\u007f-\\u009f/?#@:][^\\s\\u0000-\\u001f\\u007f-\\u009f/?#@]*$",
+          "type": "string"
+        },
+        "finalize_padding_ms": {
+          "description": "Silence sent before `Done` so the decoder flushes the last word (0..=5000 ms, default\n300; the Python server pads only 0.3 s itself, the C++ server 0.8 s: set 0 there).",
+          "maximum": 5000,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "finalize_timeout_ms": {
+          "description": "How long to wait for the end of a `Done` exchange (the finalize answer) before answering\nwith the latest hypothesis (100..=10000 ms). Default 1500.",
+          "maximum": 10000,
+          "minimum": 100,
+          "type": "integer"
+        },
+        "path": {
+          "description": "Path of the WebSocket endpoint. Default `/`.",
+          "maxLength": 256,
+          "minLength": 1,
+          "pattern": "^[^\\s\\u0000-\\u001f\\u007f-\\u009f]+$",
+          "type": "string"
+        },
+        "sample_rate": {
+          "description": "Rate of the audio sent: the model's training rate (the Python server does not resample).\nDefault 16000.",
+          "enum": [
+            8000,
+            16000,
+            22050,
+            24000,
+            44100,
+            48000,
+            null
+          ],
+          "type": "integer"
+        }
+      },
+      "type": "object"
+    },
+    "SpeculationSection": {
+      "additionalProperties": false,
+      "description": "`[speculation]`.",
+      "properties": {
+        "enabled": {
+          "description": "Master switch. Default `false`.",
+          "type": "boolean"
+        },
+        "max_age_ms": {
+          "description": "Age after which an unconfirmed speculation is dropped. Default 5000.",
+          "maximum": 60000,
+          "minimum": 100,
+          "type": "integer"
+        },
+        "max_buffered_events": {
+          "description": "Events a speculative response may buffer. Default 256.",
+          "maximum": 4096,
+          "minimum": 1,
+          "type": "integer"
+        },
+        "max_per_turn": {
+          "description": "Candidates per user turn. Default 3.",
+          "maximum": 16,
+          "minimum": 1,
+          "type": "integer"
+        },
+        "on_partial": {
+          "description": "Also speculate on the best partial transcript at the VAD stop. Default `true`.",
+          "type": "boolean"
+        },
+        "partial_stable_ms": {
+          "description": "Stable-partial gate: offer the partial of a VAD stop only after the caller stayed silent\nand the text did not change for this long. Default 0 (at once).",
+          "maximum": 60000,
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "type": "object"
+    },
+    "SpeechFormat": {
+      "description": "`tts.openai_speech.format`.",
+      "oneOf": [
+        {
+          "const": "pcm",
+          "description": "Headerless 24 kHz PCM16 (`response_format = \"pcm\"`).",
+          "type": "string"
+        },
+        {
+          "const": "wav",
+          "description": "WAV (`response_format = \"wav\"`), for servers without `pcm`.",
+          "type": "string"
+        }
+      ]
+    },
+    "SpeechPreset": {
+      "description": "`tts.openai_speech.preset`.",
+      "oneOf": [
+        {
+          "const": "generic",
+          "description": "Any server with `POST {base_url}/audio/speech` (`model` is required).",
+          "type": "string"
+        },
+        {
+          "const": "kokoro",
+          "description": "Kokoro-FastAPI.",
+          "type": "string"
+        },
+        {
+          "const": "chatterbox",
+          "description": "Chatterbox-TTS-Server (WAV responses).",
+          "type": "string"
+        },
+        {
+          "const": "speaches",
+          "description": "Speaches.",
+          "type": "string"
+        },
+        {
+          "const": "vllm_omni",
+          "description": "vLLM-Omni serving a TTS model.",
+          "type": "string"
+        }
+      ]
+    },
+    "SttDialect": {
+      "description": "`stt.openai_realtime_stt.dialect`.",
+      "oneOf": [
+        {
+          "const": "openai",
+          "description": "OpenAI's Realtime API in transcription mode (needs `api_key_env`).",
+          "type": "string"
+        },
+        {
+          "const": "nim",
+          "description": "NVIDIA Speech NIM `/v1/realtime?intent=transcription`.",
+          "type": "string"
+        },
+        {
+          "const": "speaches",
+          "description": "Speaches `/v1/realtime?intent=transcription`.",
+          "type": "string"
+        },
+        {
+          "const": "vllm",
+          "description": "vLLM `/v1/realtime`.",
+          "type": "string"
+        }
+      ]
+    },
+    "SttProviderKind": {
+      "description": "`stt.provider`.",
+      "oneOf": [
+        {
+          "const": "deepgram",
+          "description": "Deepgram streaming `/v1/listen`.",
+          "type": "string"
+        },
+        {
+          "const": "assemblyai",
+          "description": "AssemblyAI Universal Streaming.",
+          "type": "string"
+        },
+        {
+          "const": "gladia",
+          "description": "Gladia live.",
+          "type": "string"
+        },
+        {
+          "const": "sherpa_onnx",
+          "description": "A self-hosted sherpa-onnx streaming WebSocket server.",
+          "type": "string"
+        },
+        {
+          "const": "openai_realtime_stt",
+          "description": "A server speaking the OpenAI Realtime transcription protocol: OpenAI, NVIDIA Speech NIM,\nSpeaches, vLLM.",
+          "type": "string"
+        }
+      ]
+    },
+    "SttSection": {
+      "additionalProperties": false,
+      "description": "`[stt]`: the provider, its key and language, and one options table named after it.",
+      "properties": {
+        "api_key_env": {
+          "description": "Environment variable holding the API key. Required except for `sherpa_onnx` (no key) and\nthe local dialects of `openai_realtime_stt`.",
+          "examples": [
+            "DEEPGRAM_API_KEY"
+          ],
+          "pattern": "^[A-Za-z_][A-Za-z0-9_]{0,127}$",
+          "type": "string"
+        },
+        "assemblyai": {
+          "$ref": "#/$defs/AssemblyAiOptions",
+          "description": "`[stt.assemblyai]` options."
+        },
+        "deepgram": {
+          "$ref": "#/$defs/DeepgramOptions",
+          "description": "`[stt.deepgram]` options (only with `provider = \"deepgram\"`)."
+        },
+        "gladia": {
+          "$ref": "#/$defs/GladiaOptions",
+          "description": "`[stt.gladia]` options."
+        },
+        "language": {
+          "description": "Recognition language. Default: `agent.language`.",
+          "examples": [
+            "en",
+            "tr",
+            "tr-TR"
+          ],
+          "pattern": "^[A-Za-z]{2,3}(-[A-Za-z0-9]{1,8})*$",
+          "type": "string"
+        },
+        "openai_realtime_stt": {
+          "$ref": "#/$defs/OpenAiRealtimeSttOptions",
+          "description": "`[stt.openai_realtime_stt]` options."
+        },
+        "provider": {
+          "$ref": "#/$defs/SttProviderKind",
+          "description": "Which adapter."
+        },
+        "secondary": {
+          "$ref": "#/$defs/SttSection",
+          "description": "`[stt.secondary]`: a second STT provider calls fail over to when the primary\nis down. Takes the keys above except `language` (the call's language is the primary's)\nand `secondary`."
+        },
+        "sherpa_onnx": {
+          "$ref": "#/$defs/SherpaOnnxOptions",
+          "description": "`[stt.sherpa_onnx]` options."
+        }
+      },
+      "required": [
+        "provider"
+      ],
+      "type": "object"
+    },
+    "TelephonySection": {
+      "additionalProperties": false,
+      "description": "`[telephony]`: what the built-in telephony tools (`transfer_call`, `send_dtmf`, `end_call`)\nmay do on this agent's calls (docs/TELEPHONY.md). The tools exist only in a server\nwith a carrier's call control configured (`BRISVOX_CALL_CONTROL`, docs/OPERATIONS.md); an\nagent lists the ones it uses in `agent.tools` like any other tool.",
+      "properties": {
+        "destinations": {
+          "description": "Where `transfer_call` may send the call, by name: the model picks a name, never a\nnumber. Without any, `transfer_call` is not offered.",
+          "items": {
+            "$ref": "#/$defs/DestinationEntry"
+          },
+          "type": "array"
+        },
+        "dtmf": {
+          "description": "Offer `send_dtmf` when the carrier binding can send tones. Default `true`.",
+          "type": "boolean"
+        },
+        "voicemail": {
+          "$ref": "#/$defs/VoicemailSection",
+          "description": "What to do when an outbound call is answered by a machine."
+        },
+        "warm": {
+          "description": "Offer warm transfers (`transfer_call` with `mode = \"warm\"`: the receiving party hears a\nsummary first). Needs the callback listener (`BRISVOX_CALLBACK_ADDR`), which finishes a\ntransfer, and a carrier binding that can do it; otherwise the tool offers cold transfers\nonly. Default `false`.",
+          "type": "boolean"
+        }
+      },
+      "type": "object"
+    },
+    "TtsProviderKind": {
+      "description": "`tts.provider`.",
+      "oneOf": [
+        {
+          "const": "cartesia",
+          "description": "Cartesia Sonic over WebSocket.",
+          "type": "string"
+        },
+        {
+          "const": "elevenlabs",
+          "description": "ElevenLabs multi-context WebSocket.",
+          "type": "string"
+        },
+        {
+          "const": "deepgram_aura",
+          "description": "Deepgram Aura `/v1/speak`.",
+          "type": "string"
+        },
+        {
+          "const": "openai_speech",
+          "description": "A local server speaking the OpenAI `POST /v1/audio/speech` protocol (Kokoro-FastAPI,\nSpeaches, Chatterbox-TTS-Server, vLLM-Omni).",
+          "type": "string"
+        }
+      ]
+    },
+    "TtsSection": {
+      "additionalProperties": false,
+      "description": "`[tts]`: the provider, its key, voice, rate and language, and one options table named after\nit.",
+      "properties": {
+        "api_key_env": {
+          "description": "Environment variable holding the API key. Required except for `openai_speech` (a local\nKokoro or Chatterbox server needs none).",
+          "examples": [
+            "DEEPGRAM_API_KEY"
+          ],
+          "pattern": "^[A-Za-z_][A-Za-z0-9_]{0,127}$",
+          "type": "string"
+        },
+        "cartesia": {
+          "$ref": "#/$defs/CartesiaOptions",
+          "description": "`[tts.cartesia]` options."
+        },
+        "deepgram_aura": {
+          "$ref": "#/$defs/DeepgramAuraOptions",
+          "description": "`[tts.deepgram_aura]` options."
+        },
+        "elevenlabs": {
+          "$ref": "#/$defs/ElevenLabsOptions",
+          "description": "`[tts.elevenlabs]` options."
+        },
+        "language": {
+          "description": "Synthesis language. Default: `agent.language`.",
+          "examples": [
+            "en",
+            "tr",
+            "tr-TR"
+          ],
+          "pattern": "^[A-Za-z]{2,3}(-[A-Za-z0-9]{1,8})*$",
+          "type": "string"
+        },
+        "openai_speech": {
+          "$ref": "#/$defs/OpenAiSpeechOptions",
+          "description": "`[tts.openai_speech]` options."
+        },
+        "provider": {
+          "$ref": "#/$defs/TtsProviderKind",
+          "description": "Which adapter."
+        },
+        "sample_rate": {
+          "description": "Rate the provider delivers (the engine resamples to the call). Default 24000.",
+          "enum": [
+            8000,
+            16000,
+            22050,
+            24000,
+            44100,
+            48000,
+            null
+          ],
+          "type": "integer"
+        },
+        "secondary": {
+          "$ref": "#/$defs/TtsSection",
+          "description": "`[tts.secondary]`: a second TTS provider calls fail over to when the primary is\ndown. Takes the keys above, `voice` included (a voice id belongs to one provider), except\n`sample_rate` and `language` (the call's, from the primary's table) and `secondary`."
+        },
+        "voice": {
+          "description": "Provider voice id (for Deepgram Aura the model string, e.g. `aura-2-thalia-en`; for\n`openai_speech` the server's voice name, e.g. `af_heart` on Kokoro).",
+          "maxLength": 256,
+          "minLength": 1,
+          "pattern": "^[^\\s\\u0000-\\u001f\\u007f-\\u009f]+$",
+          "type": "string"
+        }
+      },
+      "required": [
+        "provider",
+        "voice"
+      ],
+      "type": "object"
+    },
+    "TurnPolicyKind": {
+      "description": "`turn.policy`.",
+      "oneOf": [
+        {
+          "const": "adaptive",
+          "description": "Smart Turn decides; a fallback silence ends an undecided pause.",
+          "type": "string"
+        },
+        {
+          "const": "fixed_silence",
+          "description": "A fixed silence after the VAD stop ends the turn.",
+          "type": "string"
+        }
+      ]
+    },
+    "TurnSection": {
+      "additionalProperties": false,
+      "description": "`[turn]`.",
+      "properties": {
+        "fallback_silence_ms": {
+          "description": "`adaptive` only: silence that ends a turn Smart Turn did not complete. Default 3000.",
+          "maximum": 30000,
+          "minimum": 100,
+          "type": "integer"
+        },
+        "final_grace_ms": {
+          "description": "`adaptive` only: how long the STT signals may take. Default 800.",
+          "maximum": 10000,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "final_wait_ms": {
+          "description": "How long a turn end is held while STT finals are owed. Default 1500.",
+          "maximum": 30000,
+          "minimum": 1,
+          "type": "integer"
+        },
+        "policy": {
+          "$ref": "#/$defs/TurnPolicyKind",
+          "description": "Default `adaptive`."
+        },
+        "require_final": {
+          "description": "`adaptive` only: a complete verdict also waits for the STT final. Default `false`.",
+          "type": "boolean"
+        },
+        "response_deadline_ms": {
+          "description": "Backstop for a response that produces no audio. Default 20000; must exceed\n`final_wait_ms`.",
+          "maximum": 300000,
+          "minimum": 1000,
+          "type": "integer"
+        },
+        "silence_ms": {
+          "description": "`fixed_silence` only (required there): silence that ends the turn.",
+          "maximum": 10000,
+          "minimum": 1,
+          "type": "integer"
+        }
+      },
+      "type": "object"
+    },
+    "VoicemailSection": {
+      "additionalProperties": false,
+      "description": "`[telephony.voicemail]`: answering-machine handling of calls the carrier's detector\nclassifies (`docs/TELEPHONY.md`, section 6). The verdict reaches the call as the stream\nparameter `answered_by` or as a callback (`BRISVOX_CALLBACK_ADDR`). A machine whose greeting\nended is played `message`, then the call is hung up; a person gets the normal conversation.",
+      "properties": {
+        "detect_only": {
+          "description": "`true` for a detector that never reports the end of a greeting (Twilio\n`MachineDetection=Enable`, Telnyx `detect`): a machine is hung up on instead of being\nspoken over. Default `false` (Twilio `DetectMessageEnd`, Telnyx `greeting_end`).",
+          "type": "boolean"
+        },
+        "message": {
+          "description": "The fixed message left on a machine, spoken as it is (1 to 1000 characters). Put nothing\nin it the callee did not consent to hear on a recording.",
+          "maxLength": 1000,
+          "minLength": 1,
+          "type": "string"
+        },
+        "on_unknown": {
+          "$ref": "#/$defs/VoicemailUnknown",
+          "description": "What to do when the detector cannot tell. Default `treat_as_human`."
+        }
+      },
+      "required": [
+        "message"
+      ],
+      "type": "object"
+    },
+    "VoicemailUnknown": {
+      "description": "`telephony.voicemail.on_unknown`.",
+      "oneOf": [
+        {
+          "const": "treat_as_human",
+          "description": "Carry on with the conversation.",
+          "type": "string"
+        },
+        {
+          "const": "treat_as_machine",
+          "description": "Wait for the greeting to end (a fixed time), then leave the message.",
+          "type": "string"
+        },
+        {
+          "const": "hang_up",
+          "description": "End the call.",
+          "type": "string"
+        }
+      ]
+    }
+  },
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "One agent definition file.",
+  "properties": {
+    "agent": {
+      "$ref": "#/$defs/AgentSection",
+      "description": "Who the agent is: name, language, system prompt, tools."
+    },
+    "agent_link": {
+      "$ref": "#/$defs/AgentLinkSection",
+      "description": "The out-of-process agent the calls of this definition link to."
+    },
+    "audio": {
+      "$ref": "#/$defs/AudioSection",
+      "description": "Frame length and the call rate assumed when the transport reports none."
+    },
+    "early_analysis": {
+      "$ref": "#/$defs/EarlyAnalysisSection",
+      "description": "Speculative Smart Turn analysis when the VAD probability first falls."
+    },
+    "filler": {
+      "$ref": "#/$defs/FillerSection",
+      "description": "The phrase spoken while a slow tool runs."
+    },
+    "interruption": {
+      "$ref": "#/$defs/InterruptionSection",
+      "description": "Which barge-ins interrupt the bot."
+    },
+    "llm": {
+      "$ref": "#/$defs/LlmSection",
+      "description": "LLM provider and the runner settings."
+    },
+    "recording": {
+      "$ref": "#/$defs/RecordingSection",
+      "description": "What call recording keeps and for how long; overrides the environment."
+    },
+    "speculation": {
+      "$ref": "#/$defs/SpeculationSection",
+      "description": "Speculative LLM generation at a candidate end of turn."
+    },
+    "stt": {
+      "$ref": "#/$defs/SttSection",
+      "description": "Speech-to-text provider."
+    },
+    "telephony": {
+      "$ref": "#/$defs/TelephonySection",
+      "description": "What the built-in telephony tools may do."
+    },
+    "tts": {
+      "$ref": "#/$defs/TtsSection",
+      "description": "Text-to-speech provider."
+    },
+    "turn": {
+      "$ref": "#/$defs/TurnSection",
+      "description": "How the end of a user turn is decided."
+    }
+  },
+  "required": [
+    "agent",
+    "stt",
+    "llm",
+    "tts"
+  ],
+  "title": "Brisvox agent definition",
+  "type": "object"
+}

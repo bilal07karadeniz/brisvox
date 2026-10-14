@@ -1,0 +1,355 @@
+{
+  "schema": "brisvox-live-v2v/1",
+  "task": "",
+  "system": "brisvox",
+  "system_description": "`brisvox-server` (release, features `provider-deepgram`, `provider-openai-compatible`, `provider-cartesia`, `smart-turn-ort`, `silero-tract`), adaptive turns with Smart Turn v3.2, agent file `bench/pipecat_baseline/agent_live_tr.toml`.",
+  "date": "2026-10-13",
+  "lang": "tr",
+  "environment": {
+    "platform": "Windows-10-10.0.26300-SP0",
+    "logical_cores": 32,
+    "python": "3.10.11",
+    "bench": "brisvox-bench 0.1.0 (release build)",
+    "network": "public internet, loopback between client and system under test; IPv6 route drops packets",
+    "providers": {
+      "stt": "deepgram nova-3",
+      "llm": "openrouter openai/gpt-6-luna (reasoning_effort none)",
+      "tts": "cartesia sonic-3.6"
+    }
+  },
+  "blocks": [
+    {
+      "label": "tr-b1",
+      "runs": 3,
+      "bench_header": [
+        "# Voice-to-voice latency (live)",
+        "",
+        "- command: `brisvox-bench v2v --url ws://127.0.0.1:18080 --fixtures tr_two_utterances --runs 3 --min-gap-ms 9000  ",
+        "- brisvox 0.1.0 (release build), windows x86_64, 32 logical cores, 2 tokio workers (threads, not a CPU limit: other threads may use any core)",
+        "- live: one client, one call at a time, real time (SystemClock), 20 ms frames",
+        "- **not a Linux run** (windows): timers and scheduling differ from the Linux servers the engine targets, so these numbers show trends only; numbers for comparisons (with other engines, or against latency targets) come from a Linux run",
+        "- target: `ws://127.0.0.1:18080`",
+        "- 3 runs of each of tr_two_utterances (utterances spaced at least 9000 ms apart, 20 ms frames, silence below peak 200, response window 10000 ms after the fixture)",
+        "",
+        "**V2V** = arrival at the client of the first non-silent bot audio after the ground-truth end of the user's speech, minus that end of speech (docs/LATENCY.md). Percentiles are nearest rank over answered turns; below 100 samples p99 is the maximum.",
+        ""
+      ],
+      "provider_turns_logged": 6,
+      "bench_turns": 6
+    }
+  ],
+  "outcomes": {
+    "answered": 6
+  },
+  "v2v": {
+    "spec": {
+      "all": {
+        "n": 6,
+        "min": 1824.332,
+        "p50": 1994.191,
+        "p90": 3030.826,
+        "p95": 3030.826,
+        "max": 3030.826,
+        "mean": 2328.5195
+      },
+      "by_turn": {
+        "0": {
+          "n": 3,
+          "min": 1940.708,
+          "p50": 2389.88,
+          "p90": 2791.18,
+          "p95": 2791.18,
+          "max": 2791.18,
+          "mean": 2373.922666666667
+        },
+        "1": {
+          "n": 3,
+          "min": 1824.332,
+          "p50": 1994.191,
+          "p90": 3030.826,
+          "p95": 3030.826,
+          "max": 3030.826,
+          "mean": 2283.1163333333334
+        }
+      }
+    },
+    "pooled": {
+      "all": {
+        "n": 6,
+        "min": 1824.332,
+        "p50": 1994.191,
+        "p90": 3030.826,
+        "p95": 3030.826,
+        "max": 3030.826,
+        "mean": 2328.5195
+      },
+      "by_turn": {
+        "0": {
+          "n": 3,
+          "min": 1940.708,
+          "p50": 2389.88,
+          "p90": 2791.18,
+          "p95": 2791.18,
+          "max": 2791.18,
+          "mean": 2373.922666666667
+        },
+        "1": {
+          "n": 3,
+          "min": 1824.332,
+          "p50": 1994.191,
+          "p90": 3030.826,
+          "p95": 3030.826,
+          "max": 3030.826,
+          "mean": 2283.1163333333334
+        }
+      }
+    }
+  },
+  "provider_note": "From the server's `turn finished` timeline lines (`brisvox::timeline`, `docs/LATENCY.md`, \"Turn timeline\"), one per turn. `stt_final_delay` is counted from the VAD's backdated end of speech to the last Deepgram final; `llm_ttft` from the request written to the connection to the first text delta (OpenRouter's time to first byte included); `tts_ttfb` from the first text sent to Cartesia to its first audio byte.",
+  "provider_latency": {
+    "STT final after end of speech (`stt_final_delay`)": {
+      "n": 6,
+      "min": 295.04,
+      "p50": 304.806,
+      "p90": 324.615,
+      "p95": 324.615,
+      "max": 324.615,
+      "mean": 307.26500000000004
+    },
+    "LLM first token after the request (`llm_ttft`)": {
+      "n": 6,
+      "min": 974.762,
+      "p50": 1204.913,
+      "p90": 2300.208,
+      "p95": 2300.208,
+      "max": 2300.208,
+      "mean": 1506.5823333333335
+    },
+    "LLM first speakable chunk after the request (`llm_first_sentence`)": {
+      "n": 6,
+      "min": 1151.564,
+      "p50": 1394.364,
+      "p90": 2331.816,
+      "p95": 2331.816,
+      "max": 2331.816,
+      "mean": 1647.5118333333332
+    },
+    "TTS first audio after the text (`tts_ttfb`)": {
+      "n": 6,
+      "min": 194.845,
+      "p50": 198.701,
+      "p90": 223.646,
+      "p95": 223.646,
+      "max": 223.646,
+      "mean": 202.21783333333335
+    }
+  },
+  "residual_note": "Per turn: V2V minus the provider times above. The first row uses the LLM's first token, the same definition as the Pipecat file (there the wait for the first sentence is not timed, so it stays in the residual); the second row uses the first speakable chunk (the wait for a clause is provider streaming time). What remains is everything the engine and the transport add: turn detection after the final, hand-offs, the output frame grid, the websocket, and the difference between the VAD's end of speech and the fixture's ground truth (~150 ms, in both systems). The server's own response latency (end of speech to the first audio frame handed to the transport) splits the second row into the part inside the server and the client-side part.",
+  "residual": {
+    "V2V minus (STT final + LLM first token + TTS first byte): the definition used for Pipecat below": {
+      "n": 6,
+      "min": 202.71299999999974,
+      "p50": 275.3180000000002,
+      "p90": 455.3580000000002,
+      "p95": 455.3580000000002,
+      "max": 455.3580000000002,
+      "mean": 312.4543333333334
+    },
+    "V2V minus (STT final + LLM first chunk + TTS first byte)": {
+      "n": 6,
+      "min": 80.36699999999996,
+      "p50": 171.10500000000002,
+      "p90": 217.18799999999965,
+      "p95": 217.18799999999965,
+      "max": 217.18799999999965,
+      "mean": 171.5248333333333
+    },
+    "  of which inside the server (server response latency minus the three providers)": {
+      "n": 6,
+      "min": 0.07799999999997453,
+      "p50": 0.10199999999986176,
+      "p90": 0.17699999999990723,
+      "p95": 0.17699999999990723,
+      "max": 0.17699999999990723,
+      "mean": 0.1163333333333109
+    },
+    "  of which client side (V2V minus the server's response latency: transport, EOS definition, frame grid)": {
+      "n": 6,
+      "min": 80.27300000000014,
+      "p50": 170.962,
+      "p90": 217.10999999999967,
+      "p95": 217.10999999999967,
+      "max": 217.10999999999967,
+      "mean": 171.4085
+    }
+  },
+  "failures": {
+    "failed calls": 0,
+    "no_response turns": 0,
+    "talked_over turns": 0,
+    "bot_speaking turns": 0,
+    "turns without a provider timeline": 0,
+    "ERROR log lines": 0,
+    "WARN log lines": 0
+  },
+  "turn_columns": [
+    "block",
+    "run",
+    "turn",
+    "outcome",
+    "v2v_ms",
+    "stt_final_ms",
+    "llm_ttft_ms",
+    "llm_first_sentence_ms",
+    "tts_ttfb_ms",
+    "response_latency_ms",
+    "residual_strict_ms",
+    "residual_ms"
+  ],
+  "turns": [
+    {
+      "block": "tr-b1",
+      "fixture": "tr_two_utterances",
+      "run": 0,
+      "turn": 0,
+      "lang": "tr",
+      "outcome": "answered",
+      "v2v_ms": 1940.708,
+      "interrupted": false,
+      "stt_final_ms": 309.005,
+      "llm_ttft_ms": 974.762,
+      "llm_first_sentence_ms": 1225.937,
+      "tts_ttfb_ms": 201.583,
+      "end_of_turn_ms": 309.037,
+      "response_latency_ms": 1736.702,
+      "llm_rounds": 1,
+      "spec": true,
+      "providers_ms": 1736.525,
+      "residual_ms": 204.183,
+      "residual_strict_ms": 455.3580000000002,
+      "server_response_ms": 1736.702,
+      "transport_and_eos_ms": 204.00600000000009,
+      "overhead_in_server_ms": 0.17699999999990723
+    },
+    {
+      "block": "tr-b1",
+      "fixture": "tr_two_utterances",
+      "run": 0,
+      "turn": 1,
+      "lang": "tr",
+      "outcome": "answered",
+      "v2v_ms": 3030.826,
+      "interrupted": false,
+      "stt_final_ms": 304.259,
+      "llm_ttft_ms": 2300.208,
+      "llm_first_sentence_ms": 2331.816,
+      "tts_ttfb_ms": 223.646,
+      "end_of_turn_ms": 304.262,
+      "response_latency_ms": 2859.864,
+      "llm_rounds": 1,
+      "spec": true,
+      "providers_ms": 2859.721,
+      "residual_ms": 171.10500000000002,
+      "residual_strict_ms": 202.71299999999974,
+      "server_response_ms": 2859.864,
+      "transport_and_eos_ms": 170.962,
+      "overhead_in_server_ms": 0.1430000000000291
+    },
+    {
+      "block": "tr-b1",
+      "fixture": "tr_two_utterances",
+      "run": 1,
+      "turn": 0,
+      "lang": "tr",
+      "outcome": "answered",
+      "v2v_ms": 2389.88,
+      "interrupted": false,
+      "stt_final_ms": 295.04,
+      "llm_ttft_ms": 1624.346,
+      "llm_first_sentence_ms": 1711.964,
+      "tts_ttfb_ms": 195.176,
+      "end_of_turn_ms": 295.042,
+      "response_latency_ms": 2202.284,
+      "llm_rounds": 1,
+      "spec": true,
+      "providers_ms": 2202.18,
+      "residual_ms": 187.70000000000027,
+      "residual_strict_ms": 275.3180000000002,
+      "server_response_ms": 2202.284,
+      "transport_and_eos_ms": 187.596,
+      "overhead_in_server_ms": 0.10400000000026921
+    },
+    {
+      "block": "tr-b1",
+      "fixture": "tr_two_utterances",
+      "run": 1,
+      "turn": 1,
+      "lang": "tr",
+      "outcome": "answered",
+      "v2v_ms": 1824.332,
+      "interrupted": false,
+      "stt_final_ms": 304.806,
+      "llm_ttft_ms": 1013.1,
+      "llm_first_sentence_ms": 1151.564,
+      "tts_ttfb_ms": 199.356,
+      "end_of_turn_ms": 304.81,
+      "response_latency_ms": 1655.828,
+      "llm_rounds": 1,
+      "spec": true,
+      "providers_ms": 1655.726,
+      "residual_ms": 168.606,
+      "residual_strict_ms": 307.07000000000016,
+      "server_response_ms": 1655.828,
+      "transport_and_eos_ms": 168.50400000000013,
+      "overhead_in_server_ms": 0.10199999999986176
+    },
+    {
+      "block": "tr-b1",
+      "fixture": "tr_two_utterances",
+      "run": 2,
+      "turn": 0,
+      "lang": "tr",
+      "outcome": "answered",
+      "v2v_ms": 2791.18,
+      "interrupted": false,
+      "stt_final_ms": 305.865,
+      "llm_ttft_ms": 1922.165,
+      "llm_first_sentence_ms": 2069.426,
+      "tts_ttfb_ms": 198.701,
+      "end_of_turn_ms": 305.868,
+      "response_latency_ms": 2574.07,
+      "llm_rounds": 1,
+      "spec": true,
+      "providers_ms": 2573.992,
+      "residual_ms": 217.18799999999965,
+      "residual_strict_ms": 364.44900000000007,
+      "server_response_ms": 2574.07,
+      "transport_and_eos_ms": 217.10999999999967,
+      "overhead_in_server_ms": 0.07799999999997453
+    },
+    {
+      "block": "tr-b1",
+      "fixture": "tr_two_utterances",
+      "run": 2,
+      "turn": 1,
+      "lang": "tr",
+      "outcome": "answered",
+      "v2v_ms": 1994.191,
+      "interrupted": false,
+      "stt_final_ms": 324.615,
+      "llm_ttft_ms": 1204.913,
+      "llm_first_sentence_ms": 1394.364,
+      "tts_ttfb_ms": 194.845,
+      "end_of_turn_ms": 324.619,
+      "response_latency_ms": 1913.918,
+      "llm_rounds": 1,
+      "spec": true,
+      "providers_ms": 1913.824,
+      "residual_ms": 80.36699999999996,
+      "residual_strict_ms": 269.818,
+      "server_response_ms": 1913.918,
+      "transport_and_eos_ms": 80.27300000000014,
+      "overhead_in_server_ms": 0.09399999999982356
+    }
+  ]
+}

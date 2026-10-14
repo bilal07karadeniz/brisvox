@@ -1,0 +1,28 @@
+[package]
+name = "brisvox-example-rust-tools"
+description = "Example: a brisvox voice agent server with its own Rust tools"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish = false
+
+# `cargo run -p brisvox-example-rust-tools` starts the server with the tools of src/lib.rs.
+[[bin]]
+name = "my-voice-agent"
+path = "src/main.rs"
+
+[dependencies]
+brisvox-agent = { workspace = true }
+brisvox-core = { workspace = true }
+# The three provider adapters agent.toml names (Deepgram STT, OpenAI LLM, Cartesia TTS). Add the
+# features of the providers your own agent file uses (docs/CONFIG.md).
+brisvox-server = { workspace = true, features = ["provider-deepgram", "provider-openai", "provider-cartesia"] }
+serde_json = { workspace = true }
+
+[dev-dependencies]
+tokio = { workspace = true, features = ["macros", "rt"] }
+tokio-util = { workspace = true }
+
+[lints]
+workspace = true

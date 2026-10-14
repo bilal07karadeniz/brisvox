@@ -1,0 +1,148 @@
+[workspace]
+resolver = "3"
+members = ["crates/*", "examples/rust-tools"]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.99"
+license = "MIT OR Apache-2.0"
+publish = false
+
+# Versions checked on crates.io 2026-10-07. Crates opt in with
+# `foo = { workspace = true }`; unused entries here cost nothing.
+[workspace.dependencies]
+age = { version = "0.12.1", default-features = false }
+audioadapter-buffers = "5.2.0"
+base64 = "0.23.1"
+bytes = "1.12.1"
+futures = "0.3.34"
+# HTTP/2 server for the Gemini adapter's h2 mock (dev-dependency only; already in the tree via
+# reqwest/hyper).
+h2 = "0.4.20"
+http = "1.5.0"
+# JSON Schema validation of tool arguments. default-features off: no remote $ref
+# resolution (no network, no reqwest/rustls), no idna; draft-2020-12 validation only.
+jsonschema = { version = "0.58.6", default-features = false }
+rubato = "5.0.1"
+# WebRTC transport: sans-IO str0m with the pure-Rust crypto backend (no C toolchain
+# for DTLS/SRTP; the default aws-lc-rs needs cmake/nasm on Windows) and no default features
+# (`examples` pulls an HTTP server). Exact pin: breaking changes land in minor versions. Opus is
+# libopus 1.6.1 (bundled; built with cmake and a C compiler) behind the OpusFactory trait.
+str0m = { version = "=0.24.1", default-features = false, features = ["rust-crypto"] }
+opus = "0.4.0"
+# Network stack for provider adapters and transports: rustls with the
+# `ring` provider only (aws-lc-rs needs cmake/nasm on Windows), webpki roots compiled in.
+reqwest = { version = "0.13.5", default-features = false, features = ["rustls-no-provider", "stream", "http2"] }
+rustls = { version = "0.23.45", default-features = false, features = ["ring", "std", "tls12", "logging"] }
+# Server-side TURN client: sans-IO RFC 5766/8656 client (allocate, permission,
+# channel-bind, refresh); MIT OR Apache-2.0, crates.io 0.7.3 (2026-10-06). The same project's
+# `turn-server-proto` is the dev-dependency the tests' in-process TURN server is built on. TLS to
+# the TURN server is done here with tokio-rustls (the ring provider, like reqwest) instead of the
+# project's separate `turn-client-rustls` crate.
+turn-client-proto = { version = "=0.7.3", default-features = false, features = ["std"] }
+turn-server-proto = "=0.7.3"
+tokio-rustls = { version = "0.26.6", default-features = false, features = ["ring", "tls12"] }
+tokio-tungstenite = { version = "0.30.0", default-features = false, features = ["connect", "handshake", "rustls-tls-webpki-roots"] }
+webpki-roots = "1.0.9"
+# CPU-only ONNX Runtime: no copy-dylibs (would ship DirectML.dll on Windows), rustls for the
+# build-time download (no OpenSSL on Linux), no ndarray/tracing.
+ort = { version = "=2.0.0-rc.13", default-features = false, features = ["std", "download-binaries", "tls-rustls", "api-27"] }
+tract-onnx = "0.23.8"
+realfft = "3.5.0"
+# getrlimit/setrlimit(RLIMIT_NOFILE) without unsafe code in the server: MIT, 0.11.0
+# (crates.io, 2026-10-13), Unix only; the server raises its open-file soft limit at startup.
+rlimit = "0.11.0"
+# SIP signaling for the SIP transport: transport/transaction/dialog layers, digest
+# auth, MIT. default-features off drops WebSocket and SRV lookup (hickory) and keeps the tokio
+# platform; `rustls` (ring provider, the same stack as elsewhere) gives the TLS connection types
+# of SIPS; exact pin because the 0.7.x line changed API within days
+# (docs/providers/sip.md).
+rsipstack = { version = "=0.7.3", default-features = false, features = ["platform-tokio", "rustls"] }
+# SDES-SRTP (RFC 3711) on RustCrypto primitives: AES-128 counter mode (aes 0.9.3, ctr
+# 0.10.1; MIT OR Apache-2.0, crates.io 2026-10-13), the HMAC-SHA1 is ring's, zeroize wipes the keys.
+aes = { version = "0.9.3", features = ["zeroize"] }
+ctr = { version = "0.10.1", features = ["zeroize"] }
+zeroize = "1.9.1"
+# Constant-time tag comparison (BSD-3-Clause); already in the tree through RustCrypto and rustls.
+subtle = "2.6.1"
+# HMAC-SHA1 for the Twilio X-Twilio-Signature check; already in the tree through rustls.
+ring = { version = "0.17.14", default-features = false }
+# Global allocator of the server binary. MIT; builds the bundled C mimalloc with
+# the cc crate (no cmake).
+mimalloc = { version = "0.1.52", default-features = false }
+# Protobuf messages of the Pipecat/RTVI websocket framing. Hand-derived with #[derive(prost::Message)]:
+# no protoc, no build script, no prost-build. Apache-2.0.
+prost = { version = "0.14.4", default-features = false, features = ["derive", "std"] }
+proptest = { version = "1.11.0", default-features = false, features = ["std"] }
+# YAML front-end of brisvox-server agent definitions. A pure-Rust YAML 1.2
+# event parser (no unsafe) whose every event carries its line and column, so YAML definitions
+# get the same positioned errors as TOML. MIT OR Apache-2.0.
+saphyr-parser = "0.2.1"
+# JSON Schema of the agent definition file (`brisvox-server --print-schema`), derived from
+# the config types behind the server's optional `schema` feature. MIT.
+schemars = "1.2.3"
+serde = { version = "1.0.229", features = ["derive", "rc"] }
+serde_json = "1.0.151"
+# The span-carrying wrapper `toml::Spanned` is `serde_spanned::Spanned`; its `de` module lets the
+# YAML front-end fill the same spans. Already in the tree through `toml`. MIT OR
+# Apache-2.0.
+serde_spanned = { version = "1.1.2", default-features = false, features = ["std", "serde"] }
+sysinfo = { version = "0.39.6", default-features = false, features = ["system"] }
+thiserror = "2.0.21"
+tokio = { version = "1.53.2", default-features = false }
+tokio-util = "0.7.19"
+# Agent definition files of brisvox-server. TOML 1.1 parser with serde and span info for
+# precise errors; no `display` (the server never writes TOML). MIT OR Apache-2.0.
+toml = { version = "1.1.8", default-features = false, features = ["std", "serde", "parse"] }
+tracing = "0.1.44"
+tracing-subscriber = "0.3.23"
+
+brisvox-core = { path = "crates/brisvox-core" }
+brisvox-audio = { path = "crates/brisvox-audio" }
+brisvox-inference = { path = "crates/brisvox-inference" }
+brisvox-agent = { path = "crates/brisvox-agent" }
+brisvox-agent-link = { path = "crates/brisvox-agent-link" }
+brisvox-providers = { path = "crates/brisvox-providers" }
+brisvox-transport = { path = "crates/brisvox-transport" }
+brisvox-engine = { path = "crates/brisvox-engine" }
+brisvox-server = { path = "crates/brisvox-server" }
+brisvox-sim = { path = "crates/brisvox-sim" }
+
+[workspace.lints.rust]
+unsafe_code = "deny"
+unused_must_use = "deny"
+missing_docs = "deny"
+rust_2018_idioms = { level = "deny", priority = -1 }
+
+# Panicking constructs are denied in library code. Tests are exempted via clippy.toml
+# (`allow-*-in-tests`); `todo!`/`unimplemented!` stay denied everywhere.
+[workspace.lints.clippy]
+unwrap_used = "deny"
+expect_used = "deny"
+panic = "deny"
+todo = "deny"
+unimplemented = "deny"
+indexing_slicing = "deny"
+dbg_macro = "deny"
+await_holding_lock = "deny"
+unreachable = "deny"
+unwrap_in_result = "deny"
+mem_forget = "deny"
+
+# Debug builds (`cargo build`, tests, clippy) keep only line tables for our crates and no debug
+# info for dependencies: full debug info made target/ grow to 270-350 GiB and saturated the disk
+# (PDB writes + antivirus scans) on Windows. Panics and test failures still name file:line.
+[profile.dev]
+debug = "line-tables-only"
+
+[profile.dev.package."*"]
+debug = false
+
+[profile.release]
+debug = "line-tables-only"
+lto = "thin"
+codegen-units = 1
+
+[profile.bench]
+inherits = "release"

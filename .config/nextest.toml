@@ -1,0 +1,16 @@
+# cargo-nextest configuration (used by scripts/verify.sh when cargo-nextest is installed).
+# nextest runs every test in its own process, which also isolates tracing's global
+# callsite-interest cache between tests.
+
+[profile.default]
+# A hung test (e.g. a paused-time wait without a timeout) fails after ~3 minutes instead of
+# blocking the whole run: reported slow at 60 s, killed after 3 periods.
+slow-timeout = { period = "60s", terminate-after = 3 }
+fail-fast = false
+
+# The 100-call chaos suites (brisvox-sim reference, brisvox-engine production pipeline)
+# take about 40 s alone in a debug build; under the full parallel workspace run they get twice
+# the default budget before nextest kills them.
+[[profile.default.overrides]]
+filter = 'test(a_hundred_chaotic_calls_stay_isolated_and_leave_nothing_behind)'
+slow-timeout = { period = "120s", terminate-after = 3 }

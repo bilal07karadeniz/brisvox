@@ -1,0 +1,98 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 720 538" width="720" height="538" role="img" aria-labelledby="latency-framework-t latency-framework-d">
+<title id="latency-framework-t">Latency as the load grows, framework only</title>
+<desc id="latency-framework-d">Line chart, latency versus concurrent calls (linear axis): brisvox from 1 to 2400 calls, p95 996 ms to 1800 ms; Pipecat 1.12 (tuned) from 1 to 120 calls, p95 1027 ms to 1257 ms; Pipecat 1.12 (defaults) from 1 to 80 calls, p95 1028 ms to 1377 ms</desc>
+<style>
+text{font-family:system-ui,-apple-system,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif}
+.bg{fill:#fcfcfb}.t1{fill:#0b0b0b}.t2{fill:#52514e}.grid{stroke:#e3e2de}.axis{stroke:#8a8983}
+.ring{stroke:#fcfcfb}.surf{fill:#fcfcfb}.ink{fill:#0b0b0b}.slo{stroke:#d03b3b}.slot{fill:#d03b3b}
+@media (prefers-color-scheme:dark){.bg{fill:#1a1a19}.t1{fill:#ffffff}.t2{fill:#c3c2b7}.grid{stroke:#383835}
+.axis{stroke:#7b7a74}.ring{stroke:#1a1a19}.surf{fill:#1a1a19}.ink{fill:#ffffff}.slo{stroke:#ec835a}.slot{fill:#ec835a}}
+.f-brisvox{fill:#2a78d6}.s-brisvox{stroke:#2a78d6}
+@media (prefers-color-scheme:dark){.f-brisvox{fill:#3987e5}.s-brisvox{stroke:#3987e5}}
+.f-pipecat{fill:#eb6834}.s-pipecat{stroke:#eb6834}
+@media (prefers-color-scheme:dark){.f-pipecat{fill:#d95926}.s-pipecat{stroke:#d95926}}
+.f-pipecat-default{fill:#eda100}.s-pipecat-default{stroke:#eda100}
+@media (prefers-color-scheme:dark){.f-pipecat-default{fill:#c98500}.s-pipecat-default{stroke:#c98500}}
+</style>
+<rect class="bg" x="0" y="0" width="720" height="538" rx="10"/>
+<text x="24" y="30" class="t1" font-size="17" font-weight="700">Latency as the load grows, framework only</text>
+<text x="24" y="49" class="t2" font-size="13">Voice-to-voice latency at each load step of the capacity ramp (one 4-CPU / 4 GiB container, mock</text>
+<text x="24" y="68" class="t2" font-size="13">providers, p95 voice-to-voice &lt;= 1200 ms). Solid: p95, dashed: p50. Hollow marker: the step missed the</text>
+<text x="24" y="87" class="t2" font-size="13">SLO, by latency or by failed calls (the p95 is over the turns that were answered, so a step that lost</text>
+<text x="24" y="106" class="t2" font-size="13">calls can show a low p95). A step beyond the axis is drawn at the top.</text>
+<rect x="24" y="124" width="12" height="12" rx="3" class="f-brisvox"/>
+<text x="42" y="134" class="t1" font-size="13">brisvox</text>
+<rect x="112.96000000000001" y="124" width="12" height="12" rx="3" class="f-pipecat"/>
+<text x="130.96" y="134" class="t1" font-size="13">Pipecat 1.12 (tuned)</text>
+<rect x="296.56000000000006" y="124" width="12" height="12" rx="3" class="f-pipecat-default"/>
+<text x="314.56000000000006" y="134" class="t1" font-size="13">Pipecat 1.12 (defaults)</text>
+<line x1="72" x2="580" y1="424" y2="424" class="grid" stroke-width="1"/>
+<text x="64" y="428" class="t2" font-size="12" text-anchor="end">900</text>
+<line x1="72" x2="580" y1="388" y2="388" class="grid" stroke-width="1"/>
+<text x="64" y="392" class="t2" font-size="12" text-anchor="end">1100</text>
+<line x1="72" x2="580" y1="352" y2="352" class="grid" stroke-width="1"/>
+<text x="64" y="356" class="t2" font-size="12" text-anchor="end">1300</text>
+<line x1="72" x2="580" y1="316" y2="316" class="grid" stroke-width="1"/>
+<text x="64" y="320" class="t2" font-size="12" text-anchor="end">1500</text>
+<line x1="72" x2="580" y1="280" y2="280" class="grid" stroke-width="1"/>
+<text x="64" y="284" class="t2" font-size="12" text-anchor="end">1700</text>
+<line x1="72" x2="580" y1="244" y2="244" class="grid" stroke-width="1"/>
+<text x="64" y="248" class="t2" font-size="12" text-anchor="end">1900</text>
+<line x1="72" x2="580" y1="208" y2="208" class="grid" stroke-width="1"/>
+<text x="64" y="212" class="t2" font-size="12" text-anchor="end">2100</text>
+<line x1="72" x2="580" y1="172" y2="172" class="grid" stroke-width="1"/>
+<text x="64" y="176" class="t2" font-size="12" text-anchor="end">2300</text>
+<line x1="72" x2="580" y1="424" y2="424" class="axis" stroke-width="1"/>
+<text x="72" y="442" class="t2" font-size="12" text-anchor="middle">0</text>
+<line x1="72" x2="72" y1="424" y2="428" class="axis" stroke-width="1"/>
+<text x="173.6" y="442" class="t2" font-size="12" text-anchor="middle">500</text>
+<line x1="173.6" x2="173.6" y1="424" y2="428" class="axis" stroke-width="1"/>
+<text x="275.2" y="442" class="t2" font-size="12" text-anchor="middle">1000</text>
+<line x1="275.2" x2="275.2" y1="424" y2="428" class="axis" stroke-width="1"/>
+<text x="376.8" y="442" class="t2" font-size="12" text-anchor="middle">1500</text>
+<line x1="376.8" x2="376.8" y1="424" y2="428" class="axis" stroke-width="1"/>
+<text x="478.4" y="442" class="t2" font-size="12" text-anchor="middle">2000</text>
+<line x1="478.4" x2="478.4" y1="424" y2="428" class="axis" stroke-width="1"/>
+<text x="580" y="442" class="t2" font-size="12" text-anchor="middle">2500</text>
+<line x1="580" x2="580" y1="424" y2="428" class="axis" stroke-width="1"/>
+<text x="326" y="462" class="t2" font-size="12" text-anchor="middle">concurrent calls</text>
+<text transform="translate(16 289) rotate(-90)" class="t2" font-size="12" text-anchor="middle">voice-to-voice latency (ms)</text>
+<line x1="72" x2="580" y1="370" y2="370" class="slo" stroke-width="1.5" stroke-dasharray="2 4"/>
+<text x="586" y="374" class="slot" font-size="12">SLO 1200 ms</text>
+<path d="M72.2 408.8 L82.2 409 L112.6 408.9 L153.3 408.9 L234.6 408.9 L315.8 408.9 L397.1 408.5 L478.4 405.4 L498.7 403.2 L519 401.5 L559.7 377.6" class="s-brisvox" fill="none" stroke-width="1.5" stroke-dasharray="5 4" stroke-linejoin="round"/>
+<path d="M72.2 406.7 L82.2 405.9 L112.6 405.8 L153.3 405.7 L234.6 405.7 L315.8 405.4 L397.1 402.6 L478.4 378.9 L498.7 380.4 L519 355.9 L559.7 262" class="s-brisvox" fill="none" stroke-width="2.5" stroke-linejoin="round"/>
+<circle cx="72.2" cy="406.7" r="4.5" class="f-brisvox ring" stroke-width="2"/>
+<circle cx="82.2" cy="405.9" r="4.5" class="f-brisvox ring" stroke-width="2"/>
+<circle cx="112.6" cy="405.8" r="4.5" class="f-brisvox ring" stroke-width="2"/>
+<circle cx="153.3" cy="405.7" r="4.5" class="f-brisvox ring" stroke-width="2"/>
+<circle cx="234.6" cy="405.7" r="4.5" class="f-brisvox ring" stroke-width="2"/>
+<circle cx="315.8" cy="405.4" r="4.5" class="f-brisvox ring" stroke-width="2"/>
+<circle cx="397.1" cy="402.6" r="4.5" class="f-brisvox ring" stroke-width="2"/>
+<circle cx="478.4" cy="378.9" r="4.5" class="f-brisvox ring" stroke-width="2"/>
+<circle cx="498.7" cy="380.4" r="4.5" class="f-brisvox ring" stroke-width="2"/>
+<circle cx="519" cy="355.9" r="4.5" class="surf s-brisvox" stroke-width="2"/>
+<circle cx="559.7" cy="262" r="4.5" class="surf s-brisvox" stroke-width="2"/>
+<text x="568.7" y="266" class="t1" font-size="12" font-weight="600">brisvox: 2100 calls</text>
+<path d="M72.2 404.8 L76.1 403.6 L80.1 400.9 L88.3 401.1 L90.3 401.5 L92.3 399.7 L96.4 399.9" class="s-pipecat" fill="none" stroke-width="1.5" stroke-dasharray="5 4" stroke-linejoin="round"/>
+<path d="M72.2 401.2 L76.1 399.4 L80.1 394.2 L88.3 372.6 L90.3 395.2 L92.3 154 L96.4 359.7" class="s-pipecat" fill="none" stroke-width="2.5" stroke-linejoin="round"/>
+<circle cx="72.2" cy="401.2" r="4.5" class="f-pipecat ring" stroke-width="2"/>
+<circle cx="76.1" cy="399.4" r="4.5" class="f-pipecat ring" stroke-width="2"/>
+<circle cx="80.1" cy="394.2" r="4.5" class="f-pipecat ring" stroke-width="2"/>
+<circle cx="88.3" cy="372.6" r="4.5" class="f-pipecat ring" stroke-width="2"/>
+<circle cx="90.3" cy="395.2" r="4.5" class="f-pipecat ring" stroke-width="2"/>
+<path d="M92.3 149L97.3 158H87.3Z" class="f-pipecat ring" stroke-width="1.5"/>
+<circle cx="96.4" cy="359.7" r="4.5" class="surf s-pipecat" stroke-width="2"/>
+<text x="105.4" y="363.7" class="t1" font-size="12" font-weight="600">Pipecat (tuned): 90 calls</text>
+<path d="M72.2 404.5 L76.1 401.4 L80.1 401.3 L84.2 401 L86.2 400.1 L88.3 393.7" class="s-pipecat-default" fill="none" stroke-width="1.5" stroke-dasharray="5 4" stroke-linejoin="round"/>
+<path d="M72.2 400.9 L76.1 398.5 L80.1 393.6 L84.2 396.9 L86.2 388.5 L88.3 338.2" class="s-pipecat-default" fill="none" stroke-width="2.5" stroke-linejoin="round"/>
+<circle cx="72.2" cy="400.9" r="4.5" class="f-pipecat-default ring" stroke-width="2"/>
+<circle cx="76.1" cy="398.5" r="4.5" class="f-pipecat-default ring" stroke-width="2"/>
+<circle cx="80.1" cy="393.6" r="4.5" class="f-pipecat-default ring" stroke-width="2"/>
+<circle cx="84.2" cy="396.9" r="4.5" class="f-pipecat-default ring" stroke-width="2"/>
+<circle cx="86.2" cy="388.5" r="4.5" class="f-pipecat-default ring" stroke-width="2"/>
+<circle cx="88.3" cy="338.2" r="4.5" class="surf s-pipecat-default" stroke-width="2"/>
+<text x="97.3" y="342.2" class="t1" font-size="12" font-weight="600">Pipecat (defaults): 70 calls</text>
+<text x="24" y="492" class="t2" font-size="12">Source: bench/results/{capacity-brisvox-linux-2026-10-13-run1.json,</text>
+<text x="24" y="508" class="t2" font-size="12">capacity-pipecat-tuned-linux-2026-10-13-run2.json, capacity-pipecat-linux-2026-10-13-run1.json} (steps[].v2v</text>
+<text x="24" y="524" class="t2" font-size="12">of the run with the median maximum).</text>
+</svg>

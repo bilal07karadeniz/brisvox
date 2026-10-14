@@ -1,0 +1,20 @@
+# Library code must not panic (see [workspace.lints.clippy]); tests may.
+allow-unwrap-in-tests = true
+allow-expect-in-tests = true
+allow-panic-in-tests = true
+allow-indexing-slicing-in-tests = true
+allow-dbg-in-tests = true
+
+# Time comes from the injected brisvox_core::Clock (CONTRIBUTING.md invariant). The Clock
+# implementations and tests that measure real time opt out locally with #[allow].
+disallowed-methods = [
+    { path = "std::time::Instant::now", reason = "use the injected brisvox_core::Clock::now" },
+    { path = "std::time::SystemTime::now", reason = "use the injected brisvox_core::Clock::wall" },
+    { path = "tokio::time::Instant::now", reason = "use the injected brisvox_core::Clock::now", allow-invalid = true },
+    { path = "tokio::time::sleep", reason = "use brisvox_core::Clock::sleep", allow-invalid = true },
+    { path = "tokio::time::sleep_until", reason = "use brisvox_core::Clock::sleep_until", allow-invalid = true },
+    { path = "std::time::Instant::elapsed", reason = "reads real time; use clock.now() - start" },
+    { path = "std::time::SystemTime::elapsed", reason = "reads real time; use the injected Clock" },
+    { path = "tokio::time::Instant::elapsed", reason = "reads time behind the Clock's back; use clock.now() - start", allow-invalid = true },
+    { path = "std::thread::sleep", reason = "blocks a tokio worker; use Clock::sleep (or the inference pool)" },
+]

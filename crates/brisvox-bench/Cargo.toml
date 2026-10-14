@@ -1,0 +1,48 @@
+[package]
+name = "brisvox-bench"
+description = "Brisvox benchmark harness"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[lib]
+path = "src/lib.rs"
+
+[[bin]]
+name = "brisvox-bench"
+path = "src/main.rs"
+
+[features]
+# The real models in the engine target: `--models DIR` swaps the energy VAD and the fixed
+# Smart Turn stub for the Silero VAD (tract) and Smart Turn v3.2 (ONNX Runtime), the same
+# features `brisvox-server` builds them with. Off by default (the ORT binaries are downloaded at
+# build time; Linux needs glibc >= 2.38, see the Dockerfile). `silero` (the ONNX Runtime VAD) is
+# only for the `model-cpu` backend comparison; the ORT binaries are linked for Smart Turn
+# anyway.
+models = ["brisvox-inference/silero", "brisvox-inference/silero-tract", "brisvox-inference/smart-turn-ort"]
+
+[dependencies]
+brisvox-agent = { workspace = true }
+brisvox-audio = { workspace = true }
+brisvox-core = { workspace = true }
+# The production pipeline with its simulator helpers (energy VAD setup, fixed Smart Turn
+# model): the `v2v --sim` target.
+brisvox-engine = { workspace = true, features = ["sim"] }
+brisvox-inference = { workspace = true }
+brisvox-providers = { workspace = true, features = ["net"] }
+brisvox-sim = { workspace = true }
+brisvox-transport = { workspace = true }
+bytes = { workspace = true }
+futures = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+sysinfo = { workspace = true }
+thiserror = { workspace = true }
+tokio = { workspace = true, features = ["macros", "net", "rt", "rt-multi-thread", "sync", "test-util", "time"] }
+tokio-tungstenite = { workspace = true }
+tokio-util = { workspace = true }
+
+[lints]
+workspace = true

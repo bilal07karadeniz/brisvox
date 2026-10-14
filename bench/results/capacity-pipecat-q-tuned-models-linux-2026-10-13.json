@@ -1,0 +1,62 @@
+{
+  "schema": "brisvox-bench/capacity-summary/1",
+  "system": "pipecat-q-tuned-models",
+  "date": "2026-10-13",
+  "label": "pipecat-q-tuned-models (4 CPUs, 4g, Linux)",
+  "environment": {
+    "os": "linux",
+    "arch": "x86_64",
+    "logical_cores": 8,
+    "release_build": true,
+    "not_linux_run": false,
+    "banner": null
+  },
+  "note": "server flags: -e OMP_NUM_THREADS=1 -e OPENBLAS_NUM_THREADS=1 -e MKL_NUM_THREADS=1; 4 Pipecat process(es); Linux kernel 6.6.87.2-microsoft-standard-WSL2; container --cpus=4 --cpuset-cpus=0-3 --memory=4g --memory-swap=4g --ulimit nofile=1048576:1048576 --network host, server cores 0-3, generator cores 4-11 (bench/capacity_linux.sh)",
+  "runs": [
+    {
+      "file": "capacity-pipecat-q-tuned-models-linux-2026-10-13-run1.json",
+      "max_concurrent": 20,
+      "first_failure": 25,
+      "limit": "found",
+      "failure_reason": "14 of 50 calls failed; 36 of 100 turns lost or not clean (1 talked over, 7 no response, 0 bot speaking; allowed 0.0 %); p95 V2V 1902 ms is above the limit 1200 ms (floor 950 ms + 250 ms)",
+      "p95_v2v_ms": 960,
+      "p50_v2v_ms": 806,
+      "server_cpu_cores": 0.99,
+      "mcores_per_call": 49.62,
+      "rss_peak_mb": 4153,
+      "generator_cpu_cores": 0.05,
+      "max_send_lateness_ms": 3
+    },
+    {
+      "file": "capacity-pipecat-q-tuned-models-linux-2026-10-13-run2.json",
+      "max_concurrent": 15,
+      "first_failure": 20,
+      "limit": "found",
+      "failure_reason": "4 of 40 calls failed; 8 of 80 turns lost or not clean (0 talked over, 0 no response, 0 bot speaking; allowed 0.0 %)",
+      "p95_v2v_ms": 876,
+      "p50_v2v_ms": 806,
+      "server_cpu_cores": 0.75,
+      "mcores_per_call": 49.83,
+      "rss_peak_mb": 2966,
+      "generator_cpu_cores": 0.04,
+      "max_send_lateness_ms": 2
+    },
+    {
+      "file": "capacity-pipecat-q-tuned-models-linux-2026-10-13-run3.json",
+      "max_concurrent": 20,
+      "first_failure": 25,
+      "limit": "found",
+      "failure_reason": "15 of 50 calls failed; 35 of 100 turns lost or not clean (0 talked over, 5 no response, 0 bot speaking; allowed 0.0 %)",
+      "p95_v2v_ms": 844,
+      "p50_v2v_ms": 806,
+      "server_cpu_cores": 0.99,
+      "mcores_per_call": 49.67,
+      "rss_peak_mb": 4279,
+      "generator_cpu_cores": 0.05,
+      "max_send_lateness_ms": 3
+    }
+  ],
+  "median_max_concurrent": 20,
+  "min_max_concurrent": 15,
+  "max_max_concurrent": 20
+}

@@ -1,0 +1,120 @@
+# brisvox
+
+> Rust-native, open-source engine for real-time voice agents (phone calls and browser sessions):
+> the caller talks, the agent listens (STT), thinks (an LLM with tools) and answers (TTS), and the
+> caller can interrupt at any moment. One `brisvox-server` process serves hundreds of concurrent
+> calls with one agent definition (a TOML or YAML file); your own tools run in your application
+> through the Python or TypeScript SDK, or in Rust.
+
+Paths below are relative to the repository root (https://github.com/bilal07karadeniz/brisvox).
+
+Things to know before writing anything:
+
+- An agent is a file (`BRISVOX_AGENT_FILE`): `[agent]` (name, language, system_prompt),
+  `[stt]`, `[llm]`, `[tts]` (each `provider = "..."` plus a `[<kind>.<provider>]` table),
+  optional `[turn]`, `[interruption]`, `[tools]`, `[s2s]`. Start from a file in
+  `examples/agents/` (every one is loaded by the test suite) rather than from memory.
+- The server itself is configured only by environment variables (`BRISVOX_*`, listed in
+  docs/OPERATIONS.md); API keys come from the environment variable a provider table names
+  (`api_key_env`), never from the agent file.
+- Providers are Cargo features: build with `--features all-providers` (or the one you need, e.g.
+  `provider-deepgram`); a definition naming a provider that is not compiled in is refused at
+  startup with the feature to turn on. Transports are features too: `webrtc`, `sip`.
+- Tools: declare them in your application with the Python SDK (`sdk/python`, package
+  `brisvox_agent`) or the TypeScript SDK (`sdk/typescript`, `@brisvox/agent`); the server
+  connects to your agent over the agent protocol (`BRISVOX_AGENT_URL`). Mark tools that change
+  the world as side effects: they never run speculatively and never run twice.
+- Listeners fail closed: off loopback the server refuses to start without authentication
+  (`BRISVOX_SESSION_SECRET` or a static token). For browsers use the WebRTC listener; it falls
+  back to WebSocket audio on the same port when WebRTC cannot connect (one-port hosts such as
+  Railway). On a website, use the browser module in `sdk/web` instead of writing audio code.
+- Validate before running: `brisvox-server check <agent file>` runs the real loader offline and
+  reports every problem with its key path and line (missing keys are warnings unless
+  `--require-secrets`).
+- The server does not read a `.env` file: export the variables (or use your platform's
+  environment settings).
+- Tools written in Rust run inside your own binary: a three-line `main` over
+  `brisvox_server::app::run_with_tools` (see examples/rust-tools).
+- Which Cargo features a goal needs (browser, phone, SIP, local speech, Rust tools) is the
+  "What to build with" table in README.md.
+
+## Start here
+
+- [Building with brisvox](skills/brisvox/SKILL.md): The workflow and the common traps in two pages (an Agent Skill)
+- [Introduction](book/src/introduction.md): What brisvox is and how the parts fit
+- [Run the server with an example agent](book/src/quickstart/server.md): Build the server, run an example agent, call it
+- [Write an agent with the Python or TypeScript SDK](book/src/quickstart/sdk-agent.md): Write an agent with your own tools in Python or TypeScript
+- [Docker and compose](book/src/quickstart/docker.md): Run with Docker and compose
+- [A fully local assistant](book/src/quickstart/local.md): A fully local assistant: sherpa-onnx, Ollama, Kokoro, nothing leaves the machine
+- [Examples](examples/README.md): The runnable examples: web assistant, phone receptionist, booking agent
+- [destek-tr.toml](examples/agents/destek-tr.toml): example agent file (Turkish support agent: Deepgram Nova-3 (STT) + Anthropic (LLM) + ElevenLabs (TTS))
+- [failover-en.toml](examples/agents/failover-en.toml): example agent file (English agent with a second provider per stage: when the primary is down, calls fail over to the secondary...)
+- [local-en.toml](examples/agents/local/local-en.toml): example agent file (A fully local English agent: sherpa-onnx streaming STT (CPU) + Ollama (LLM) + an OpenAI- compatible TTS server (Kokoro-FastAPI))
+- [local-tr.toml](examples/agents/local/local-tr.toml): example agent file (A fully local Turkish agent: sherpa-onnx + the community "seda" model (STT, CPU) + Ollama (LLM) + Chatterbox (multilingual TTS, GPU) through the...)
+- [local-kokoro.toml](examples/agents/local-kokoro.toml): example agent file (English agent with a LOCAL voice: Deepgram (STT, needs DEEPGRAM_API_KEY) + Ollama (LLM) + Kokoro-FastAPI (TTS))
+- [support-en.toml](examples/agents/support-en.toml): example agent file (English support agent: Deepgram (STT) + OpenAI (LLM) + Cartesia (TTS))
+- [telephony-en.toml](examples/agents/telephony-en.toml): example agent file (Phone agent (Twilio / Telnyx / SIP, 8 kHz G.711 calls): AssemblyAI (STT) + Groq through the OpenAI-compatible adapter (LLM) + Deepgram Aura (TTS))
+
+## Configuration
+
+- [Agent definitions (configuration)](docs/CONFIG.md): Every agent-file key: agent, stt, llm, tts, turn, interruption, tools, s2s, TOML and YAML
+- [Operating brisvox-server](docs/OPERATIONS.md): Every server environment variable, listeners, health, metrics, limits, shutdown
+- [Providers](docs/PROVIDERS.md): Which STT/LLM/TTS/S2S providers exist, their config names and Cargo features
+
+## Tools
+
+- [Tools](book/src/concepts/tools.md): Tool calling in short: read-only vs side-effect, fillers, barge-in
+- [Tool-calling contract](docs/TOOLS.md): The tool-calling contract: parallel and chained calls, retries, idempotency, confirmation
+- [brisvox-agent (Python SDK)](sdk/python/README.md): Python SDK: declare tools, run the agent server, events
+- [@brisvox/agent (TypeScript SDK)](sdk/typescript/README.md): TypeScript SDK: declare tools, run the agent server, events
+- [Rust tools in your own server binary](examples/rust-tools/README.md): Rust tools inside your own binary (brisvox_server::app::run_with_tools)
+- [Brisvox agent protocol, version 1](docs/AGENT_PROTOCOL.md): The wire protocol between the server and an SDK agent (for a new SDK)
+
+## Connecting callers
+
+- [@brisvox/web](sdk/web/README.md): Browser client module for websites: WebRTC with automatic WebSocket fallback, Next.js example
+- [Brisvox websocket protocol, version 1](docs/WEBSOCKET_PROTOCOL.md): Generic websocket audio protocol (your own client or the browser fallback)
+- [WebRTC stack for a server-side Rust voice agent — TRANSPORT](docs/providers/webrtc.md): Browser calls over WebRTC: WHIP signaling, ICE, TURN, the WebSocket fallback
+- [RTVI: connecting a Pipecat client to brisvox](docs/RTVI.md): Connect Pipecat's RTVI client SDKs to brisvox
+- [Telephony: DTMF, call transfer, answering machines](docs/TELEPHONY.md): Phone calls: DTMF, transfer, answering machines; Twilio, Telnyx, SIP
+- [Twilio Media Streams (bidirectional) — telephony transport](docs/providers/twilio.md): Twilio Media Streams details and setup
+- [Telnyx Media Streaming (bidirectional) — telephony transport](docs/providers/telnyx.md): Telnyx media streaming details and setup
+- [SIP / RTP — telephony transport (Rust stack selection)](docs/providers/sip.md): SIP trunk listener (UDP/TCP/TLS, SRTP)
+
+## Deploying
+
+- [Deploying brisvox-server in a container](docs/DEPLOY.md): Containers, one-port HTTPS hosts without UDP (Railway as an example), TURN, TLS, scaling
+- [Security: threat model and secure deployment](docs/SECURITY.md): Threat model and the secure deployment checklist (tokens, TLS, limits)
+- [Recording and privacy](docs/PRIVACY.md): Recording, encryption at rest, retention, redaction
+
+## Providers
+
+- [Deepgram — STT (live streaming over WebSocket)](docs/providers/deepgram.md): Deepgram STT
+- [AssemblyAI — STT (real-time streaming over WebSocket, v3 API)](docs/providers/assemblyai.md): AssemblyAI STT
+- [Gladia — STT (live / real-time, REST init + WebSocket)](docs/providers/gladia.md): Gladia STT
+- [sherpa-onnx — self-hosted streaming STT (WebSocket server)](docs/providers/sherpa-onnx.md): sherpa-onnx local streaming STT (self-hosted)
+- [OpenAI Realtime transcription protocol and its dialects — STT (WebSocket)](docs/providers/openai-realtime-stt.md): OpenAI Realtime transcription and local dialects (Speaches, vLLM, NVIDIA NIM)
+- [OpenAI — LLM (streaming chat with tool calling)](docs/providers/openai.md): OpenAI LLM
+- [OpenAI-compatible Chat Completions — LLM (Groq, Together AI, Fireworks AI, vLLM, Ollama, OpenRouter)](docs/providers/openai-compatible.md): OpenAI-compatible LLMs: OpenRouter, Groq, Together, Fireworks, vLLM, Ollama
+- [Anthropic — LLM (Claude Messages API: streaming, tool use, prompt caching)](docs/providers/anthropic.md): Anthropic Claude LLM
+- [Google Gemini API — LLM (streaming generateContent with function calling)](docs/providers/gemini.md): Google Gemini LLM
+- [Cartesia — TTS (WebSocket, Sonic)](docs/providers/cartesia.md): Cartesia TTS
+- [ElevenLabs — TTS (WebSocket: stream-input and multi-stream-input)](docs/providers/elevenlabs.md): ElevenLabs TTS
+- [Deepgram Aura — TTS (WebSocket `/v1/speak`)](docs/providers/deepgram-aura.md): Deepgram Aura TTS
+- [OpenAI-compatible speech (local TTS servers)](docs/providers/openai-speech.md): Local TTS servers over /v1/audio/speech: Kokoro, Chatterbox, Speaches, vLLM-Omni
+- [Local speech servers — STT + TTS (self-hosted survey)](docs/providers/local-speech.md): Survey of local STT/TTS servers: latency, Turkish, licenses
+- [Speech-to-speech models as a stage](docs/S2S.md): Speech-to-speech models (OpenAI Realtime, Gemini Live) as one stage
+- [OpenAI Realtime — speech-to-speech (S2S)](docs/providers/openai-realtime.md): OpenAI Realtime speech-to-speech
+- [Gemini Live — speech-to-speech (S2S)](docs/providers/gemini-live.md): Gemini Live speech-to-speech
+- [Telephony call control (DTMF, transfer, voicemail/AMD) — Twilio and Telnyx](docs/providers/call-control.md): Telephony call control on Twilio and Telnyx
+
+## Optional
+
+- [Turkish quality pass](docs/TURKISH.md): Turkish quality: normalisation, numbers, providers that handle Turkish well
+- [Architecture](docs/ARCHITECTURE.md): Architecture and design decisions (crates, frames, epochs, pools)
+- [Production voice pipeline](docs/PIPELINE.md): Production pipeline design in depth
+- [Latency](docs/LATENCY.md): Latency budget, measurements and capacity benchmarks
+- [Testing strategy](docs/TESTING.md): Testing strategy, simulations, live tests
+- [Errors and tracing conventions](docs/TRACING.md): Error and tracing conventions for contributors
+- [Risk register (each risk → mitigation → proving test)](docs/RISKS.md): Risk register
+- [Benchmark results](book/src/benchmarks.md): Benchmark results against Pipecat

@@ -1,0 +1,183 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Brisvox WebRTC demo</title>
+<style>
+  :root {
+    --bg: #f6f7f9; --card: #ffffff; --text: #1b1f27; --muted: #5d6675; --line: #d9dde4;
+    --accent: #1f6feb; --accent-text: #ffffff; --danger: #c62828; --ok: #1b7f3b;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #12151b; --card: #1b2029; --text: #e8ebf0; --muted: #9aa4b2; --line: #2d3441;
+      --accent: #4c8dff; --accent-text: #0b1220; --danger: #ff6b6b; --ok: #4cc26b;
+    }
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; padding: 24px 16px; background: var(--bg); color: var(--text);
+    font: 16px/1.5 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  }
+  main { max-width: 560px; margin: 0 auto; }
+  h1 { font-size: 1.3rem; margin: 0 0 4px; }
+  p.lead { margin: 0 0 20px; color: var(--muted); }
+  .card {
+    background: var(--card); border: 1px solid var(--line); border-radius: 10px;
+    padding: 16px; margin-bottom: 16px;
+  }
+  label { display: block; font-size: 0.85rem; color: var(--muted); margin-bottom: 4px; }
+  input[type=password], input[type=text] {
+    width: 100%; padding: 8px 10px; border: 1px solid var(--line); border-radius: 6px;
+    background: var(--bg); color: var(--text); font: inherit;
+  }
+  .row { display: flex; gap: 8px; margin-top: 12px; flex-wrap: wrap; }
+  button {
+    font: inherit; padding: 8px 16px; border-radius: 6px; border: 1px solid var(--line);
+    background: var(--card); color: var(--text); cursor: pointer;
+  }
+  button.primary { background: var(--accent); color: var(--accent-text); border-color: var(--accent); }
+  button:disabled { opacity: 0.5; cursor: default; }
+  #state { font-weight: 600; }
+  #state[data-s="connected"] { color: var(--ok); }
+  #state[data-s="failed"] { color: var(--danger); }
+  .meter { height: 8px; background: var(--line); border-radius: 4px; overflow: hidden; margin-top: 10px; }
+  .meter > div { height: 100%; width: 0; background: var(--accent); transition: width 80ms linear; }
+  .meter.bot > div { background: var(--ok); }
+  pre#log {
+    margin: 0; max-height: 220px; overflow: auto; font-size: 0.8rem; color: var(--muted);
+    white-space: pre-wrap; word-break: break-word;
+  }
+</style>
+</head>
+<body>
+<main>
+  <h1>Brisvox WebRTC demo</h1>
+  <p class="lead">Talk to the voice agent through your microphone. Signaling is a single
+  HTTP request (WHIP style) to <code>__WHIP_PATH__</code>. If WebRTC media cannot connect, the
+  page switches to a WebSocket on this same port.</p>
+
+  <section class="card">
+    <div>State: <span id="state" data-s="idle">Idle</span></div>
+    <div class="meter" aria-label="microphone level"><div id="level"></div></div>
+    <div class="meter bot" aria-label="assistant level"><div id="botLevel"></div></div>
+    <div class="row">
+      <button id="start" class="primary" type="button">Start call</button>
+      <button id="stop" type="button" disabled>Hang up</button>
+    </div>
+  </section>
+
+  <section class="card">
+    <label for="token">Bearer token (a session token minted by your backend, or the static dev token; only if the server requires one)</label>
+    <input id="token" type="password" autocomplete="off">
+  </section>
+
+  <section class="card">
+    <pre id="log" aria-live="polite"></pre>
+  </section>
+  <audio id="remote" autoplay></audio>
+</main>
+<script type="module" nonce="__NONCE__">
+// The call itself (WebRTC, the WebSocket fallback, microphone, playback, barge-in) is the shared
+// browser module the server also serves at __MODULE_PATH__ (sdk/web/brisvox-call.js).
+import { BrisvoxCall } from "__MODULE_PATH__";
+
+const WHIP = "__WHIP_PATH__";
+const WS = "__WS_PATH__";                      // the WebSocket fallback path; empty when the server turned it off
+const $ = (id) => document.getElementById(id);
+// For testing: ?force=ws skips WebRTC, ?force=webrtc never falls back, ?fallback_ms=N is how
+// long WebRTC gets to connect before the page switches to the WebSocket (default 4000).
+const query = new URLSearchParams(location.search);
+const FORCE = query.get("force");
+const FALLBACK_MS = Math.min(30000, Math.max(500, Number(query.get("fallback_ms")) || 4000));
+const stateEl = $("state"), logEl = $("log"), levelEl = $("level"), botLevelEl = $("botLevel");
+const startBtn = $("start"), stopBtn = $("stop"), tokenEl = $("token");
+let call = null, raf = 0;
+
+const log = (text) => {
+  const t = new Date().toLocaleTimeString();
+  logEl.textContent += `${t}  ${text}
+`;
+  logEl.scrollTop = logEl.scrollHeight;
+};
+const LABELS = { idle: "Idle", connecting: "Connecting", failed: "Failed", ended: "Call ended" };
+// `via` names the transport of a connected call: "WebRTC" or "WebSocket fallback".
+const setState = (s, via) => {
+  stateEl.textContent = s === "connected" ? `Connected (${via})` : LABELS[s] || s;
+  stateEl.dataset.s = s;
+  stateEl.dataset.transport = s === "connected" ? via : "";
+};
+
+// Level meters: what the module measures on the microphone and on what the assistant says.
+function meters() {
+  if (call) {
+    const levels = call.getLevels();
+    levelEl.style.width = Math.round(levels.mic * 100) + "%";
+    botLevelEl.style.width = Math.round(levels.bot * 100) + "%";
+  }
+  raf = requestAnimationFrame(meters);
+}
+
+function reset() {
+  cancelAnimationFrame(raf);
+  levelEl.style.width = "0";
+  botLevelEl.style.width = "0";
+  startBtn.disabled = false;
+  stopBtn.disabled = true;
+}
+
+function onEvent(event) {
+  switch (event.type) {
+    case "state":
+      if (event.state === "connected") {
+        // A session token is single use and is spent once a call connects: do not offer it again.
+        if (tokenEl.value.startsWith("v1.")) tokenEl.value = "";
+        setState("connected", event.transport === "webrtc" ? "WebRTC" : "WebSocket fallback");
+        stopBtn.disabled = false;
+      } else {
+        setState(event.state);
+        if (event.state === "ended" || event.state === "failed") {
+          if (event.reason) log(`call ${event.state}: ${event.reason}`);
+          reset();
+        }
+      }
+      break;
+    case "fallback": log(`WebSocket fallback: ${event.reason}`); break;
+    case "transport": log(`call carried over ${event.transport}`); break;
+    case "notice": log(`server ${event.fatal ? "error" : "notice"} ${event.code}: ${event.message}`); break;
+    case "error": log(`error: ${event.message}`); break;
+    case "log": log(event.text); break;
+    default: break;
+  }
+}
+
+async function start() {
+  startBtn.disabled = true;
+  logEl.textContent = "";
+  call = new BrisvoxCall({
+    serverUrl: location.origin,
+    whipPath: WHIP,
+    wsPath: WS || null,
+    tokenProvider: () => tokenEl.value || undefined,
+    transport: FORCE === "ws" ? "websocket" : FORCE === "webrtc" ? "webrtc" : "auto",
+    fallbackAfterMs: FALLBACK_MS,
+    audioElement: $("remote"),
+    onEvent,
+  });
+  meters();
+  try {
+    await call.start();
+  } catch (_) { /* reported through onEvent */ }
+}
+
+async function stop() {
+  stopBtn.disabled = true;
+  if (call) await call.hangup();
+}
+
+startBtn.addEventListener("click", start);
+stopBtn.addEventListener("click", stop);
+</script>
+</body>
+</html>

@@ -1,0 +1,60 @@
+# Live V2V comparison agent: the providers brisvox and the Pipecat baseline were
+# compared on with real keys. BOTH systems run this file (brisvox-server as BRISVOX_AGENT_FILE,
+# the baseline as `bot.py --agent`). Differences to agent.toml (the mock agent):
+#   - the LLM is an OpenAI-compatible Chat Completions server (OpenRouter), because that is the
+#     one LLM both systems can reach with the same key and model: brisvox `openai_compatible`,
+#     Pipecat `OpenAILLMService(base_url=...)`;
+#   - the prompt asks for one-sentence answers (short TTS, small LLM bill);
+#   - no keyterms (the prompt names no product).
+# Keys are never in this file. Set `tts.voice` to a real Cartesia voice id for a run (scripts keep
+# a private copy with the id from CARTESIA_VOICE_ID; a voice id is not a secret, but it is the
+# owner's choice). The LLM key is OPENAI_COMPATIBLE_API_KEY.
+
+[agent]
+name = "bench-live-en"
+language = "en"
+system_prompt = """
+You are the voice assistant of Example Shop. Answer in exactly one short spoken sentence.
+Never read out URLs or long numbers digit by digit unless asked.
+"""
+
+[turn]
+policy = "adaptive"          # Smart Turn v3.2 decides; fallback_silence_ms ends an undecided pause
+fallback_silence_ms = 3000
+
+[interruption]
+preset = "recommended"
+backchannels = ["en"]
+
+[speculation]
+enabled = false              # apples to apples
+
+[stt]
+provider = "deepgram"
+api_key_env = "DEEPGRAM_API_KEY"
+
+[stt.deepgram]
+model = "nova-3"
+endpointing_ms = 300
+
+[llm]
+provider = "openai_compatible"
+api_key_env = "OPENAI_COMPATIBLE_API_KEY"
+
+[llm.openai_compatible]
+base_url = "https://openrouter.ai/api/v1"
+model = "openai/gpt-6-luna"
+max_tokens = 120
+reasoning_effort = "none"  # openai/gpt-6-luna thinks by default (+1 s first token); voice turns must not
+# OpenRouter routing: the same upstream for every request, no silent fallback. "openai" is the
+# model vendor's own endpoint (its base slug matches the standard tier; openai/fast and openai/flex
+# are separate service-tier endpoints that a base slug does not select). Both systems send
+# {"provider": {"order": ["openai"], "allow_fallbacks": false}}.
+openrouter_order = ["openai"]
+openrouter_allow_fallbacks = false
+
+[tts]
+provider = "cartesia"
+api_key_env = "CARTESIA_API_KEY"
+voice = "replace-with-a-cartesia-voice-id"
+sample_rate = 24000

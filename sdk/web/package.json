@@ -1,0 +1,32 @@
+{
+  "name": "@brisvox/web",
+  "version": "0.1.0",
+  "description": "Browser client for Brisvox voice calls: WebRTC with an automatic WebSocket fallback, microphone capture, playback and barge-in, in one dependency-free ES module.",
+  "license": "MIT OR Apache-2.0",
+  "type": "module",
+  "main": "./brisvox-call.js",
+  "module": "./brisvox-call.js",
+  "types": "./brisvox-call.d.ts",
+  "exports": {
+    ".": {
+      "types": "./brisvox-call.d.ts",
+      "default": "./brisvox-call.js"
+    },
+    "./brisvox-call.js": {
+      "types": "./brisvox-call.d.ts",
+      "default": "./brisvox-call.js"
+    }
+  },
+  "files": [
+    "brisvox-call.js",
+    "brisvox-call.d.ts",
+    "README.md"
+  ],
+  "sideEffects": false,
+  "engines": {
+    "node": ">=20.4"
+  },
+  "scripts": {
+    "test": "node scripts/run-tests.mjs"
+  }
+}

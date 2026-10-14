@@ -1,0 +1,6 @@
+# Pipecat baseline bot. Python 3.13 (Pipecat 1.12.0 needs >= 3.11).
+# Direct dependencies, pinned exactly; requirements.lock.txt pins the whole tree
+# (uv pip compile requirements.txt --universal --python-version 3.13 -o requirements.lock.txt).
+# Pipecat 1.12.0 was the newest release on PyPI on 2026-10-13 (uploaded 2026-09-26).
+pipecat-ai[deepgram,websocket]==1.12.0
+uvicorn==0.54.0

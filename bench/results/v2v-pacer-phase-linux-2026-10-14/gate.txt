@@ -1,0 +1,1 @@
+quiet gate passed after 0s: no cargo/rustc/link.exe on Windows, WSL load1 0.31 (< 1.0)

@@ -1,0 +1,73 @@
+# A fully local English agent: sherpa-onnx streaming STT (CPU) + Ollama (LLM) + an OpenAI-
+# compatible TTS server (Kokoro-FastAPI). No API key, no cloud. Reference: docs/CONFIG.md,
+# docs/providers/sherpa-onnx.md, docs/providers/local-speech.md. Step by step, with the browser
+# page: book/src/quickstart/local.md ("A fully local assistant"). Build the server with
+# `--features provider-sherpa-onnx,provider-openai-compatible,provider-openai-speech,smart-turn-ort`
+# (add `webrtc` for the browser page; without `smart-turn-ort` and the model from
+# scripts/models/fetch_models.py the adaptive turn policy ends every turn at its 3 s fallback).
+#
+# Ports: English sherpa-onnx on 6007, the Turkish agent (local-tr.toml) on 6006, so both can run.
+#
+# What to run first (commands from the projects' own documentation; none of them is started by
+# Brisvox):
+#
+#   STT   git clone https://github.com/k2-fsa/sherpa-onnx        (for python-api-examples/)
+#         pip install sherpa-onnx websockets numpy
+#         wget https://github.com/k2-fsa/sherpa-onnx/releases/download/asr-models/sherpa-onnx-streaming-zipformer-en-2023-06-26.tar.bz2
+#         tar xvf sherpa-onnx-streaming-zipformer-en-2023-06-26.tar.bz2
+#         python3 ./python-api-examples/streaming_server.py \
+#           --tokens  ./sherpa-onnx-streaming-zipformer-en-2023-06-26/tokens.txt \
+#           --encoder ./sherpa-onnx-streaming-zipformer-en-2023-06-26/encoder-epoch-99-avg-1-chunk-16-left-128.int8.onnx \
+#           --decoder ./sherpa-onnx-streaming-zipformer-en-2023-06-26/decoder-epoch-99-avg-1-chunk-16-left-128.onnx \
+#           --joiner  ./sherpa-onnx-streaming-zipformer-en-2023-06-26/joiner-epoch-99-avg-1-chunk-16-left-128.int8.onnx \
+#           --port 6007
+#   LLM   ollama pull gemma4:12b-it-qat   (the Linux package already runs `ollama serve` as a service;
+#                                         start `ollama serve` yourself only if nothing is listening on 11434)
+#   TTS   docker run --gpus all -p 127.0.0.1:8880:8880 ghcr.io/remsky/kokoro-fastapi-gpu:latest
+#         (RTX 50xx: tag latest-cu128; no GPU: image kokoro-fastapi-cpu; docs/providers/openai-speech.md)
+#
+# The English zipformer prints UPPERCASE text without punctuation; the LLM copes with it.
+
+[agent]
+name = "local-en"
+language = "en"
+system_prompt = """
+You are a friendly voice assistant running fully on this machine. Answer in one or two short
+spoken sentences.
+"""
+
+[stt]
+provider = "sherpa_onnx"
+# No api_key_env: the sherpa-onnx servers have no authentication.
+
+[stt.sherpa_onnx]
+base_url = "ws://127.0.0.1:6007"
+sample_rate = 16000          # the model's training rate (the Python server does not resample)
+finalize_timeout_ms = 1500   # how long to wait for the end of the `Done` exchange
+# finalize_padding_ms = 300   # silence sent before `Done` so the last word is not cut (0 for the C++ server)
+
+[llm]
+provider = "openai_compatible"
+
+[llm.openai_compatible]
+preset = "ollama"
+# The one local model that called tools correctly in all runs (docs/TOOLS.md, "Local models through
+# Ollama"): ~7.7 GB of GPU memory, first sentence in ~270 ms. Smaller: "gemma4:e4b-it-qat" (3.1 GB,
+# ~160 ms, answers fine but fumbles tool calls) or "qwen3.5:4b"; give those no tools.
+model = "gemma4:12b-it-qat"
+max_tokens = 200
+# Required for the models above: without it a thinking model spends the first seconds (or the whole
+# token budget) on hidden reasoning. Ollama's /v1 endpoint ignores `think = false` but honours this.
+reasoning_effort = "none"
+
+[tts]
+provider = "openai_speech"   # POST /v1/audio/speech, streamed 24 kHz PCM
+voice = "af_heart"
+sample_rate = 24000          # optional: the server delivers 24 kHz, so unset or exactly 24000 (anything else is an error)
+
+[tts.openai_speech]
+preset = "kokoro"            # model "kokoro", stream, and the background model warm-up below
+base_url = "http://127.0.0.1:8880/v1"
+# warm_text = "Hi."          # tiny synthesis at call start, once a minute at most; "" turns it off
+# warm_interval_ms = 60000
+

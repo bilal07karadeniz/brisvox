@@ -1,0 +1,15 @@
+# livekit-server for the capacity benchmark (a throwaway server, dev keys, no TLS, no TURN).
+# Everything not listed is the server's default. Loopback only: the agent worker and the load
+# generator run on the same host network (docker --network host).
+port: 7880
+bind_addresses:
+  - 127.0.0.1
+rtc:
+  tcp_port: 7881
+  udp_port: 7882          # one muxed UDP port for all media instead of a 50000-60000 range
+  use_external_ip: false
+  node_ip: 127.0.0.1
+keys:
+  devkey: devsecret-for-the-brisvox-capacity-benchmark-0123456789
+logging:
+  level: warn

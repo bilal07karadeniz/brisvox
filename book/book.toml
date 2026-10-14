@@ -1,0 +1,19 @@
+[book]
+title = "brisvox"
+description = "A Rust-native, open-source real-time voice agent engine."
+authors = ["brisvox contributors"]
+language = "en"
+src = "src"
+
+[build]
+# Out of the book's own directory, next to cargo's output (git-ignored).
+build-dir = "../target/book"
+create-missing = false
+
+[output.html]
+default-theme = "light"
+preferred-dark-theme = "navy"
+git-repository-url = "https://github.com/bilal07karadeniz/brisvox"
+# The configuration, telephony, operations, benchmark and reference chapters are the repository's
+# docs/*.md included verbatim (one source of truth). Keep their ASCII quotes and dashes as written.
+smart-punctuation = false

@@ -1,0 +1,62 @@
+{
+  "schema": "brisvox-bench/capacity-summary/1",
+  "system": "pipecat",
+  "date": "2026-10-13",
+  "label": "pipecat (4 CPUs, 4g, Linux)",
+  "environment": {
+    "os": "linux",
+    "arch": "x86_64",
+    "logical_cores": 8,
+    "release_build": true,
+    "not_linux_run": false,
+    "banner": null
+  },
+  "note": "Linux kernel 6.6.87.2-microsoft-standard-WSL2; container --cpus=4 --cpuset-cpus=0-3 --memory=4g --memory-swap=4g --ulimit nofile=1048576:1048576 --network host, server cores 0-3, generator cores 4-11 (bench/capacity_linux.sh)",
+  "runs": [
+    {
+      "file": "capacity-pipecat-linux-2026-10-13-run1.json",
+      "max_concurrent": 70,
+      "first_failure": 80,
+      "limit": "found",
+      "failure_reason": "p95 V2V 1376 ms is above the limit 1200 ms (floor 950 ms + 250 ms)",
+      "p95_v2v_ms": 1097,
+      "p50_v2v_ms": 1033,
+      "server_cpu_cores": 2.88,
+      "mcores_per_call": 41.2,
+      "rss_peak_mb": 1604,
+      "generator_cpu_cores": 0.13,
+      "max_send_lateness_ms": 4
+    },
+    {
+      "file": "capacity-pipecat-linux-2026-10-13-run2.json",
+      "max_concurrent": 70,
+      "first_failure": 80,
+      "limit": "found",
+      "failure_reason": "p95 V2V 1256 ms is above the limit 1200 ms (floor 950 ms + 250 ms)",
+      "p95_v2v_ms": 1089,
+      "p50_v2v_ms": 1032,
+      "server_cpu_cores": 2.86,
+      "mcores_per_call": 40.86,
+      "rss_peak_mb": 1604,
+      "generator_cpu_cores": 0.13,
+      "max_send_lateness_ms": 2
+    },
+    {
+      "file": "capacity-pipecat-linux-2026-10-13-run3.json",
+      "max_concurrent": 70,
+      "first_failure": 80,
+      "limit": "found",
+      "failure_reason": "32 of 320 turns lost or not clean (32 talked over, 0 no response, 0 bot speaking; allowed 0.0 %); p95 V2V 1305 ms is above the limit 1200 ms (floor 950 ms + 250 ms)",
+      "p95_v2v_ms": 1064,
+      "p50_v2v_ms": 1031,
+      "server_cpu_cores": 2.88,
+      "mcores_per_call": 41.12,
+      "rss_peak_mb": 1584,
+      "generator_cpu_cores": 0.12,
+      "max_send_lateness_ms": 3
+    }
+  ],
+  "median_max_concurrent": 70,
+  "min_max_concurrent": 70,
+  "max_max_concurrent": 70
+}

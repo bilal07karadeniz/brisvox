@@ -1,0 +1,47 @@
+# Web voice assistant over WebRTC: Deepgram (STT) + OpenAI (LLM) + Cartesia (TTS), no tools.
+# Reference: docs/CONFIG.md. README.md in this directory walks through running it with the
+# static page in web/.
+#
+# Keys come from the environment (`api_key_env` names the variable), never from this file.
+# Copy this file, change the prompt and the voice, and point BRISVOX_AGENT_FILE at your copy.
+
+[agent]
+name = "web-assistant"
+language = "en"
+system_prompt = """
+You are a friendly voice assistant on a web page. The user talks to you through their browser
+microphone and hears you through their speakers; they speak first. Answer in one or two short spoken sentences;
+no markdown, no lists, no emoji, nothing that only makes sense on a screen. Never read URLs or
+long numbers out digit by digit unless asked. If you did not understand, ask the user to say it
+again. You have no tools and no access to the internet: say so instead of guessing.
+"""
+
+[turn]
+policy = "adaptive"          # Smart Turn decides (build the server with smart-turn-ort, README.md)
+fallback_silence_ms = 3000
+
+[interruption]
+preset = "recommended"       # the user can talk over the assistant; echo cancellation is the browser's
+backchannels = ["en"]
+
+[stt]
+provider = "deepgram"
+api_key_env = "DEEPGRAM_API_KEY"
+
+[stt.deepgram]
+model = "nova-3"
+endpointing_ms = 300
+
+[llm]
+provider = "openai"
+api_key_env = "OPENAI_API_KEY"
+
+[llm.openai]
+reasoning_effort = "low"
+max_output_tokens = 400
+
+[tts]
+provider = "cartesia"
+api_key_env = "CARTESIA_API_KEY"
+voice = "replace-with-a-cartesia-voice-id"
+sample_rate = 24000          # the WebRTC listener plays 24 kHz bot audio (Opus on the wire)

@@ -1,0 +1,61 @@
+# Load baselines on Linux confined to 4 cores (GitHub's ubuntu runners have 4 vCPUs).
+# Manual only: Actions > bench-linux > Run workflow. Results are uploaded as an artifact; copy
+# them into bench/results/ (linux-*.md) when they look sane. No secrets needed.
+# Third-party actions are pinned to commit SHAs (version in the trailing comment).
+name: bench-linux
+
+on:
+  workflow_dispatch:
+    inputs:
+      sessions:
+        description: "sim-load concurrent calls (comma list; add more to find the saturation point)"
+        default: "10,100,300,500,1000"
+        required: true
+
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: always
+  CARGO_INCREMENTAL: "0"
+
+jobs:
+  bench:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Install pinned toolchain
+        run: |
+          rustup toolchain install
+          nproc && lscpu | head -20
+
+      - name: Build
+        run: cargo build --release --locked -p brisvox-bench
+
+      # taskset pins the whole process (tokio workers, probes, pool threads) to CPUs 0-3.
+      - name: sim-load (4 cores, 4 workers)
+        env:
+          SESSIONS: ${{ inputs.sessions }} # via env, never interpolated into the script
+        run: |
+          mkdir -p out
+          taskset -c 0-3 target/release/brisvox-bench sim-load --workers 4 \
+            --sessions "$SESSIONS" --out out/linux-sim-baseline.md \
+            || echo "sim-load reported an invalid run (see log)"
+
+      - name: infer-load (4 cores, 4 pool threads)
+        run: |
+          taskset -c 0-3 target/release/brisvox-bench infer-load --seconds 4 \
+            --costs-us 100,200,250,280 --out out/linux-inference-pool.md
+
+      - name: resample
+        run: taskset -c 0 target/release/brisvox-bench resample --out out/linux-resampler.md
+
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: bench-linux
+          path: out/
+          if-no-files-found: error

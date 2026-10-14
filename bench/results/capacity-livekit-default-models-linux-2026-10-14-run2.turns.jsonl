@@ -1,0 +1,3 @@
+{"step": 1, "failure": null, "ready_s": 0.222, "turns": [{"index": 0, "outcome": "answered", "v2v_us": 1139699}, {"index": 1, "outcome": "answered", "v2v_us": 1139753}]}
+{"step": 1, "failure": null, "ready_s": 0.325, "turns": [{"index": 0, "outcome": "answered", "v2v_us": 2806619}, {"index": 1, "outcome": "answered", "v2v_us": 2846609}]}
+{"step": 1, "failure": null, "ready_s": 0.265, "turns": [{"index": 0, "outcome": "answered", "v2v_us": 1156968}, {"index": 1, "outcome": "answered", "v2v_us": 2836975}]}

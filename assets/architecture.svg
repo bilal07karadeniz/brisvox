@@ -1,0 +1,143 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 960 540" width="960" height="540" role="img" aria-labelledby="arch-t arch-d">
+<title id="arch-t">brisvox architecture</title>
+<desc id="arch-d">A caller on a phone or in a browser reaches one brisvox-server process through a transport (Twilio, Telnyx, SIP, WebRTC or WebSocket). The server runs one isolated session per call: voice activity and turn detection, speech to text, the language model with tools, and text to speech, with turn epochs and barge-in handling. Model inference runs on a dedicated pool. The session talks to speech and language providers, in the cloud or on your own machine, and to your own agent process written with the Python or TypeScript SDK, which holds the tools and business logic.</desc>
+<style>
+text{font-family:system-ui,-apple-system,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif;font-size:13px}
+.bg{fill:#fcfcfb}
+.t1{fill:#0b0b0b}.t2{fill:#52514e}.ta{fill:#1c5cab}
+.box{fill:#f3f2ee;stroke:#cfcdc6;stroke-width:1.5}
+.srv{fill:#f9f9f7;stroke:#2a78d6;stroke-width:2}
+.ses{fill:#e8f1fc;stroke:#2a78d6;stroke-width:1.5}
+.stk{fill:#f1f6fd;stroke:#2a78d6;stroke-width:1.5}
+.stage{fill:#fcfcfb;stroke:#2a78d6;stroke-width:1.5}
+.pool{fill:#f3f2ee;stroke:#8a8983;stroke-width:1.5;stroke-dasharray:5 4}
+.sdk{fill:#eaf6f1;stroke:#1baf7a;stroke-width:1.5}
+.ln{stroke:#6b6a64;stroke-width:1.6;fill:none}
+.ar{fill:#6b6a64}
+.ep{fill:#fcfcfb;stroke:#d95926;stroke-width:1.5}
+@media (prefers-color-scheme:dark){
+.bg{fill:#1a1a19}
+.t1{fill:#ffffff}.t2{fill:#c3c2b7}.ta{fill:#86b6ef}
+.box{fill:#262625;stroke:#4a4944}
+.srv{fill:#20201f;stroke:#3987e5}
+.ses{fill:#1b2a3d;stroke:#3987e5}
+.stk{fill:#17212f;stroke:#3987e5}
+.stage{fill:#1a1a19;stroke:#3987e5}
+.pool{fill:#262625;stroke:#7b7a74}
+.sdk{fill:#14291f;stroke:#199e70}
+.ln{stroke:#a09f97}
+.ar{fill:#a09f97}
+.ep{fill:#1a1a19;stroke:#e66767}
+}
+</style>
+<defs>
+<marker id="ah" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" class="ar"/></marker>
+</defs>
+<rect class="bg" x="0" y="0" width="960" height="540" rx="10"/>
+
+<!-- Callers -->
+<text x="24" y="108" class="t2" font-weight="700">CALLERS</text>
+<rect class="box" x="24" y="122" width="132" height="226" rx="10"/>
+<text x="90" y="170" class="t1" font-weight="700" text-anchor="middle">Phone</text>
+<text x="90" y="190" class="t2" text-anchor="middle">PSTN number</text>
+<text x="90" y="272" class="t1" font-weight="700" text-anchor="middle">Browser</text>
+<text x="90" y="292" class="t2" text-anchor="middle">"Talk to us" button</text>
+
+<!-- Transports -->
+<text x="196" y="108" class="t2" font-weight="700">TRANSPORTS</text>
+<rect class="box" x="196" y="122" width="150" height="46" rx="8"/>
+<text x="271" y="142" class="t1" font-weight="700" text-anchor="middle">Twilio / Telnyx</text>
+<text x="271" y="159" class="t2" text-anchor="middle" font-size="12">media streams</text>
+<rect class="box" x="196" y="180" width="150" height="46" rx="8"/>
+<text x="271" y="200" class="t1" font-weight="700" text-anchor="middle">SIP trunk</text>
+<text x="271" y="217" class="t2" text-anchor="middle" font-size="12">G.711 mu-law / A-law</text>
+<rect class="box" x="196" y="238" width="150" height="46" rx="8"/>
+<text x="271" y="258" class="t1" font-weight="700" text-anchor="middle">WebRTC</text>
+<text x="271" y="275" class="t2" text-anchor="middle" font-size="12">+ WebSocket fallback</text>
+<rect class="box" x="196" y="296" width="150" height="46" rx="8"/>
+<text x="271" y="316" class="t1" font-weight="700" text-anchor="middle">WebSocket</text>
+<text x="271" y="333" class="t2" text-anchor="middle" font-size="12">generic, RTVI</text>
+
+<!-- caller -> transport -->
+<line class="ln" x1="156" y1="145" x2="196" y2="145" marker-start="url(#ah)" marker-end="url(#ah)"/>
+<line class="ln" x1="156" y1="203" x2="196" y2="203" marker-start="url(#ah)" marker-end="url(#ah)"/>
+<line class="ln" x1="156" y1="261" x2="196" y2="261" marker-start="url(#ah)" marker-end="url(#ah)"/>
+<line class="ln" x1="156" y1="319" x2="196" y2="319" marker-start="url(#ah)" marker-end="url(#ah)"/>
+
+<!-- transport -> server -->
+<line class="ln" x1="346" y1="145" x2="384" y2="145" marker-start="url(#ah)" marker-end="url(#ah)"/>
+<line class="ln" x1="346" y1="203" x2="384" y2="203" marker-start="url(#ah)" marker-end="url(#ah)"/>
+<line class="ln" x1="346" y1="261" x2="384" y2="261" marker-start="url(#ah)" marker-end="url(#ah)"/>
+<line class="ln" x1="346" y1="319" x2="384" y2="319" marker-start="url(#ah)" marker-end="url(#ah)"/>
+
+<!-- Server -->
+<text x="384" y="84" class="ta" font-weight="700">BRISVOX-SERVER</text>
+<text x="496" y="84" class="t2">one Rust process, many calls</text>
+<rect class="srv" x="384" y="96" width="340" height="330" rx="12"/>
+<rect class="box" x="398" y="108" width="312" height="30" rx="7"/>
+<text x="554" y="128" class="t1" text-anchor="middle" font-size="12">session manager: admission, drain, health, metrics</text>
+
+<!-- stacked sessions -->
+<rect class="stk" x="414" y="166" width="296" height="156" rx="10" opacity="0.55"/>
+<rect class="stk" x="406" y="158" width="304" height="156" rx="10" opacity="0.8"/>
+<rect class="ses" x="398" y="150" width="312" height="156" rx="10"/>
+<text x="410" y="171" class="ta" font-weight="700" font-size="12">CALL SESSION</text>
+<text x="508" y="171" class="t2" font-size="12">one per call, isolated</text>
+
+<rect class="stage" x="408" y="182" width="64" height="48" rx="7"/>
+<text x="440" y="203" class="t1" text-anchor="middle" font-weight="700" font-size="12">VAD</text>
+<text x="440" y="219" class="t2" text-anchor="middle" font-size="12">+ turn</text>
+<rect class="stage" x="486" y="182" width="64" height="48" rx="7"/>
+<text x="518" y="211" class="t1" text-anchor="middle" font-weight="700" font-size="12">STT</text>
+<rect class="stage" x="564" y="182" width="64" height="48" rx="7"/>
+<text x="596" y="203" class="t1" text-anchor="middle" font-weight="700" font-size="12">LLM</text>
+<text x="596" y="219" class="t2" text-anchor="middle" font-size="12">+ tools</text>
+<rect class="stage" x="642" y="182" width="64" height="48" rx="7"/>
+<text x="674" y="211" class="t1" text-anchor="middle" font-weight="700" font-size="12">TTS</text>
+<line class="ln" x1="472" y1="206" x2="486" y2="206" marker-end="url(#ah)"/>
+<line class="ln" x1="550" y1="206" x2="564" y2="206" marker-end="url(#ah)"/>
+<line class="ln" x1="628" y1="206" x2="642" y2="206" marker-end="url(#ah)"/>
+
+<rect class="ep" x="408" y="244" width="298" height="52" rx="7"/>
+<text x="557" y="263" class="t1" text-anchor="middle" font-size="12" font-weight="700">turn epochs and barge-in</text>
+<text x="557" y="280" class="t2" text-anchor="middle" font-size="12">stale frames dropped, only played text kept</text>
+
+<text x="554" y="340" class="t2" text-anchor="middle" font-size="12">hundreds of isolated sessions per container</text>
+
+<rect class="pool" x="398" y="350" width="312" height="62" rx="9"/>
+<text x="554" y="372" class="t1" text-anchor="middle" font-weight="700" font-size="12">inference pool (dedicated threads)</text>
+<text x="554" y="391" class="t2" text-anchor="middle" font-size="12">Silero VAD, Smart Turn: never on the async workers</text>
+
+<!-- Providers -->
+<text x="772" y="108" class="t2" font-weight="700">PROVIDERS</text>
+<rect class="box" x="772" y="122" width="164" height="84" rx="9"/>
+<text x="854" y="144" class="t1" text-anchor="middle" font-weight="700">STT</text>
+<text x="854" y="164" class="t2" text-anchor="middle" font-size="12">Deepgram, AssemblyAI,</text>
+<text x="854" y="180" class="t2" text-anchor="middle" font-size="12">Gladia, sherpa-onnx</text>
+<text x="854" y="196" class="t2" text-anchor="middle" font-size="12">(local)</text>
+<rect class="box" x="772" y="218" width="164" height="84" rx="9"/>
+<text x="854" y="240" class="t1" text-anchor="middle" font-weight="700">LLM</text>
+<text x="854" y="260" class="t2" text-anchor="middle" font-size="12">OpenAI, Anthropic, Gemini,</text>
+<text x="854" y="276" class="t2" text-anchor="middle" font-size="12">any OpenAI-compatible</text>
+<text x="854" y="292" class="t2" text-anchor="middle" font-size="12">endpoint, Ollama (local)</text>
+<rect class="box" x="772" y="314" width="164" height="84" rx="9"/>
+<text x="854" y="336" class="t1" text-anchor="middle" font-weight="700">TTS</text>
+<text x="854" y="356" class="t2" text-anchor="middle" font-size="12">Cartesia, ElevenLabs,</text>
+<text x="854" y="372" class="t2" text-anchor="middle" font-size="12">Deepgram Aura, Kokoro</text>
+<text x="854" y="388" class="t2" text-anchor="middle" font-size="12">(local)</text>
+<text x="854" y="420" class="t2" text-anchor="middle" font-size="12">cloud APIs or your own machine,</text>
+<text x="854" y="436" class="t2" text-anchor="middle" font-size="12">per-stage failover</text>
+
+<line class="ln" x1="724" y1="164" x2="772" y2="164" marker-start="url(#ah)" marker-end="url(#ah)"/>
+<line class="ln" x1="724" y1="260" x2="772" y2="260" marker-start="url(#ah)" marker-end="url(#ah)"/>
+<line class="ln" x1="724" y1="356" x2="772" y2="356" marker-start="url(#ah)" marker-end="url(#ah)"/>
+
+<!-- SDK agent -->
+<line class="ln" x1="554" y1="426" x2="554" y2="466" marker-start="url(#ah)" marker-end="url(#ah)"/>
+<text x="566" y="450" class="t2" font-size="12">agent link (websocket)</text>
+<rect class="sdk" x="384" y="466" width="340" height="56" rx="9"/>
+<text x="554" y="489" class="t1" text-anchor="middle" font-weight="700">Your agent (Python or TypeScript SDK)</text>
+<text x="554" y="508" class="t2" text-anchor="middle" font-size="12">tools and business logic in your own process</text>
+<text x="24" y="492" class="t2" font-size="12">Or write the tools in Rust and link</text>
+<text x="24" y="508" class="t2" font-size="12">them into the server itself.</text>
+</svg>

@@ -1,0 +1,83 @@
+# Phone receptionist (inbound, Twilio Media Streams, 8 kHz G.711): AssemblyAI (STT) + Groq
+# through the OpenAI-compatible adapter (LLM) + Deepgram Aura (TTS). Reference: docs/CONFIG.md,
+# docs/TELEPHONY.md. README.md in this directory walks through running it.
+#
+# Keys come from the environment (`api_key_env` names the variable), never from this file.
+#
+# transfer_call and end_call are built-in telephony tools: the server provides them when it runs
+# with a carrier's call control (BRISVOX_CALL_CONTROL=twilio, cargo feature `call-control`).
+# The model picks a destination by NAME from [telephony] below, never a number.
+
+[agent]
+name = "harbour-dental-reception"
+language = "en-US"
+system_prompt = """
+You answer the phone for Harbour Dental, a small dental clinic. The caller is on a phone line:
+keep every answer to one or two short sentences, in plain words, and never read out lists.
+The caller speaks first: greet them once ("Harbour Dental, how can I help?") and then answer.
+
+What you can do:
+- Answer questions about the clinic: open Monday to Friday, 8 am to 5 pm; closed weekends and
+  public holidays; the clinic is at 12 Harbour Street.
+- Put the caller through to a person: call transfer_call with the destination "front_desk" for
+  appointments, changes and general questions, or "billing" for invoices and payments. Say one
+  short sentence ("One moment, I will put you through.") BEFORE you call the tool.
+- Say goodbye and call end_call when the caller has nothing else to ask.
+
+What you cannot do: book, change or cancel appointments yourself, give medical advice, or quote
+prices. Offer to put the caller through to the front desk instead. Never invent opening hours,
+names or prices. If the caller seems to be in severe pain or bleeding heavily, tell them to
+call their local emergency number now.
+"""
+tools = ["transfer_call", "end_call"]
+
+[telephony]
+# 555-01xx numbers are reserved for fiction: put the clinic's own numbers (E.164) here.
+destinations = [
+  { name = "front_desk", number = "+15555550100", description = "the front desk: appointments and general questions" },
+  { name = "billing", number = "+15555550101", description = "billing: invoices and payments" },
+]
+# Warm transfers (the receiving person hears a summary first) need the callback listener
+# (BRISVOX_CALLBACK_ADDR) and a caller id; see README.md. Cold transfers need nothing more.
+warm = false
+# send_dtmf is not in `tools`, so it is not offered either way.
+dtmf = false
+
+[turn]
+fallback_silence_ms = 2000
+
+[interruption]
+preset = "recommended"
+echo_guard_ms = 600          # phone lines echo more: a longer window where STT must confirm
+backchannels = ["en"]
+
+[audio]
+frame_ms = 20
+call_sample_rate = 8000      # only the fallback: Twilio reports 8 kHz at call start
+
+[stt]
+provider = "assemblyai"
+api_key_env = "ASSEMBLYAI_API_KEY"
+
+[stt.assemblyai]
+speech_model = "universal-3-6-pro"
+region = "us"
+keyterms = ["Harbour Dental"]
+
+[llm]
+provider = "openai_compatible"
+api_key_env = "GROQ_API_KEY"
+
+[llm.openai_compatible]
+preset = "groq"              # base URL and quirks of Groq; the model below overrides the suggestion
+model = "llama-3.1-8b-instant"
+max_tokens = 300
+
+[tts]
+provider = "deepgram_aura"
+api_key_env = "DEEPGRAM_API_KEY"
+voice = "aura-2-thalia-en"   # the Aura model string carries voice and language
+sample_rate = 8000           # delivered at the call's rate: nothing is resampled on the way out
+
+[tts.deepgram_aura]
+speed = 1.0

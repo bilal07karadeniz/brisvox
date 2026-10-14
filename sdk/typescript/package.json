@@ -1,0 +1,35 @@
+{
+  "name": "@brisvox/agent",
+  "version": "0.1.0",
+  "description": "TypeScript SDK for the brisvox agent protocol: the application logic of a real-time voice call (tools, events, commands) in async TypeScript.",
+  "license": "MIT OR Apache-2.0",
+  "type": "module",
+  "main": "./dist/src/index.js",
+  "types": "./dist/src/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/src/index.d.ts",
+      "default": "./dist/src/index.js"
+    }
+  },
+  "files": [
+    "dist/src",
+    "README.md"
+  ],
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "tsc -p tsconfig.json && node scripts/run-tests.mjs"
+  },
+  "dependencies": {
+    "ws": "8.22.0"
+  },
+  "devDependencies": {
+    "@types/node": "20.19.43",
+    "@types/ws": "8.18.2",
+    "typescript": "7.0.2"
+  }
+}

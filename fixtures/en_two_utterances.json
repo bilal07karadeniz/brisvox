@@ -1,0 +1,21 @@
+{
+  "name": "en_two_utterances",
+  "sample_rate": 16000,
+  "samples": 194080,
+  "segments": [
+    {
+      "start": 8000,
+      "end": 106720,
+      "lang": "en",
+      "text": "The U.N. also hopes to finalize a fund to help countries affected by global warming to cope with the impacts.",
+      "source": "fleurs:en_us:dev:1009709090964908274.wav"
+    },
+    {
+      "start": 130720,
+      "end": 174880,
+      "lang": "en",
+      "text": "The major religion in Moldova is Orthodox Christian.",
+      "source": "fleurs:en_us:dev:10146705666908229607.wav"
+    }
+  ]
+}

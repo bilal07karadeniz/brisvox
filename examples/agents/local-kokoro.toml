@@ -1,0 +1,36 @@
+# English agent with a LOCAL voice: Deepgram (STT, needs DEEPGRAM_API_KEY) + Ollama (LLM) +
+# Kokoro-FastAPI (TTS). Not fully local: for no cloud at all use local/local-en.toml.
+# The TTS runs on this machine or on your LAN; no TTS key exists. Start the server first
+# (docs/providers/openai-speech.md "Try it"):
+#   GPU:                docker run --gpus all -p 127.0.0.1:8880:8880 ghcr.io/remsky/kokoro-fastapi-gpu:latest
+#   NVIDIA RTX 50xx:    docker run --gpus all -p 127.0.0.1:8880:8880 ghcr.io/remsky/kokoro-fastapi-gpu:latest-cu128
+#   CPU:                docker run -p 127.0.0.1:8880:8880 ghcr.io/remsky/kokoro-fastapi-cpu:latest
+# Reference: docs/CONFIG.md. Secrets are never in this file: every `api_key_env` names the
+# environment variable that holds the key.
+
+[agent]
+name = "local-kokoro"
+language = "en"
+system_prompt = """
+You are a friendly voice assistant running on the caller's own hardware. Answer in one or two
+short spoken sentences.
+"""
+
+[stt]
+provider = "deepgram"
+api_key_env = "DEEPGRAM_API_KEY"
+
+[llm]
+provider = "openai_compatible"      # no api_key_env: a local Ollama needs none
+
+[llm.openai_compatible]
+preset = "ollama"                   # http://localhost:11434/v1
+
+[tts]
+provider = "openai_speech"          # no api_key_env: Kokoro-FastAPI checks no key
+voice = "af_heart"                  # a Kokoro voice; GET {base_url}/audio/voices lists them
+
+[tts.openai_speech]
+preset = "kokoro"                   # model "kokoro", 24 kHz pcm, stream: true
+base_url = "http://localhost:8880/v1"
+# first_audio_timeout_ms = 15000    # raise it for a slow CPU

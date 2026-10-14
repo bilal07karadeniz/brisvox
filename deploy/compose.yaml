@@ -1,0 +1,77 @@
+# Two brisvox-server containers from one image (docs/DEPLOY.md):
+#
+#   agent-ws      a websocket agent (docs/WEBSOCKET_PROTOCOL.md) for browsers/apps
+#   agent-twilio  a phone agent behind Twilio Media Streams, with Twilio call control
+#
+#   cp deploy/ws.env.example deploy/ws.env          # fill in the keys
+#   cp deploy/twilio.env.example deploy/twilio.env  # fill in the keys
+#   docker compose -f deploy/compose.yaml up --build
+#
+# Neither service is reachable from outside this machine as written: both listeners are
+# published on 127.0.0.1 only. Put a TLS-terminating reverse proxy in front (docs/DEPLOY.md):
+# Twilio needs wss://. The generic websocket listener refuses to start on a non-loopback address
+# without credentials (docs/SECURITY.md); agent-ws opts out below because its port is published on
+# loopback only. To expose it, set BRISVOX_SESSION_SECRET in deploy/ws.env and mint session tokens.
+# Run one service alone with `docker compose -f deploy/compose.yaml up agent-ws`.
+
+name: brisvox # the project name (containers brisvox-agent-ws-1, ...), not the directory's "deploy"
+
+x-brisvox: &brisvox
+  build:
+    context: ..
+    dockerfile: Dockerfile
+  image: ${BRISVOX_IMAGE:-brisvox/server:local}
+  restart: unless-stopped
+  # The server drains on SIGTERM: 30 s drain + 5 s cancel grace + 1 s abort + ~7 s. A shorter
+  # grace period lets docker SIGKILL calls in the middle of the drain (docs/OPERATIONS.md).
+  stop_grace_period: 45s
+  init: false # the server is PID 1, handles SIGTERM itself and spawns no children
+  # The image's HEALTHCHECK (GET /healthz on :8081) applies to both services.
+  read_only: true # the server writes no files; /tmp is a small tmpfs for libraries that want one
+  tmpfs: ["/tmp:size=16m,mode=1777"]
+  cap_drop: [ALL]
+  security_opt: ["no-new-privileges:true"]
+  pids_limit: 512
+  # One socket per open call (plus provider connections): Docker's default soft limit inside a
+  # container is 1024, which caps a container at about 1000 calls (docs/DEPLOY.md, "Sizing").
+  ulimits:
+    nofile: { soft: 65536, hard: 65536 }
+  logging:
+    driver: json-file
+    options: { max-size: "20m", max-file: "5" }
+
+services:
+  agent-ws:
+    <<: *brisvox
+    env_file: ws.env
+    environment:
+      BRISVOX_AGENT_FILE: /etc/brisvox/agent.toml
+      # The generic websocket listener. The container listens on all its interfaces so the
+      # published port reaches it; the PUBLISHED port is loopback only, which is why running it
+      # without credentials is acceptable here (the server logs a warning at start). With
+      # BRISVOX_SESSION_SECRET in ws.env the listener requires session tokens and this opt-out
+      # does nothing: delete it before publishing the port beyond this machine.
+      BRISVOX_WS_ADDR: 0.0.0.0:8080
+      BRISVOX_INSECURE_LISTENERS: "1"
+    volumes:
+      - ./agents/web.toml:/etc/brisvox/agent.toml:ro
+    ports:
+      - "127.0.0.1:8080:8080"
+      # /healthz and /readyz for a local probe (curl http://127.0.0.1:8081/readyz):
+      - "127.0.0.1:8081:8081"
+
+  agent-twilio:
+    <<: *brisvox
+    env_file: twilio.env # TWILIO_AUTH_TOKEN, BRISVOX_TWILIO_PUBLIC_URL, provider keys, ...
+    environment:
+      BRISVOX_AGENT_FILE: /etc/brisvox/agent.toml
+      # Twilio Media Streams on /twilio/stream, signature-checked. The websocket listener stays
+      # off: setting another listener turns the unauthenticated one off by default.
+      BRISVOX_TWILIO_ADDR: 0.0.0.0:8082
+      # transfer_call / send_dtmf / end_call over Twilio's REST API (needs BRISVOX_TWILIO_ACCOUNT_SID).
+      BRISVOX_CALL_CONTROL: twilio
+    volumes:
+      - ./agents/phone.toml:/etc/brisvox/agent.toml:ro
+    ports:
+      - "127.0.0.1:8082:8082"
+      - "127.0.0.1:8083:8081"

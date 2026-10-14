@@ -1,0 +1,62 @@
+{
+  "schema": "brisvox-bench/capacity-summary/1",
+  "system": "brisvox-sharedpool-models",
+  "date": "2026-10-13",
+  "label": "brisvox-sharedpool-models (4 CPUs, 4g, Linux)",
+  "environment": {
+    "os": "linux",
+    "arch": "x86_64",
+    "logical_cores": 8,
+    "release_build": true,
+    "not_linux_run": false,
+    "banner": null
+  },
+  "note": "Linux kernel 6.6.87.2-microsoft-standard-WSL2; container --cpus=4 --cpuset-cpus=0-3 --memory=4g --memory-swap=4g --ulimit nofile=1048576:1048576 --network host, server cores 0-3, generator cores 4-11 (bench/capacity_linux.sh)",
+  "runs": [
+    {
+      "file": "capacity-brisvox-sharedpool-models-linux-2026-10-13-run1.json",
+      "max_concurrent": 250,
+      "first_failure": 275,
+      "limit": "found",
+      "failure_reason": "7 of 1100 turns lost or not clean (7 talked over, 0 no response, 0 bot speaking; allowed 0.0 %); p95 V2V 3688 ms is above the limit 1200 ms (floor 950 ms + 250 ms)",
+      "p95_v2v_ms": 845,
+      "p50_v2v_ms": 810,
+      "server_cpu_cores": 2.17,
+      "mcores_per_call": 8.67,
+      "rss_peak_mb": 379,
+      "generator_cpu_cores": 0.28,
+      "max_send_lateness_ms": 3
+    },
+    {
+      "file": "capacity-brisvox-sharedpool-models-linux-2026-10-13-run2.json",
+      "max_concurrent": 175,
+      "first_failure": 200,
+      "limit": "found",
+      "failure_reason": "p95 V2V 1539 ms is above the limit 1200 ms (floor 950 ms + 250 ms)",
+      "p95_v2v_ms": 824,
+      "p50_v2v_ms": 806,
+      "server_cpu_cores": 1.56,
+      "mcores_per_call": 8.94,
+      "rss_peak_mb": 305,
+      "generator_cpu_cores": 0.22,
+      "max_send_lateness_ms": 4
+    },
+    {
+      "file": "capacity-brisvox-sharedpool-models-linux-2026-10-13-run3.json",
+      "max_concurrent": 275,
+      "first_failure": 300,
+      "limit": "found",
+      "failure_reason": "p95 V2V 1261 ms is above the limit 1200 ms (floor 950 ms + 250 ms)",
+      "p95_v2v_ms": 861,
+      "p50_v2v_ms": 818,
+      "server_cpu_cores": 2.32,
+      "mcores_per_call": 8.44,
+      "rss_peak_mb": 377,
+      "generator_cpu_cores": 0.26,
+      "max_send_lateness_ms": 4
+    }
+  ],
+  "median_max_concurrent": 250,
+  "min_max_concurrent": 175,
+  "max_max_concurrent": 275
+}

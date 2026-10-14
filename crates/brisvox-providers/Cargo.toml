@@ -1,0 +1,273 @@
+[package]
+name = "brisvox-providers"
+description = "Brisvox providers: STT / LLM / TTS traits and adapters"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[features]
+# Shared TLS (rustls + ring, webpki roots) for the network adapters.
+net = ["dep:rustls", "dep:webpki-roots"]
+# Shared WebSocket dialing (`net::connect_ws`, `net::dial`: address racing) for the
+# WebSocket adapters.
+ws = ["net", "dep:futures", "dep:tokio-tungstenite"]
+# The process-wide HTTP client pool (`net::shared_client`) for the HTTP/SSE adapters.
+http = ["net", "dep:reqwest", "dep:tracing"]
+# Adapters: one feature each, so a build only links what it uses.
+provider-deepgram = [
+    "net",
+    "ws",
+    "dep:tokio-tungstenite",
+    "dep:futures",
+    "dep:serde",
+    "dep:serde_json",
+    "dep:tracing",
+]
+provider-openai = [
+    "http",
+    "dep:serde",
+    "dep:serde_json",
+    "dep:tracing",
+    "tokio/rt",
+    "tokio/time",
+    "tokio/macros",
+]
+provider-cartesia = [
+    "net",
+    "ws",
+    "dep:base64",
+    "dep:futures",
+    "dep:serde",
+    "dep:serde_json",
+    "dep:tokio-tungstenite",
+    "dep:tokio-util",
+]
+# Second-wave adapters: HTTP/SSE LLMs share the openai stack, ElevenLabs the
+# WebSocket stack.
+provider-anthropic = [
+    "http",
+    "dep:serde",
+    "dep:serde_json",
+    "dep:tracing",
+    "tokio/rt",
+    "tokio/time",
+    "tokio/macros",
+]
+provider-gemini = [
+    "http",
+    "dep:serde",
+    "dep:serde_json",
+    "dep:tracing",
+    "tokio/rt",
+    "tokio/time",
+    "tokio/macros",
+]
+provider-openai-compatible = [
+    "http",
+    "dep:serde",
+    "dep:serde_json",
+    "dep:tracing",
+    "tokio/rt",
+    "tokio/time",
+    "tokio/macros",
+]
+provider-elevenlabs = [
+    "net",
+    "ws",
+    "dep:base64",
+    "dep:futures",
+    "dep:serde",
+    "dep:serde_json",
+    "dep:tokio-tungstenite",
+    "dep:tokio-util",
+]
+
+# Third-wave adapters.
+provider-deepgram-aura = [
+    "net",
+    "ws",
+    "dep:futures",
+    "dep:serde",
+    "dep:serde_json",
+    "dep:tokio-tungstenite",
+    "dep:tokio-util",
+    "dep:tracing",
+]
+provider-assemblyai = [
+    "net",
+    "ws",
+    "dep:futures",
+    "dep:serde",
+    "dep:serde_json",
+    "dep:tokio-tungstenite",
+    "dep:tracing",
+]
+provider-gladia = [
+    "net",
+    "ws",
+    "dep:futures",
+    "dep:reqwest",
+    "dep:serde",
+    "dep:serde_json",
+    "dep:tokio-tungstenite",
+    "dep:tracing",
+]
+# Speech-to-speech adapters: OpenAI Realtime over a WebSocket.
+provider-openai-realtime = [
+    "net",
+    "ws",
+    "dep:base64",
+    "dep:futures",
+    "dep:serde",
+    "dep:serde_json",
+    "dep:tokio-tungstenite",
+    "dep:tracing",
+]
+
+# Speech-to-speech adapters: Gemini Live over a WebSocket.
+provider-gemini-live = [
+    "net",
+    "ws",
+    "dep:base64",
+    "dep:futures",
+    "dep:serde",
+    "dep:serde_json",
+    "dep:tokio-tungstenite",
+    "dep:tracing",
+]
+
+# Local TTS servers speaking POST /v1/audio/speech: Kokoro-FastAPI, Speaches,
+# Chatterbox-TTS-Server, vLLM-Omni.
+provider-openai-speech = [
+    "http",
+    "dep:serde_json",
+    "dep:tokio-util",
+    "dep:tracing",
+    "tokio/rt",
+    "tokio/time",
+    "tokio/macros",
+]
+# Local speech servers: both share the WebSocket STT session core (`wsstt`) and resample
+# the engine's audio to the server's rate with `brisvox-audio`.
+provider-sherpa-onnx = [
+    "net",
+    "ws",
+    "dep:brisvox-audio",
+    "dep:futures",
+    "dep:serde",
+    "dep:serde_json",
+    "dep:tokio-tungstenite",
+    "dep:tracing",
+]
+provider-openai-realtime-stt = [
+    "net",
+    "ws",
+    "dep:base64",
+    "dep:brisvox-audio",
+    "dep:futures",
+    "dep:serde",
+    "dep:serde_json",
+    "dep:tokio-tungstenite",
+    "dep:tracing",
+]
+
+[dependencies]
+brisvox-audio = { workspace = true, optional = true }
+brisvox-core = { workspace = true }
+bytes = { workspace = true }
+thiserror = { workspace = true }
+tokio = { workspace = true, features = ["sync", "time", "net", "macros", "rt"] }
+base64 = { workspace = true, optional = true }
+futures = { workspace = true, optional = true }
+reqwest = { workspace = true, optional = true }
+rustls = { workspace = true, optional = true }
+serde = { workspace = true, optional = true }
+serde_json = { workspace = true, optional = true, features = ["raw_value"] }
+tokio-tungstenite = { workspace = true, optional = true }
+tokio-util = { workspace = true, optional = true }
+tracing = { workspace = true, optional = true }
+webpki-roots = { workspace = true, optional = true }
+
+[dev-dependencies]
+base64 = { workspace = true }
+brisvox-agent = { workspace = true }
+brisvox-audio = { workspace = true }
+brisvox-sim = { workspace = true }
+futures = { workspace = true }
+h2 = { workspace = true }
+http = { workspace = true }
+serde_json = { workspace = true }
+tokio = { workspace = true, features = ["sync", "time", "net", "macros", "rt", "rt-multi-thread", "io-util", "test-util"] }
+tokio-tungstenite = { workspace = true }
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true }
+
+[[test]]
+name = "deepgram"
+required-features = ["provider-deepgram"]
+
+[[test]]
+name = "openai"
+required-features = ["provider-openai"]
+
+[[test]]
+name = "anthropic"
+required-features = ["provider-anthropic"]
+
+[[test]]
+name = "gemini"
+required-features = ["provider-gemini"]
+
+[[test]]
+name = "openai_compatible"
+required-features = ["provider-openai-compatible"]
+
+[[test]]
+name = "elevenlabs"
+required-features = ["provider-elevenlabs"]
+
+[[test]]
+name = "deepgram_aura"
+required-features = ["provider-deepgram-aura"]
+
+[[test]]
+name = "assemblyai"
+required-features = ["provider-assemblyai"]
+
+[[test]]
+name = "gladia"
+required-features = ["provider-gladia"]
+
+[[test]]
+name = "openai_realtime"
+required-features = ["provider-openai-realtime"]
+
+[[test]]
+name = "gemini_live"
+required-features = ["provider-gemini-live"]
+
+[[test]]
+name = "openai_speech"
+required-features = ["provider-openai-speech"]
+
+[[test]]
+name = "sherpa_onnx"
+required-features = ["provider-sherpa-onnx"]
+
+[[test]]
+name = "openai_realtime_stt"
+required-features = ["provider-openai-realtime-stt"]
+
+[[test]]
+name = "live_checks"
+required-features = [
+    "provider-deepgram",
+    "provider-cartesia",
+    "provider-elevenlabs",
+    "provider-deepgram-aura",
+]
+
+[lints]
+workspace = true

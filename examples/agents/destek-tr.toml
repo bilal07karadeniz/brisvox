@@ -1,0 +1,64 @@
+# Turkish support agent: Deepgram Nova-3 (STT) + Anthropic (LLM) + ElevenLabs (TTS).
+# Reference: docs/CONFIG.md. Deepgram Aura has no Turkish voice, so the TTS is ElevenLabs
+# (Flash v2.5 speaks Turkish); a definition with Turkish on Aura is rejected at load time.
+#
+# Tools: lookup_order is an application tool. Plug yours in through brisvox_server::tools::AppTools,
+# or build the server with `--features demo-tools` for a canned one (docs/TOOLS.md); a server
+# that provides no `lookup_order` refuses this definition at startup.
+# transfer_call is a built-in telephony tool: it needs a carrier's call control in the server
+# (BRISVOX_CALL_CONTROL, cargo feature `call-control`, docs/OPERATIONS.md) and the
+# [telephony] destinations below (the model picks a name, never a number).
+
+[agent]
+name = "destek-tr"
+language = "tr"
+system_prompt = """
+Örnek Mağaza'nın sesli asistanısın. Kısa, konuşma diline uygun bir iki cümleyle yanıt ver.
+Sipariş bilgisi gerektiğinde lookup_order aracını çağır; sipariş numarası yoksa önce onu sor.
+Müşteriyi bir temsilciye aktarmak gerekirse transfer_call aracını kullan.
+"""
+tools = ["lookup_order", "transfer_call"]
+
+[telephony]
+destinations = [
+  # A placeholder number: put the support line's own E.164 number here.
+  { name = "temsilci", number = "+908500000000", description = "bir müşteri temsilcisi" },
+]
+
+[turn]
+fallback_silence_ms = 2500
+require_final = true         # a complete Smart Turn verdict also waits for the STT final
+
+[interruption]
+backchannels = ["tr", "en"]  # "evet", "hı-hı" ...
+
+[early_analysis]
+enabled = true               # run Smart Turn when the VAD probability first falls
+
+[stt]
+provider = "deepgram"
+api_key_env = "DEEPGRAM_API_KEY"
+# language defaults to agent.language ("tr")
+
+[stt.deepgram]
+model = "nova-3"
+keyterms = ["Örnek Mağaza"]
+
+[llm]
+provider = "anthropic"
+api_key_env = "ANTHROPIC_API_KEY"
+
+[llm.anthropic]
+max_tokens = 512
+thinking = "disabled"
+
+[tts]
+provider = "elevenlabs"
+api_key_env = "ELEVENLABS_API_KEY"
+voice = "replace-with-an-elevenlabs-voice-id"
+sample_rate = 24000
+
+[tts.elevenlabs]
+model = "eleven_flash_v2_5"
+stability = 0.5
+similarity_boost = 0.75

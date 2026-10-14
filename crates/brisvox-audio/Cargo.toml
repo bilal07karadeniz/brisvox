@@ -1,0 +1,23 @@
+[package]
+name = "brisvox-audio"
+description = "Brisvox audio: codecs, resampling, buffers, output pacing"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dependencies]
+audioadapter-buffers = { workspace = true }
+brisvox-core = { workspace = true }
+rubato = { workspace = true }
+thiserror = { workspace = true }
+tokio = { workspace = true, features = ["macros", "time"] }
+
+[dev-dependencies]
+bytes = { workspace = true }
+tokio = { workspace = true, features = ["macros", "rt", "test-util", "time"] }
+tokio-util = { workspace = true }
+
+[lints]
+workspace = true

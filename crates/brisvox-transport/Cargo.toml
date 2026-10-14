@@ -1,0 +1,149 @@
+[package]
+name = "brisvox-transport"
+description = "Brisvox transports: websocket, telephony, WebRTC"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[features]
+default = ["websocket", "twilio", "telnyx", "rtvi"]
+# Short-lived signed session tokens (`docs/SECURITY.md`): HMAC-SHA256 via ring, base64url
+# and a JSON payload. Used by the WebRTC, RTVI and generic WebSocket listeners.
+auth = ["dep:base64", "dep:ring", "dep:serde", "dep:serde_json", "dep:tracing"]
+# WebSocket protocol adapter, reference client and `ws_client` binary (the shared rustls network stack).
+websocket = ["auth", "dep:tokio-tungstenite", "dep:futures", "dep:serde", "dep:serde_json", "dep:tracing"]
+# Twilio Media Streams adapter: the websocket server infrastructure plus JSON, base64 and
+# HMAC-SHA1 for the X-Twilio-Signature check.
+twilio = ["websocket", "dep:base64", "dep:ring"]
+# Telnyx media streaming adapter: the same server infrastructure and the mark bookkeeping
+# of the Twilio adapter, snake_case JSON, a reorder buffer, and a constant-time check of the
+# optional `stream_auth_token` (ring).
+telnyx = ["websocket", "dep:base64", "dep:ring"]
+# RTVI adapter: Pipecat client SDK compatibility on the websocket server infrastructure;
+# protobuf `pipecat.Frame` messages (prost, derived by hand, no protoc) carrying RTVI JSON.
+rtvi = ["websocket", "dep:prost"]
+
+# WebRTC transport: str0m (sans-IO, ICE-lite), libopus, WHIP-style HTTP signaling and a
+# browser demo page. Off by default so the default build needs neither a C toolchain nor cmake.
+# Browser TURN credentials (coturn shared secret locally; Cloudflare and Twilio over
+# HTTPS with reqwest, the same rustls/ring/webpki stack as call-control) and the ICE-TCP listener.
+webrtc = [
+    "auth",
+    "websocket",
+    "dep:str0m",
+    "dep:opus",
+    "dep:ring",
+    "dep:brisvox-inference",
+    "dep:tracing",
+    "dep:futures",
+    "dep:base64",
+    "dep:reqwest",
+    "dep:rustls",
+    "dep:serde",
+    "dep:serde_json",
+    "dep:tokio-rustls",
+    "dep:turn-client-proto",
+    "dep:webpki-roots",
+]
+
+# SIP/RTP transport: rsipstack signaling (UDP and TCP) plus brisvox's own SDP, RTP, jitter
+# buffer and RFC 4733 code for G.711 telephony. Off by default (docs/providers/sip.md).
+# SIPS (a rustls acceptor feeding rsipstack's TLS connection type) and SDES-SRTP
+# (RFC 3711/4568 on aes + ctr + ring's HMAC-SHA1; zeroize wipes the keys).
+sip = [
+    "dep:base64",
+    "dep:aes",
+    "dep:ctr",
+    "dep:ring",
+    "dep:rsipstack",
+    "dep:rustls",
+    "dep:subtle",
+    "dep:tokio-rustls",
+    "dep:tracing",
+    "dep:zeroize",
+]
+
+# Call control over REST: DTMF, cold and warm transfer, hang-up and answering-machine
+# detection for Twilio and Telnyx (`docs/providers/call-control.md`). Uses reqwest with the same
+# rustls/ring/webpki stack as the provider adapters; the vocabulary types come from
+# brisvox-agent (transport sits above agent in the crate graph).
+call-control = [
+    "dep:base64",
+    "dep:brisvox-agent",
+    "dep:reqwest",
+    "dep:rustls",
+    "dep:serde",
+    "dep:serde_json",
+    "dep:tracing",
+    "dep:webpki-roots",
+]
+
+[dependencies]
+brisvox-agent = { workspace = true, optional = true }
+brisvox-audio = { workspace = true }
+brisvox-core = { workspace = true }
+brisvox-inference = { workspace = true, optional = true }
+aes = { workspace = true, optional = true }
+base64 = { workspace = true, optional = true }
+bytes = { workspace = true }
+ctr = { workspace = true, optional = true }
+futures = { workspace = true, optional = true }
+opus = { workspace = true, optional = true }
+
+prost = { workspace = true, optional = true }
+rsipstack = { workspace = true, optional = true }
+
+reqwest = { workspace = true, optional = true }
+ring = { workspace = true, optional = true, features = ["alloc"] }
+rustls = { workspace = true, optional = true }
+serde = { workspace = true, optional = true }
+serde_json = { workspace = true, optional = true }
+str0m = { workspace = true, optional = true }
+subtle = { workspace = true, optional = true }
+thiserror = { workspace = true }
+tokio = { workspace = true, features = ["io-util", "macros", "net", "rt", "sync", "time"] }
+tokio-rustls = { workspace = true, optional = true }
+tokio-tungstenite = { workspace = true, optional = true }
+turn-client-proto = { workspace = true, optional = true }
+tokio-util = { workspace = true, features = ["rt"] }
+tracing = { workspace = true, optional = true }
+webpki-roots = { workspace = true, optional = true }
+zeroize = { workspace = true, optional = true }
+
+[dev-dependencies]
+base64 = { workspace = true }
+# TURN tests: a self-signed certificate for the in-process TURN-over-TLS server (rcgen is in
+# the tree already through str0m's DTLS stack), and the sans-IO TURN server it is built on.
+rcgen = "0.14.10"
+turn-server-proto = { workspace = true }
+brisvox-sim = { workspace = true }
+# An independent SRTP implementation (webrtc-rs, MIT/Apache-2.0) to cross-check ours.
+webrtc-srtp = "0.17.2"
+# The log-capture test of the TURN client crates' events.
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true, features = ["fmt", "registry"] }
+tokio = { workspace = true, features = ["macros", "net", "rt", "rt-multi-thread", "signal", "sync", "test-util", "time"] }
+
+[[test]]
+name = "call_control"
+required-features = ["call-control"]
+
+[[bin]]
+name = "ws_client"
+path = "src/bin/ws_client.rs"
+required-features = ["websocket"]
+
+[[example]]
+name = "rtvi_server"
+path = "examples/rtvi_server.rs"
+required-features = ["rtvi"]
+
+[[example]]
+name = "webrtc_echo"
+path = "examples/webrtc_echo.rs"
+required-features = ["webrtc"]
+
+[lints]
+workspace = true

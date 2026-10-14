@@ -1,0 +1,58 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 720 469" width="720" height="469" role="img" aria-labelledby="capacity-framework-t capacity-framework-d">
+<title id="capacity-framework-t">Concurrent calls per container, framework only</title>
+<desc id="capacity-framework-d">Bar chart, framework only, energy VAD and a fixed turn answer, no models: brisvox 2100 calls (runs: 2100, 2100, 2200); Pipecat 1.12 (tuned) 90 calls (runs: 70, 90, 90); Pipecat 1.12 (defaults) 70 calls (runs: 70, 70, 70). brisvox carries about 23x Pipecat 1.12 (tuned) and 30x Pipecat 1.12 (defaults).</desc>
+<style>
+text{font-family:system-ui,-apple-system,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif}
+.bg{fill:#fcfcfb}.t1{fill:#0b0b0b}.t2{fill:#52514e}.grid{stroke:#e3e2de}.axis{stroke:#8a8983}
+.ring{stroke:#fcfcfb}.surf{fill:#fcfcfb}.ink{fill:#0b0b0b}.slo{stroke:#d03b3b}.slot{fill:#d03b3b}
+@media (prefers-color-scheme:dark){.bg{fill:#1a1a19}.t1{fill:#ffffff}.t2{fill:#c3c2b7}.grid{stroke:#383835}
+.axis{stroke:#7b7a74}.ring{stroke:#1a1a19}.surf{fill:#1a1a19}.ink{fill:#ffffff}.slo{stroke:#ec835a}.slot{fill:#ec835a}}
+.f-brisvox{fill:#2a78d6}.s-brisvox{stroke:#2a78d6}
+@media (prefers-color-scheme:dark){.f-brisvox{fill:#3987e5}.s-brisvox{stroke:#3987e5}}
+.f-pipecat{fill:#eb6834}.s-pipecat{stroke:#eb6834}
+@media (prefers-color-scheme:dark){.f-pipecat{fill:#d95926}.s-pipecat{stroke:#d95926}}
+.f-pipecat-default{fill:#eda100}.s-pipecat-default{stroke:#eda100}
+@media (prefers-color-scheme:dark){.f-pipecat-default{fill:#c98500}.s-pipecat-default{stroke:#c98500}}
+</style>
+<rect class="bg" x="0" y="0" width="720" height="469" rx="10"/>
+<text x="24" y="30" class="t1" font-size="17" font-weight="700">Concurrent calls per container, framework only</text>
+<text x="24" y="49" class="t2" font-size="13">Concurrent calls within the SLO (p95 voice-to-voice &lt;= 1200 ms), median of the runs (dots), one 4-CPU /</text>
+<text x="24" y="68" class="t2" font-size="13">4 GiB container, mock providers. brisvox carries about 23x Pipecat 1.12 (tuned) and 30x Pipecat 1.12</text>
+<text x="24" y="87" class="t2" font-size="13">(defaults).</text>
+<line x1="72" x2="692" y1="359" y2="359" class="axis" stroke-width="1"/>
+<text x="64" y="363" class="t2" font-size="12" text-anchor="end">0</text>
+<line x1="72" x2="692" y1="309" y2="309" class="grid" stroke-width="1"/>
+<text x="64" y="313" class="t2" font-size="12" text-anchor="end">500</text>
+<line x1="72" x2="692" y1="259" y2="259" class="grid" stroke-width="1"/>
+<text x="64" y="263" class="t2" font-size="12" text-anchor="end">1000</text>
+<line x1="72" x2="692" y1="209" y2="209" class="grid" stroke-width="1"/>
+<text x="64" y="213" class="t2" font-size="12" text-anchor="end">1500</text>
+<line x1="72" x2="692" y1="159" y2="159" class="grid" stroke-width="1"/>
+<text x="64" y="163" class="t2" font-size="12" text-anchor="end">2000</text>
+<line x1="72" x2="692" y1="109" y2="109" class="grid" stroke-width="1"/>
+<text x="64" y="113" class="t2" font-size="12" text-anchor="end">2500</text>
+<text transform="translate(16 234) rotate(-90)" class="t2" font-size="12" text-anchor="middle">concurrent calls</text>
+<path d="M133.3 359V153Q133.3 149 137.3 149H213.3Q217.3 149 217.3 153V359Z" class="f-brisvox"/>
+<circle cx="161.3" cy="149" r="4.5" class="ink ring" stroke-width="2"/>
+<circle cx="175.3" cy="149" r="4.5" class="ink ring" stroke-width="2"/>
+<circle cx="189.3" cy="139" r="4.5" class="ink ring" stroke-width="2"/>
+<text x="175.3" y="128" class="t1" font-size="14" font-weight="700" text-anchor="middle">2100</text>
+<text x="175.3" y="379" class="t1" font-size="13" font-weight="600" text-anchor="middle">brisvox</text>
+<text x="175.3" y="395" class="t2" font-size="12" font-weight="400" text-anchor="middle">runs: 2100, 2100, 2200</text>
+<path d="M340 359V354Q340 350 344 350H420Q424 350 424 354V359Z" class="f-pipecat"/>
+<circle cx="368" cy="352" r="4.5" class="ink ring" stroke-width="2"/>
+<circle cx="382" cy="350" r="4.5" class="ink ring" stroke-width="2"/>
+<circle cx="396" cy="350" r="4.5" class="ink ring" stroke-width="2"/>
+<text x="382" y="339" class="t1" font-size="14" font-weight="700" text-anchor="middle">90</text>
+<text x="382" y="379" class="t1" font-size="13" font-weight="600" text-anchor="middle">Pipecat 1.12 (tuned)</text>
+<text x="382" y="395" class="t2" font-size="12" font-weight="400" text-anchor="middle">runs: 70, 90, 90</text>
+<path d="M546.7 359V356Q546.7 352 550.7 352H626.7Q630.7 352 630.7 356V359Z" class="f-pipecat-default"/>
+<circle cx="574.7" cy="352" r="4.5" class="ink ring" stroke-width="2"/>
+<circle cx="588.7" cy="352" r="4.5" class="ink ring" stroke-width="2"/>
+<circle cx="602.7" cy="352" r="4.5" class="ink ring" stroke-width="2"/>
+<text x="588.7" y="341" class="t1" font-size="14" font-weight="700" text-anchor="middle">70</text>
+<text x="588.7" y="379" class="t1" font-size="13" font-weight="600" text-anchor="middle">Pipecat 1.12 (defaults)</text>
+<text x="588.7" y="395" class="t2" font-size="12" font-weight="400" text-anchor="middle">runs: 70, 70, 70</text>
+<text x="24" y="439" class="t2" font-size="12">Source: bench/results/{capacity-brisvox-linux-2026-10-13.json, capacity-pipecat-tuned-linux-2026-10-13.json,</text>
+<text x="24" y="455" class="t2" font-size="12">capacity-pipecat-linux-2026-10-13.json}. Linux (WSL2, Docker), per-system run lists as in the file names.</text>
+</svg>

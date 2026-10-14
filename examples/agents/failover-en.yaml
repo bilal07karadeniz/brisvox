@@ -1,0 +1,33 @@
+# English agent with a second provider per stage: when the primary is down, calls fail over to the
+# secondary (docs/CONFIG.md "Secondary providers", docs/ARCHITECTURE.md "Resilience").
+# Deepgram -> AssemblyAI (STT), OpenAI -> Anthropic (LLM), Cartesia -> ElevenLabs (TTS).
+# Secrets are never in this file: every `api_key_env` names the environment variable that holds
+# the key, secondaries included (all of them must be set for the server to start).
+agent:
+  name: failover-en
+  language: en
+  system_prompt: |
+    You are a friendly voice assistant. Answer in one or two short spoken sentences.
+
+stt:
+  provider: deepgram
+  api_key_env: DEEPGRAM_API_KEY
+  secondary:
+    provider: assemblyai
+    api_key_env: ASSEMBLYAI_API_KEY
+
+llm:
+  provider: openai
+  api_key_env: OPENAI_API_KEY
+  secondary:
+    provider: anthropic
+    api_key_env: ANTHROPIC_API_KEY
+
+tts:
+  provider: cartesia
+  api_key_env: CARTESIA_API_KEY
+  voice: replace-with-a-cartesia-voice-id
+  secondary: # a voice id belongs to one provider: the secondary has its own
+    provider: elevenlabs
+    api_key_env: ELEVENLABS_API_KEY
+    voice: replace-with-an-elevenlabs-voice-id

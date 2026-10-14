@@ -1,0 +1,129 @@
+[package]
+name = "brisvox-server"
+description = "Brisvox server: multi-tenant session manager and HTTP API"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[features]
+# Process-wide mimalloc allocator in the server binary (~2x faster cross-thread
+# Arc<str> alloc/free than the system allocator, see examples/alloc_bench.rs). On by default;
+# `--no-default-features` builds with the system allocator.
+default = ["mimalloc", "yaml", "silero-tract"]
+mimalloc = ["dep:mimalloc"]
+# YAML agent definitions (docs/CONFIG.md): `.yaml`/`.yml` files are read with
+# the same schema, checks and positioned errors as TOML. On by default (a small pure-Rust
+# parser); `--no-default-features` builds a TOML-only server that rejects YAML files by name.
+yaml = ["dep:saphyr-parser", "dep:serde_spanned"]
+# The JSON Schema of the agent definition file (docs/CONFIG.md "Editor support"):
+# `brisvox-server --print-schema` prints it, docs/agent.schema.json is the committed copy. Off by
+# default (schemars is a build-time convenience, not part of a deployed server).
+schema = ["dep:schemars"]
+# The SIP trunk listener: `BRISVOX_SIP_ADDR` and friends
+# (`docs/OPERATIONS.md`). Off by default, like the transport's `sip` feature.
+sip = ["brisvox-transport/sip"]
+# The WebRTC listener (`docs/OPERATIONS.md`): browsers over WHIP-style signaling and
+# Opus, `BRISVOX_WEBRTC_ADDR` and friends. Off by default like the transport's `webrtc` feature
+# (it compiles libopus: a C compiler and cmake, docs/TESTING.md).
+webrtc = ["brisvox-transport/webrtc"]
+# The calls' VAD: the bundled Silero model on tract, pure Rust. Without it calls run
+# without a VAD (turns end on the turn policy's deadlines and the STT's finals).
+silero-tract = ["brisvox-inference/silero-tract"]
+# Smart Turn v3.2 on ONNX Runtime for adaptive turns: the model file
+# (`BRISVOX_SMART_TURN_MODEL`, default `models/smart-turn-v3.2-cpu.onnx`, fetched by
+# scripts/models/fetch_models.py) is loaded at startup. Off by default (the ORT binaries are
+# downloaded at build time); without it adaptive turns end at their fallback deadline.
+smart-turn-ort = ["brisvox-inference/smart-turn-ort"]
+# The built-in telephony tools `transfer_call`, `send_dtmf`, `end_call` over the carriers' REST
+# call control (`BRISVOX_CALL_CONTROL`, docs/TELEPHONY.md). Off by default.
+call-control = ["brisvox-transport/call-control"]
+# Ships each turn's trace to an OpenTelemetry collector as OTLP/HTTP JSON
+# (`BRISVOX_TRACES=otlp`, `BRISVOX_OTLP_*`). No dependency: a few hundred lines on the server's
+# sockets and serde_json. Off by default; metrics and the in-memory exporter are always built.
+otlp = []
+# Recordings encrypted at rest with age (docs/PRIVACY.md): `BRISVOX_RECORDING_AGE_RECIPIENTS`
+# names X25519 recipients and every recording file is written as `<name>.age`. Off by default (the
+# age crate pulls in a larger crypto tree); the variable set without the feature is a startup error.
+recording-encryption = ["dep:age"]
+# Canned `lookup_order` and `book_appointment` tools so the example agents run without an
+# application (src/tools/demo.rs). Off by default; never ship it to callers.
+demo-tools = []
+# Provider adapters an agent definition may name (docs/CONFIG.md). A definition naming a
+# provider whose feature is off is rejected with a precise error. `all-providers` turns on all.
+all-providers = [
+    "provider-deepgram",
+    "provider-assemblyai",
+    "provider-gladia",
+    "provider-sherpa-onnx",
+    "provider-openai-realtime-stt",
+    "provider-openai",
+    "provider-anthropic",
+    "provider-gemini",
+    "provider-openai-compatible",
+    "provider-cartesia",
+    "provider-elevenlabs",
+    "provider-deepgram-aura",
+    "provider-openai-speech",
+]
+provider-deepgram = ["brisvox-providers/provider-deepgram"]
+provider-assemblyai = ["brisvox-providers/provider-assemblyai"]
+provider-gladia = ["brisvox-providers/provider-gladia"]
+provider-sherpa-onnx = ["brisvox-providers/provider-sherpa-onnx"]
+provider-openai-realtime-stt = ["brisvox-providers/provider-openai-realtime-stt"]
+provider-openai = ["brisvox-providers/provider-openai"]
+provider-anthropic = ["brisvox-providers/provider-anthropic"]
+provider-gemini = ["brisvox-providers/provider-gemini"]
+provider-openai-compatible = ["brisvox-providers/provider-openai-compatible"]
+provider-cartesia = ["brisvox-providers/provider-cartesia"]
+provider-elevenlabs = ["brisvox-providers/provider-elevenlabs"]
+provider-deepgram-aura = ["brisvox-providers/provider-deepgram-aura"]
+provider-openai-speech = ["brisvox-providers/provider-openai-speech"]
+
+[dependencies]
+brisvox-agent = { workspace = true }
+# The out-of-process agent link of each call (`BRISVOX_AGENT_URL`).
+brisvox-agent-link = { workspace = true }
+brisvox-core = { workspace = true }
+brisvox-engine = { workspace = true }
+brisvox-inference = { workspace = true }
+brisvox-providers = { workspace = true }
+brisvox-transport = { workspace = true }
+# Optional: age encryption of the recordings (feature `recording-encryption`).
+age = { workspace = true, optional = true }
+# `Bytes` of the audio frames the recording sink queues; already in the workspace.
+bytes = { workspace = true }
+futures = { workspace = true }
+mimalloc = { workspace = true, optional = true }
+saphyr-parser = { workspace = true, optional = true }
+schemars = { workspace = true, optional = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+serde_spanned = { workspace = true, optional = true }
+thiserror = { workspace = true }
+# fs: the recording sinks and the retention sweeper. net/io-util: the health listener; signal: SIGTERM/SIGINT, Ctrl-C/Ctrl-Break;
+# rt-multi-thread: the binary's runtime.
+tokio = { workspace = true, features = ["fs", "io-util", "macros", "net", "rt", "rt-multi-thread", "signal", "sync", "time"] }
+tokio-util = { workspace = true, features = ["rt"] }
+toml = { workspace = true }
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true, features = ["env-filter", "json"] }
+
+# The open-file soft limit raised at startup (src/fdlimit.rs); Unix only.
+[target.'cfg(unix)'.dependencies]
+rlimit = { workspace = true }
+
+[dev-dependencies]
+brisvox-sim = { workspace = true }
+# The example agent files are validated against the generated JSON Schema.
+jsonschema = { workspace = true }
+# A certificate for the SIPS settings test (rcgen is in the tree through str0m).
+rcgen = "0.14.10"
+serde_json = { workspace = true }
+# The hosting tests' websocket client; the same crate the transport serves with.
+tokio-tungstenite = { workspace = true }
+tokio = { workspace = true, features = ["fs", "io-util", "macros", "net", "rt", "rt-multi-thread", "signal", "sync", "test-util", "time"] }
+
+[lints]
+workspace = true

@@ -1,0 +1,40 @@
+[package]
+name = "brisvox-inference"
+description = "Brisvox inference: dedicated CPU pool and on-device models (VAD, turn detection)"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[features]
+# Silero VAD on ONNX Runtime (downloads the ORT binaries at build time; see
+# docs/providers/onnxruntime-rust.md).
+silero = ["dep:ort"]
+# Silero VAD on tract, pure Rust; runs the prepared graph.
+silero-tract = ["dep:tract-onnx"]
+# Smart Turn v3.2 end-of-turn model; needs models/smart-turn-v3.2-cpu.onnx
+# (scripts/models/fetch_models.py). Runs on ONNX Runtime.
+smart-turn-ort = ["dep:ort"]
+
+[dependencies]
+ort = { workspace = true, optional = true }
+tract-onnx = { workspace = true, optional = true }
+brisvox-core = { workspace = true }
+realfft = { workspace = true }
+thiserror = { workspace = true }
+tokio = { workspace = true, features = ["sync", "macros", "time"] }
+
+[dev-dependencies]
+brisvox-sim = { workspace = true }
+serde_json = { workspace = true }
+tokio = { workspace = true, features = ["macros", "rt", "rt-multi-thread", "sync", "test-util", "time"] }
+
+# Dev-only harness behind the finding "tract does not reproduce Smart Turn"
+# (docs/providers/smart-turn.md). Not part of any shipped binary.
+[[example]]
+name = "smart_turn_tract"
+required-features = ["silero-tract"]
+
+[lints]
+workspace = true

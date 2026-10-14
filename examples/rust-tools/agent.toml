@@ -1,0 +1,51 @@
+# Voice assistant with two Rust tools: Deepgram (STT) + OpenAI (LLM) + Cartesia (TTS).
+# The tools are implemented in src/lib.rs and registered by src/main.rs; this file only names
+# them. Reference: docs/CONFIG.md. Check it without running anything:
+#
+#   cargo run -p brisvox-example-rust-tools -- check examples/rust-tools/agent.toml
+#
+# Keys come from the environment (`api_key_env` names the variable), never from this file.
+
+[agent]
+name = "rust-tools"
+language = "en"
+system_prompt = """
+You are a friendly voice assistant on a phone call. Answer in one or two short spoken sentences;
+no markdown, no lists, no emoji. Never read long numbers out digit by digit unless asked.
+When the caller asks what time or day it is somewhere, call get_time with that place's UTC
+offset (for example "UTC+3" for Istanbul). When the caller wants a message passed on to the
+owner, read it back to confirm, then call save_note with it, and tell the caller it is saved.
+"""
+# Registered by src/lib.rs (`MyTools`). A name listed here that no tool provides is a warning of
+# `check` and a startup error of the server.
+tools = ["get_time", "save_note"]
+
+[turn]
+policy = "fixed_silence"     # no model to fetch; use "adaptive" with the smart-turn-ort feature
+silence_ms = 700
+
+[interruption]
+preset = "recommended"
+backchannels = ["en"]
+
+[stt]
+provider = "deepgram"
+api_key_env = "DEEPGRAM_API_KEY"
+
+[stt.deepgram]
+model = "nova-3"
+endpointing_ms = 300
+
+[llm]
+provider = "openai"
+api_key_env = "OPENAI_API_KEY"
+
+[llm.openai]
+reasoning_effort = "low"
+max_output_tokens = 400
+
+[tts]
+provider = "cartesia"
+api_key_env = "CARTESIA_API_KEY"
+voice = "replace-with-a-cartesia-voice-id"
+sample_rate = 24000

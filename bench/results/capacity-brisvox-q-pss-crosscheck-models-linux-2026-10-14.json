@@ -1,0 +1,35 @@
+{
+  "schema": "brisvox-bench/capacity-summary/1",
+  "system": "brisvox-q-pss-crosscheck-models",
+  "date": "2026-10-14",
+  "label": "brisvox-q-pss-crosscheck-models (4 CPUs, 4g, Linux)",
+  "environment": {
+    "os": "linux",
+    "arch": "x86_64",
+    "logical_cores": 8,
+    "release_build": true,
+    "not_linux_run": false,
+    "banner": null
+  },
+  "note": "quiet gate passed after 0s: no cargo/rustc/link.exe on Windows, WSL load1 0.62 (< 1.0); Linux kernel 6.6.87.2-microsoft-standard-WSL2; container --cpus=4 --cpuset-cpus=0-3 --memory=4g --memory-swap=4g --ulimit nofile=1048576:1048576 --network host, server cores 0-3, generator cores 4-11 (bench/capacity_linux.sh)",
+  "runs": [
+    {
+      "file": "capacity-brisvox-q-pss-crosscheck-models-linux-2026-10-14-run1.json",
+      "max_concurrent": 350,
+      "first_failure": 375,
+      "limit": "found",
+      "failure_reason": "p95 V2V 1405 ms is above the limit 1200 ms (floor 950 ms + 250 ms)",
+      "p95_v2v_ms": 1043,
+      "p50_v2v_ms": 825,
+      "server_cpu_cores": 2.52,
+      "mcores_per_call": 7.2,
+      "rss_peak_mb": 432,
+      "generator_cpu_cores": 0.31,
+      "max_send_lateness_ms": 8,
+      "pss_peak_mb": 429
+    }
+  ],
+  "median_max_concurrent": 350,
+  "min_max_concurrent": 350,
+  "max_max_concurrent": 350
+}

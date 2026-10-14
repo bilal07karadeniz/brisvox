@@ -1,0 +1,62 @@
+{
+  "schema": "brisvox-bench/capacity-summary/1",
+  "system": "brisvox-models",
+  "date": "2026-10-13",
+  "label": "brisvox-models (4 CPUs, 4g, Linux)",
+  "environment": {
+    "os": "linux",
+    "arch": "x86_64",
+    "logical_cores": 8,
+    "release_build": true,
+    "not_linux_run": false,
+    "banner": null
+  },
+  "note": "Linux kernel 6.6.87.2-microsoft-standard-WSL2; container --cpus=4 --cpuset-cpus=0-3 --memory=4g --memory-swap=4g --ulimit nofile=1048576:1048576 --network host, server cores 0-3, generator cores 4-11 (bench/capacity_linux.sh)",
+  "runs": [
+    {
+      "file": "capacity-brisvox-models-linux-2026-10-13-run1.json",
+      "max_concurrent": 250,
+      "first_failure": 275,
+      "limit": "found",
+      "failure_reason": "p95 V2V 2495 ms is above the limit 1200 ms (floor 950 ms + 250 ms)",
+      "p95_v2v_ms": 915,
+      "p50_v2v_ms": 820,
+      "server_cpu_cores": 2.03,
+      "mcores_per_call": 8.13,
+      "rss_peak_mb": 387,
+      "generator_cpu_cores": 0.27,
+      "max_send_lateness_ms": 3
+    },
+    {
+      "file": "capacity-brisvox-models-linux-2026-10-13-run2.json",
+      "max_concurrent": 200,
+      "first_failure": 225,
+      "limit": "found",
+      "failure_reason": "p95 V2V 1239 ms is above the limit 1200 ms (floor 950 ms + 250 ms)",
+      "p95_v2v_ms": 833,
+      "p50_v2v_ms": 811,
+      "server_cpu_cores": 1.61,
+      "mcores_per_call": 8.04,
+      "rss_peak_mb": 303,
+      "generator_cpu_cores": 0.19,
+      "max_send_lateness_ms": 3
+    },
+    {
+      "file": "capacity-brisvox-models-linux-2026-10-13-run3.json",
+      "max_concurrent": 125,
+      "first_failure": 150,
+      "limit": "found",
+      "failure_reason": "p95 V2V 1592 ms is above the limit 1200 ms (floor 950 ms + 250 ms)",
+      "p95_v2v_ms": 870,
+      "p50_v2v_ms": 817,
+      "server_cpu_cores": 1.76,
+      "mcores_per_call": 14.04,
+      "rss_peak_mb": 265,
+      "generator_cpu_cores": 0.28,
+      "max_send_lateness_ms": 4
+    }
+  ],
+  "median_max_concurrent": 200,
+  "min_max_concurrent": 125,
+  "max_max_concurrent": 250
+}

@@ -1,0 +1,72 @@
+# Quality gate on every push and pull request: the same scripts/verify.sh developers run
+# (fmt, clippy -D warnings, nextest + doc tests, cargo-deny). No secrets needed.
+# Third-party actions are pinned to commit SHAs (version in the trailing comment).
+name: ci
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+  # Weekly: new RUSTSEC advisories surface even when nobody pushes.
+  schedule:
+    - cron: "17 4 * * 1"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.event.pull_request.number || github.ref }}
+  # Supersede outdated PR runs; never cancel runs on the default branch.
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+env:
+  CARGO_TERM_COLOR: always
+  CARGO_INCREMENTAL: "0"
+  RUST_BACKTRACE: "1"
+
+jobs:
+  verify:
+    name: verify (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 45
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      # Installs the toolchain pinned in rust-toolchain.toml (with rustfmt and clippy).
+      - name: Install pinned toolchain
+        run: |
+          rustup toolchain install
+          rustup show active-toolchain
+
+      # A stale Cargo.lock fails here instead of being rewritten silently.
+      - name: Check Cargo.lock is up to date
+        run: cargo fetch --locked
+
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        with:
+          save-if: ${{ github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master' }}
+
+      # Prebuilt binaries: seconds instead of minutes of `cargo install`.
+      - uses: taiki-e/install-action@f7e5d7c961414b23f5b25b2da9294395d08513ad # v2.87.26
+        with:
+          tool: cargo-nextest,cargo-deny
+
+      # sdk/python needs Python 3.11+ (the hosted runners ship 3.12) and the pinned websockets;
+      # the gate fails (BRISVOX_REQUIRE_PYTHON_SDK) instead of skipping when they are missing.
+      - name: Python SDK dependencies
+        run: python -m pip install "websockets>=15,<16"
+
+      - name: Quality gate
+        env:
+          BRISVOX_REQUIRE_PYTHON_SDK: "1"
+          BRISVOX_REQUIRE_EXAMPLES: "1"
+        run: bash scripts/verify.sh

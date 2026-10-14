@@ -1,0 +1,5 @@
+# Filled-in environment files of the examples (the *.env.example templates are committed).
+*.env
+.env
+__pycache__/
+.venv/

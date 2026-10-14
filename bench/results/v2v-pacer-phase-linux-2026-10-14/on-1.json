@@ -1,0 +1,144 @@
+{
+  "schema": "brisvox-bench/v2v/3",
+  "mode": "live",
+  "target": "ws://127.0.0.1:8101",
+  "settings": {
+    "runs": 1,
+    "concurrency": 1,
+    "fixtures": [
+      "en_two_utterances"
+    ],
+    "min_gap_ms": 4000,
+    "frame_ms": 20,
+    "silence_peak": 200,
+    "overlap_guard_ms": 100,
+    "response_timeout_ms": 10000
+  },
+  "engine": null,
+  "mock_bot": null,
+  "runs": [
+    {
+      "fixture": "en_two_utterances",
+      "run": 0,
+      "call_id": "ws-2",
+      "turns": [
+        {
+          "index": 0,
+          "lang": "en",
+          "eos_us": 6670000,
+          "outcome": "answered",
+          "v2v_us": 812184
+        },
+        {
+          "index": 1,
+          "lang": "en",
+          "eos_us": 13430000,
+          "outcome": "answered",
+          "v2v_us": 804880
+        }
+      ],
+      "frames_sent": 732,
+      "audio_frames_received": 59,
+      "audible_frames": 59,
+      "clears": 1,
+      "server_errors": [],
+      "max_send_lateness_us": 2216,
+      "failure": null,
+      "kind": "latency"
+    }
+  ],
+  "failed_runs": 0,
+  "overall": {
+    "turns": 2,
+    "answered": 2,
+    "talked_over": 0,
+    "bot_speaking": 0,
+    "no_response": 0,
+    "v2v": {
+      "count": 2,
+      "p50_us": 804880,
+      "p90_us": 812184,
+      "p95_us": 812184,
+      "p99_us": 812184,
+      "max_us": 812184
+    }
+  },
+  "per_fixture": [
+    {
+      "name": "en_two_utterances",
+      "turns": 2,
+      "answered": 2,
+      "talked_over": 0,
+      "bot_speaking": 0,
+      "no_response": 0,
+      "v2v": {
+        "count": 2,
+        "p50_us": 804880,
+        "p90_us": 812184,
+        "p95_us": 812184,
+        "p99_us": 812184,
+        "max_us": 812184
+      }
+    }
+  ],
+  "per_language": [
+    {
+      "name": "en",
+      "turns": 2,
+      "answered": 2,
+      "talked_over": 0,
+      "bot_speaking": 0,
+      "no_response": 0,
+      "v2v": {
+        "count": 2,
+        "p50_us": 804880,
+        "p90_us": 812184,
+        "p95_us": 812184,
+        "p99_us": 812184,
+        "max_us": 812184
+      }
+    }
+  ],
+  "per_turn": [
+    {
+      "fixture": "en_two_utterances",
+      "index": 0,
+      "lang": "en",
+      "eos_us": 6670000,
+      "turns": 1,
+      "answered": 1,
+      "talked_over": 0,
+      "bot_speaking": 0,
+      "no_response": 0,
+      "v2v": {
+        "count": 1,
+        "p50_us": 812184,
+        "p90_us": 812184,
+        "p95_us": 812184,
+        "p99_us": 812184,
+        "max_us": 812184
+      }
+    },
+    {
+      "fixture": "en_two_utterances",
+      "index": 1,
+      "lang": "en",
+      "eos_us": 13430000,
+      "turns": 1,
+      "answered": 1,
+      "talked_over": 0,
+      "bot_speaking": 0,
+      "no_response": 0,
+      "v2v": {
+        "count": 1,
+        "p50_us": 804880,
+        "p90_us": 804880,
+        "p95_us": 804880,
+        "p99_us": 804880,
+        "max_us": 804880
+      }
+    }
+  ],
+  "max_send_lateness_us": 2216,
+  "engine_stages": null
+}

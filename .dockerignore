@@ -1,0 +1,24 @@
+# Keep the build context small and the cargo-chef planner stable (docs/DEPLOY.md).
+# Everything the image build reads is listed back in by the Dockerfile's COPY lines.
+target/
+.git/
+.github/
+.config/
+.env
+.env.*
+!.env.example
+**/.env
+**/*.env
+models/
+bench/results/
+fixtures/large/
+**/__pycache__/
+*.wav.tmp
+.DS_Store
+# Not read by the build: the image gets the definitions it ships from deploy/ and examples/.
+docs/
+README.md
+# The SDK example images (examples/booking-agent/Dockerfile, sdk/typescript/examples/Dockerfile)
+# build from the repository root: keep local installs and builds out of their context.
+**/node_modules/
+sdk/typescript/dist/

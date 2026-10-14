@@ -1,0 +1,41 @@
+{
+  "schema": "brisvox-bench/capacity-summary/1",
+  "system": "livekit-default-models",
+  "date": "2026-10-14",
+  "label": "livekit-default-models (4 CPUs, 4g, Linux)",
+  "environment": {
+    "os": "linux",
+    "arch": "x86_64",
+    "logical_cores": 8,
+    "release_build": true,
+    "not_linux_run": false,
+    "banner": null
+  },
+  "note": "LiveKit Agents 1.8.7 (livekit-server livekit/livekit-server:v1.13.9, livekit/livekit-server@sha256:d0c04791bf63ca8dcea123571827d56ba9504bd57c8d5de60ee03b5408cc3154) variant default: framework defaults (worker and session); Linux kernel 6.6.87.2-microsoft-standard-WSL2; worker container --cpus=4 --cpuset-cpus=0-3 --memory=4g --memory-swap=4g --network host, load generator cores 4-11 (8 processes), SFU container on cores 12-15, no CPU limit; host load 4% (Windows total, 12 s mean) before the run; load average 0.76 1.95 1.24 (bench/livekit_baseline/capacity_livekit.sh)",
+  "runs": [
+    {
+      "file": "capacity-livekit-default-models-linux-2026-10-14-run1.json",
+      "max_concurrent": null,
+      "first_failure": 1,
+      "limit": "first_step_failed",
+      "failure_reason": "p95 V2V 2893 ms is above the limit 1200 ms (floor 950 ms + 250 ms)"
+    },
+    {
+      "file": "capacity-livekit-default-models-linux-2026-10-14-run2.json",
+      "max_concurrent": null,
+      "first_failure": 1,
+      "limit": "first_step_failed",
+      "failure_reason": "p95 V2V 2846 ms is above the limit 1200 ms (floor 950 ms + 250 ms)"
+    },
+    {
+      "file": "capacity-livekit-default-models-linux-2026-10-14-run3.json",
+      "max_concurrent": null,
+      "first_failure": 1,
+      "limit": "first_step_failed",
+      "failure_reason": "p95 V2V 2805 ms is above the limit 1200 ms (floor 950 ms + 250 ms)"
+    }
+  ],
+  "median_max_concurrent": 0,
+  "min_max_concurrent": 0,
+  "max_max_concurrent": 0
+}

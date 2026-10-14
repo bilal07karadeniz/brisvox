@@ -1,0 +1,68 @@
+# Phone agent (Twilio / Telnyx / SIP, 8 kHz G.711 calls): AssemblyAI (STT) + Groq through the
+# OpenAI-compatible adapter (LLM) + Deepgram Aura (TTS). Reference: docs/CONFIG.md.
+#
+# Telephony transports report 8 kHz at call start; call_sample_rate is only the fallback for a
+# transport that reports nothing. The TTS delivers 8 kHz directly, so nothing is resampled on
+# the way out. The engine's VAD, Smart Turn and STT always run at 16 kHz (the caller's audio is
+# resampled up once).
+#
+# Tools: book_appointment is an application tool. Plug yours in through brisvox_server::tools::AppTools,
+# or build the server with `--features demo-tools` for a canned one (docs/TOOLS.md); a server
+# that provides no `book_appointment` refuses this definition at startup.
+# transfer_call is a built-in telephony tool: it needs a carrier's call control in the server
+# (BRISVOX_CALL_CONTROL, cargo feature `call-control`, docs/OPERATIONS.md) and the
+# [telephony] destinations below (the model picks a name, never a number).
+
+[agent]
+name = "phone-reception"
+language = "en-US"
+system_prompt = """
+You answer the phone for Example Clinic. Keep every answer under two short sentences: the caller
+is on a phone line. To book, call book_appointment; to reach a person, call transfer_call.
+"""
+tools = ["book_appointment", "transfer_call"]
+
+[telephony]
+destinations = [
+  # 555-01xx numbers are reserved for fiction: put the clinic's own number here.
+  { name = "front_desk", number = "+15555550100", description = "the clinic's front desk" },
+]
+
+[turn]
+fallback_silence_ms = 2000
+
+[interruption]
+preset = "recommended"
+echo_guard_ms = 600          # phone lines echo more: a longer window where STT must confirm
+backchannels = ["en"]
+
+[audio]
+frame_ms = 20
+call_sample_rate = 8000
+
+[stt]
+provider = "assemblyai"
+api_key_env = "ASSEMBLYAI_API_KEY"
+
+[stt.assemblyai]
+speech_model = "universal-3-6-pro"
+region = "us"
+keyterms = ["Example Clinic"]
+
+[llm]
+provider = "openai_compatible"
+api_key_env = "GROQ_API_KEY"
+
+[llm.openai_compatible]
+preset = "groq"              # base URL and quirks of Groq; model below overrides the suggestion
+model = "llama-3.1-8b-instant"
+max_tokens = 300
+
+[tts]
+provider = "deepgram_aura"
+api_key_env = "DEEPGRAM_API_KEY"
+voice = "aura-2-thalia-en"   # the Aura model string carries voice and language
+sample_rate = 8000
+
+[tts.deepgram_aura]
+speed = 1.0

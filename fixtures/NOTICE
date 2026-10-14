@@ -1,0 +1,24 @@
+This NOTICE covers every file in this directory: the *.wav audio, the *.json sidecars
+(transcripts and ground truth) and the *.lock files.
+
+Speech audio and transcripts are adapted from the FLEURS dataset, Copyright Google LLC,
+https://huggingface.co/datasets/google/fleurs (revision
+70bb2e84b976b7e960aa89f1c648e09c59f894dd), licensed under Creative Commons Attribution 4.0
+International (CC BY 4.0), https://creativecommons.org/licenses/by/4.0/ .
+The sentence texts originate from the FLORES-101 benchmark (Meta AI / NLLB team), whose source
+sentences are taken from Wikimedia projects (Wikinews, Wikijunior, Wikivoyage), licensed under
+CC BY-SA 4.0, https://creativecommons.org/licenses/by-sa/4.0/ . This directory is therefore
+made available under CC BY-SA 4.0. It is NOT covered by the project's MIT/Apache-2.0 code
+license.
+
+Adapted material. Modifications by the brisvox project: clips were selected from the dev
+split, converted from 32-bit float to 16-bit PCM, peak-normalized to -6 dBFS, trimmed of
+leading/trailing silence, and concatenated with synthetic silence (see
+scripts/fixtures/build_fixtures.py; source checksums in sources.lock and large.sources.lock,
+per-segment sources in each *.json sidecar).
+
+No endorsement by the dataset creators or speakers is implied. The material is provided "as
+is" without warranties (see the licenses' disclaimer of warranties).
+
+Citation: Conneau, Ma, Khanuja, Zhang, Axelrod, Dalmia, Riesa, Rivera, Bapna. "FLEURS:
+Few-shot Learning Evaluation of Universal Representations of Speech." arXiv:2205.12446, 2022.

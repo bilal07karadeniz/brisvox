@@ -1,0 +1,71 @@
+# A fully local Turkish agent: sherpa-onnx + the community "seda" model (STT, CPU) + Ollama
+# (LLM) + Chatterbox (multilingual TTS, GPU) through the OpenAI-compatible speech endpoint.
+# Reference: docs/CONFIG.md, docs/providers/sherpa-onnx.md, docs/providers/local-speech.md.
+# Build the server with
+# `--features provider-sherpa-onnx,provider-openai-compatible,provider-openai-speech,smart-turn-ort`
+# (add `webrtc` for the browser page; without `smart-turn-ort` and the model from
+# scripts/models/fetch_models.py the adaptive turn policy ends every turn at its 3 s fallback).
+# Step by step: book/src/quickstart/local.md. Ports: this Turkish STT on 6006, the English one
+# (local-en.toml) on 6007.
+#
+# Chatterbox is slow: about 3 s to the first audio byte for two sentences on an RTX 5070 (the route
+# does not stream, docs/providers/openai-speech.md "Live"), too slow for a natural live turn.
+#
+# Start the STT server (commands assembled from the sherpa-onnx server source and the model
+# card's file list; nothing here has been run yet, see docs/providers/sherpa-onnx.md):
+#
+#   git clone https://github.com/k2-fsa/sherpa-onnx        (for python-api-examples/)
+#   pip install sherpa-onnx websockets numpy
+#   huggingface-cli download atasoglu/seda-v0.1 --local-dir ./seda-v0.1
+#   python3 ./python-api-examples/streaming_server.py \
+#     --tokens  ./seda-v0.1/tokens.txt \
+#     --encoder ./seda-v0.1/encoder.int8.onnx \
+#     --decoder ./seda-v0.1/decoder.onnx \
+#     --joiner  ./seda-v0.1/joiner.int8.onnx \
+#     --sample-rate 16000 \
+#     --port 6006
+#
+# seda prints lowercase text without punctuation and spells numbers out; the model's quoted
+# WERs include its language model, which this server cannot load (docs/providers/sherpa-onnx.md).
+# The acoustic model is Apache-2.0.
+
+[agent]
+name = "yerel-tr"
+language = "tr"
+system_prompt = """
+Bu bilgisayarda çalışan, samimi bir sesli asistansın. Bir iki kısa, konuşma diline uygun
+cümleyle yanıt ver.
+"""
+
+[stt]
+provider = "sherpa_onnx"
+
+[stt.sherpa_onnx]
+base_url = "ws://127.0.0.1:6006"
+sample_rate = 16000
+finalize_timeout_ms = 1500
+
+[llm]
+provider = "openai_compatible"
+
+[llm.openai_compatible]
+preset = "ollama"
+# The one local model that called tools correctly in all runs (docs/TOOLS.md, "Local models through
+# Ollama"): ~7.7 GB of GPU memory, first sentence in ~270 ms. Smaller: "gemma4:e4b-it-qat" (3.1 GB,
+# ~160 ms, answers fine but fumbles tool calls) or "qwen3.5:4b"; give those no tools.
+model = "gemma4:12b-it-qat"
+max_tokens = 200
+# Required for the models above: without it a thinking model spends the first seconds (or the whole
+# token budget) on hidden reasoning. Ollama's /v1 endpoint ignores `think = false` but honours this.
+reasoning_effort = "none"
+
+[tts]
+provider = "openai_speech"   # POST /v1/audio/speech against Chatterbox-TTS-Server
+voice = "replace-with-a-chatterbox-voice"
+sample_rate = 24000
+
+[tts.openai_speech]
+# Port and model name are placeholders: take them from the Chatterbox-TTS-Server README (the
+# survey in docs/providers/local-speech.md did not record them).
+base_url = "http://127.0.0.1:8004/v1"
+model = "chatterbox"

@@ -1,0 +1,278 @@
+{
+  "schema": "brisvox-live-v2v/1",
+  "task": "",
+  "system": "pipecat",
+  "system_description": "Pipecat 1.12.0 bot (`bench/pipecat_baseline/bot.py`, Python 3.13), the same agent file, Smart Turn v3.2 and Silero v6.2.3, LLM through Pipecat's `OpenAILLMService` (Chat Completions) with `base_url` OpenRouter, happy-eyeballs websocket dialing on.",
+  "date": "2026-10-13",
+  "lang": "tr",
+  "environment": {
+    "platform": "Windows-10-10.0.26300-SP0",
+    "logical_cores": 32,
+    "python": "3.10.11",
+    "bench": "brisvox-bench 0.1.0 (release build)",
+    "network": "public internet, loopback between client and system under test; IPv6 route drops packets",
+    "providers": {
+      "stt": "deepgram nova-3",
+      "llm": "openrouter openai/gpt-6-luna (reasoning_effort none)",
+      "tts": "cartesia sonic-3.6"
+    }
+  },
+  "blocks": [
+    {
+      "label": "tr-p1",
+      "runs": 3,
+      "bench_header": [
+        "# Voice-to-voice latency (live)",
+        "",
+        "- command: `brisvox-bench v2v --url ws://127.0.0.1:18765 --fixtures tr_two_utterances --runs 3 --min-gap-ms 9000  ",
+        "- brisvox 0.1.0 (release build), windows x86_64, 32 logical cores, 2 tokio workers (threads, not a CPU limit: other threads may use any core)",
+        "- live: one client, one call at a time, real time (SystemClock), 20 ms frames",
+        "- **not a Linux run** (windows): timers and scheduling differ from the Linux servers the engine targets, so these numbers show trends only; numbers for comparisons (with other engines, or against latency targets) come from a Linux run",
+        "- target: `ws://127.0.0.1:18765`",
+        "- 3 runs of each of tr_two_utterances (utterances spaced at least 9000 ms apart, 20 ms frames, silence below peak 200, response window 10000 ms after the fixture)",
+        "",
+        "**V2V** = arrival at the client of the first non-silent bot audio after the ground-truth end of the user's speech, minus that end of speech (docs/LATENCY.md). Percentiles are nearest rank over answered turns; below 100 samples p99 is the maximum.",
+        ""
+      ],
+      "provider_turns_logged": 8,
+      "bench_turns": 6
+    }
+  ],
+  "outcomes": {
+    "answered": 6
+  },
+  "v2v": {
+    "spec": {
+      "all": {
+        "n": 6,
+        "min": 2251.845,
+        "p50": 2519.232,
+        "p90": 3477.117,
+        "p95": 3477.117,
+        "max": 3477.117,
+        "mean": 2731.721
+      },
+      "by_turn": {
+        "0": {
+          "n": 3,
+          "min": 2500.931,
+          "p50": 2836.483,
+          "p90": 3477.117,
+          "p95": 3477.117,
+          "max": 3477.117,
+          "mean": 2938.177
+        },
+        "1": {
+          "n": 3,
+          "min": 2251.845,
+          "p50": 2519.232,
+          "p90": 2804.718,
+          "p95": 2804.718,
+          "max": 2804.718,
+          "mean": 2525.265
+        }
+      }
+    },
+    "pooled": {
+      "all": {
+        "n": 6,
+        "min": 2251.845,
+        "p50": 2519.232,
+        "p90": 3477.117,
+        "p95": 3477.117,
+        "max": 3477.117,
+        "mean": 2731.721
+      },
+      "by_turn": {
+        "0": {
+          "n": 3,
+          "min": 2500.931,
+          "p50": 2836.483,
+          "p90": 3477.117,
+          "p95": 3477.117,
+          "max": 3477.117,
+          "mean": 2938.177
+        },
+        "1": {
+          "n": 3,
+          "min": 2251.845,
+          "p50": 2519.232,
+          "p90": 2804.718,
+          "p95": 2804.718,
+          "max": 2804.718,
+          "mean": 2525.265
+        }
+      }
+    }
+  },
+  "provider_note": "From Pipecat's own service timers (`enable_metrics`, logged by the bot as `PCMETRIC`, `--provider-metrics`). STT TTFB is counted from the VAD stop (100 ms of silence after the end of speech, 32 ms windows) to the final transcript; LLM TTFB from the request to the first token; TTS TTFB from the first text to the first audio. A turn the user resumed mid-sentence can show more than one LLM request; the last one is the answered one (`llm_requests` in the JSON).",
+  "provider_latency": {
+    "STT final after the VAD stop (Pipecat STT TTFB)": {
+      "n": 6,
+      "min": 346.7,
+      "p50": 390.8,
+      "p90": 407.3,
+      "p95": 407.3,
+      "max": 407.3,
+      "mean": 389.18333333333334
+    },
+    "STT final after end of speech (TTFB + 100 ms VAD stop)": {
+      "n": 6,
+      "min": 446.7,
+      "p50": 490.8,
+      "p90": 507.3,
+      "p95": 507.3,
+      "max": 507.3,
+      "mean": 489.18333333333334
+    },
+    "LLM first token after the request (Pipecat LLM TTFB)": {
+      "n": 5,
+      "min": 1249.9,
+      "p50": 1460.1,
+      "p90": 2012.7,
+      "p95": 2012.7,
+      "max": 2012.7,
+      "mean": 1552.9
+    },
+    "TTS first audio after the text (Pipecat TTS TTFB)": {
+      "n": 5,
+      "min": 194.2,
+      "p50": 199.5,
+      "p90": 208.8,
+      "p95": 208.8,
+      "max": 208.8,
+      "mean": 199.82
+    }
+  },
+  "residual_note": "Per turn: V2V minus the three provider times above (STT from the end of speech, the LLM to its first token, TTS to its first byte). It is not the same residual as brisvox's: Pipecat does not time the wait for the first sentence (its aggregator holds text until a sentence ends) nor the Smart Turn run, so those, the soxr resampler's 100 ms bursts, the serializer and the pacer are in this number, together with the transport and the end-of-speech definition.",
+  "residual": {
+    "V2V minus (100 ms VAD stop + STT TTFB + LLM TTFB + TTS TTFB)": {
+      "n": 5,
+      "min": 200.14499999999998,
+      "p50": 560.531,
+      "p90": 757.6170000000002,
+      "p95": 757.6170000000002,
+      "max": 757.6170000000002,
+      "mean": 534.7788
+    }
+  },
+  "failures": {
+    "failed calls": 0,
+    "no_response turns": 0,
+    "talked_over turns": 0,
+    "bot_speaking turns": 0,
+    "turns without a provider timeline": 0,
+    "ERROR log lines": 0,
+    "WARN log lines": 0
+  },
+  "turn_columns": [
+    "block",
+    "run",
+    "turn",
+    "outcome",
+    "v2v_ms",
+    "stt_ttfb_ms",
+    "llm_ttfb_ms",
+    "tts_ttfb_ms",
+    "llm_requests",
+    "residual_ms"
+  ],
+  "turns": [
+    {
+      "block": "tr-p1",
+      "fixture": "tr_two_utterances",
+      "run": 0,
+      "turn": 0,
+      "lang": "tr",
+      "outcome": "answered",
+      "v2v_ms": 3477.117,
+      "stt_ttfb_ms": 407.3,
+      "llm_ttfb_ms": 2012.7,
+      "tts_ttfb_ms": 199.5,
+      "llm_requests": 2,
+      "spec": true,
+      "providers_ms": 2719.5,
+      "residual_ms": 757.6170000000002
+    },
+    {
+      "block": "tr-p1",
+      "fixture": "tr_two_utterances",
+      "run": 0,
+      "turn": 1,
+      "lang": "tr",
+      "outcome": "answered",
+      "v2v_ms": 2804.718,
+      "stt_ttfb_ms": 383.6,
+      "llm_ttfb_ms": 1645.6,
+      "tts_ttfb_ms": 196.9,
+      "llm_requests": 2,
+      "spec": true,
+      "providers_ms": 2326.1,
+      "residual_ms": 478.61799999999994
+    },
+    {
+      "block": "tr-p1",
+      "fixture": "tr_two_utterances",
+      "run": 1,
+      "turn": 0,
+      "lang": "tr",
+      "outcome": "answered",
+      "v2v_ms": 2836.483,
+      "stt_ttfb_ms": 405.2,
+      "llm_ttfb_ms": 1460.1,
+      "tts_ttfb_ms": 194.2,
+      "llm_requests": 2,
+      "spec": true,
+      "providers_ms": 2159.5,
+      "residual_ms": 676.9830000000002
+    },
+    {
+      "block": "tr-p1",
+      "fixture": "tr_two_utterances",
+      "run": 1,
+      "turn": 1,
+      "lang": "tr",
+      "outcome": "answered",
+      "v2v_ms": 2519.232,
+      "stt_ttfb_ms": 401.5,
+      "llm_ttfb_ms": null,
+      "tts_ttfb_ms": null,
+      "llm_requests": 0,
+      "spec": true,
+      "providers_ms": null,
+      "residual_ms": null
+    },
+    {
+      "block": "tr-p1",
+      "fixture": "tr_two_utterances",
+      "run": 2,
+      "turn": 0,
+      "lang": "tr",
+      "outcome": "answered",
+      "v2v_ms": 2500.931,
+      "stt_ttfb_ms": 390.8,
+      "llm_ttfb_ms": 1249.9,
+      "tts_ttfb_ms": 199.7,
+      "llm_requests": 2,
+      "spec": true,
+      "providers_ms": 1940.4,
+      "residual_ms": 560.531
+    },
+    {
+      "block": "tr-p1",
+      "fixture": "tr_two_utterances",
+      "run": 2,
+      "turn": 1,
+      "lang": "tr",
+      "outcome": "answered",
+      "v2v_ms": 2251.845,
+      "stt_ttfb_ms": 346.7,
+      "llm_ttfb_ms": 1396.2,
+      "tts_ttfb_ms": 208.8,
+      "llm_requests": 1,
+      "spec": true,
+      "providers_ms": 2051.7,
+      "residual_ms": 200.14499999999998
+    }
+  ]
+}

@@ -1,0 +1,62 @@
+{
+  "schema": "brisvox-bench/capacity-summary/1",
+  "system": "pipecat-tuned-models",
+  "date": "2026-10-13",
+  "label": "pipecat-tuned-models (4 CPUs, 4g, Linux)",
+  "environment": {
+    "os": "linux",
+    "arch": "x86_64",
+    "logical_cores": 8,
+    "release_build": true,
+    "not_linux_run": false,
+    "banner": null
+  },
+  "note": "server flags: -e OMP_NUM_THREADS=1 -e OPENBLAS_NUM_THREADS=1 -e MKL_NUM_THREADS=1; 4 Pipecat process(es); Linux kernel 6.6.87.2-microsoft-standard-WSL2; container --cpus=4 --cpuset-cpus=0-3 --memory=4g --memory-swap=4g --ulimit nofile=1048576:1048576 --network host, server cores 0-3, generator cores 4-11 (bench/capacity_linux.sh)",
+  "runs": [
+    {
+      "file": "capacity-pipecat-tuned-models-linux-2026-10-13-run1.json",
+      "max_concurrent": 20,
+      "first_failure": 25,
+      "limit": "found",
+      "failure_reason": "10 of 50 calls failed; 39 of 100 turns lost or not clean (2 talked over, 17 no response, 0 bot speaking; allowed 0.0 %); p95 V2V 2576 ms is above the limit 1200 ms (floor 950 ms + 250 ms)",
+      "p95_v2v_ms": 912,
+      "p50_v2v_ms": 808,
+      "server_cpu_cores": 1.4,
+      "mcores_per_call": 69.98,
+      "rss_peak_mb": 3657,
+      "generator_cpu_cores": 0.08,
+      "max_send_lateness_ms": 4
+    },
+    {
+      "file": "capacity-pipecat-tuned-models-linux-2026-10-13-run2.json",
+      "max_concurrent": 20,
+      "first_failure": 25,
+      "limit": "found",
+      "failure_reason": "9 of 50 calls failed; 22 of 100 turns lost or not clean (0 talked over, 4 no response, 0 bot speaking; allowed 0.0 %); p95 V2V 3898 ms is above the limit 1200 ms (floor 950 ms + 250 ms)",
+      "p95_v2v_ms": 811,
+      "p50_v2v_ms": 806,
+      "server_cpu_cores": 1.19,
+      "mcores_per_call": 59.69,
+      "rss_peak_mb": 3644,
+      "generator_cpu_cores": 0.06,
+      "max_send_lateness_ms": 3
+    },
+    {
+      "file": "capacity-pipecat-tuned-models-linux-2026-10-13-run3.json",
+      "max_concurrent": 5,
+      "first_failure": 10,
+      "limit": "found",
+      "failure_reason": "1 of 40 turns lost or not clean (0 talked over, 1 no response, 0 bot speaking; allowed 0.0 %); p95 V2V 1641 ms is above the limit 1200 ms (floor 950 ms + 250 ms)",
+      "p95_v2v_ms": 809,
+      "p50_v2v_ms": 789,
+      "server_cpu_cores": 0.32,
+      "mcores_per_call": 63.38,
+      "rss_peak_mb": 1462,
+      "generator_cpu_cores": 0.02,
+      "max_send_lateness_ms": 3
+    }
+  ],
+  "median_max_concurrent": 20,
+  "min_max_concurrent": 5,
+  "max_max_concurrent": 20
+}

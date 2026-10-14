@@ -1,0 +1,3 @@
+# Real environment files hold API keys and tokens: only the *.env.example templates are committed.
+*.env
+!*.env.example

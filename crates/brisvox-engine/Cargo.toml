@@ -1,0 +1,54 @@
+[package]
+name = "brisvox-engine"
+description = "Brisvox engine: the production voice pipeline (transport pump, VAD, STT, turn driver, LLM runner, TTS, transport out)"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[features]
+default = ["rtvi"]
+# The RTVI bridge (`brisvox_engine::rtvi`): engine events to a Pipecat RTVI client and its
+# app messages into the call, over the transport's RTVI adapter.
+rtvi = ["brisvox-transport/rtvi"]
+# Real-time tests with the Silero VAD on tract (the model is bundled in brisvox-inference).
+silero-tract = ["brisvox-inference/silero-tract"]
+# Real-time tests with the real Smart Turn model on ONNX Runtime (models/smart-turn-v3.2-cpu.onnx,
+# scripts/models/fetch_models.py): the early-analysis measurements.
+smart-turn-ort = ["brisvox-inference/smart-turn-ort"]
+# The production pipeline as a `brisvox_sim::SessionFactory` (`brisvox_engine::sim::EngineFactory`)
+# over the loopback transport, so the shared simulator suite and the benches run on it.
+# brisvox-sim never depends on the engine, so this is no cycle.
+sim = ["dep:brisvox-sim"]
+
+[dependencies]
+brisvox-agent = { workspace = true }
+brisvox-audio = { workspace = true }
+brisvox-core = { workspace = true }
+brisvox-inference = { workspace = true }
+brisvox-providers = { workspace = true }
+brisvox-sim = { workspace = true, optional = true }
+brisvox-transport = { workspace = true }
+bytes = { workspace = true }
+serde_json = { workspace = true }
+thiserror = { workspace = true }
+tokio = { workspace = true, features = ["macros", "rt", "sync", "time"] }
+tokio-util = { workspace = true }
+tracing = { workspace = true }
+
+[dev-dependencies]
+# The crate itself with the `sim` feature, so tests reach `EngineFactory` without `--features`.
+brisvox-engine = { workspace = true, features = ["sim"] }
+brisvox-sim = { workspace = true }
+# The real HTTP/SSE and Live adapters of the tool-calling scenarios (tests/tool_scenarios):
+# each runs against a loopback server that speaks its wire format, and live with BRISVOX_LIVE_TESTS=1.
+brisvox-providers = { workspace = true, features = ["provider-openai-compatible", "provider-anthropic", "provider-gemini", "provider-gemini-live", "provider-sherpa-onnx"] }
+# The scripted Pipecat-wire client of the RTVI end-to-end test (workspace crates already used by
+# brisvox-transport; no new dependency).
+futures = { workspace = true }
+tokio = { workspace = true, features = ["macros", "net", "rt", "rt-multi-thread", "sync", "test-util", "time"] }
+tokio-tungstenite = { workspace = true }
+
+[lints]
+workspace = true

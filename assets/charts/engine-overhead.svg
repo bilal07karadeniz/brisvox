@@ -1,0 +1,65 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 720 424" width="720" height="424" role="img" aria-labelledby="engine-overhead-t engine-overhead-d">
+<title id="engine-overhead-t">Engine overhead per stage</title>
+<desc id="engine-overhead-d">Dot plot, engine time per stage (log scale): end of turn to LLM request p50 50 µs, p95 89 µs, budget 3 ms; TTS audio to transport p50 35 µs, p95 64 µs, budget 2 ms; first LLM token to TTS text p50 24 µs, p95 51 µs; barge-in to audio cleared p50 11 µs, p95 22 µs, budget 1 ms; speech stop to STT finalize p50 6 µs, p95 14 µs</desc>
+<style>
+text{font-family:system-ui,-apple-system,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif}
+.bg{fill:#fcfcfb}.t1{fill:#0b0b0b}.t2{fill:#52514e}.grid{stroke:#e3e2de}.axis{stroke:#8a8983}
+.ring{stroke:#fcfcfb}.surf{fill:#fcfcfb}.ink{fill:#0b0b0b}.slo{stroke:#d03b3b}.slot{fill:#d03b3b}
+@media (prefers-color-scheme:dark){.bg{fill:#1a1a19}.t1{fill:#ffffff}.t2{fill:#c3c2b7}.grid{stroke:#383835}
+.axis{stroke:#7b7a74}.ring{stroke:#1a1a19}.surf{fill:#1a1a19}.ink{fill:#ffffff}.slo{stroke:#ec835a}.slot{fill:#ec835a}}
+.f-brisvox{fill:#2a78d6}.s-brisvox{stroke:#2a78d6}
+@media (prefers-color-scheme:dark){.f-brisvox{fill:#3987e5}.s-brisvox{stroke:#3987e5}}
+</style>
+<rect class="bg" x="0" y="0" width="720" height="424" rx="10"/>
+<text x="24" y="30" class="t1" font-size="17" font-weight="700">Engine overhead per stage</text>
+<text x="24" y="49" class="t2" font-size="13">The engine's own time in each stage of a turn (provider time excluded), p50 and p95 over 60 measured</text>
+<text x="24" y="68" class="t2" font-size="13">spans, 60 turns over the websocket, mock providers. Log axis; the red bar is the budget at p95.</text>
+<line x1="232" x2="232" y1="88" y2="324" class="grid" stroke-width="1"/>
+<text x="232" y="342" class="t2" font-size="12" text-anchor="middle">1 µs</text>
+<line x1="347" x2="347" y1="88" y2="324" class="grid" stroke-width="1"/>
+<text x="347" y="342" class="t2" font-size="12" text-anchor="middle">10 µs</text>
+<line x1="462" x2="462" y1="88" y2="324" class="grid" stroke-width="1"/>
+<text x="462" y="342" class="t2" font-size="12" text-anchor="middle">100 µs</text>
+<line x1="577" x2="577" y1="88" y2="324" class="grid" stroke-width="1"/>
+<text x="577" y="342" class="t2" font-size="12" text-anchor="middle">1 ms</text>
+<line x1="692" x2="692" y1="88" y2="324" class="grid" stroke-width="1"/>
+<text x="692" y="342" class="t2" font-size="12" text-anchor="middle">10 ms</text>
+<line x1="232" x2="692" y1="324" y2="324" class="axis" stroke-width="1"/>
+<text x="462" y="362" class="t2" font-size="12" text-anchor="middle">time spent in the stage (log scale)</text>
+<text x="220" y="121" class="t1" font-size="13" text-anchor="end">end of turn to LLM request</text>
+<line x1="427.4" x2="456.2" y1="117" y2="117" class="s-brisvox" stroke-width="3"/>
+<circle cx="427.4" cy="117" r="4.5" class="surf s-brisvox" stroke-width="2.5"/>
+<circle cx="456.2" cy="117" r="5" class="f-brisvox ring" stroke-width="2"/>
+<text x="467.2" y="121" class="t1" font-size="12" font-weight="600">p95 89 µs</text>
+<line x1="631.9" x2="631.9" y1="104" y2="130" class="slo" stroke-width="3"/>
+<text x="631.9" y="100" class="slot" font-size="12" text-anchor="middle">budget 3 ms</text>
+<text x="220" y="167" class="t1" font-size="13" text-anchor="end">TTS audio to transport</text>
+<line x1="409.6" x2="439.7" y1="163" y2="163" class="s-brisvox" stroke-width="3"/>
+<circle cx="409.6" cy="163" r="4.5" class="surf s-brisvox" stroke-width="2.5"/>
+<circle cx="439.7" cy="163" r="5" class="f-brisvox ring" stroke-width="2"/>
+<text x="450.7" y="167" class="t1" font-size="12" font-weight="600">p95 64 µs</text>
+<line x1="611.6" x2="611.6" y1="150" y2="176" class="slo" stroke-width="3"/>
+<text x="611.6" y="146" class="slot" font-size="12" text-anchor="middle">budget 2 ms</text>
+<text x="220" y="213" class="t1" font-size="13" text-anchor="end">first LLM token to TTS text</text>
+<line x1="390.7" x2="428.4" y1="209" y2="209" class="s-brisvox" stroke-width="3"/>
+<circle cx="390.7" cy="209" r="4.5" class="surf s-brisvox" stroke-width="2.5"/>
+<circle cx="428.4" cy="209" r="5" class="f-brisvox ring" stroke-width="2"/>
+<text x="439.4" y="213" class="t1" font-size="12" font-weight="600">p95 51 µs</text>
+<text x="220" y="259" class="t1" font-size="13" text-anchor="end">barge-in to audio cleared</text>
+<line x1="351.8" x2="386.4" y1="255" y2="255" class="s-brisvox" stroke-width="3"/>
+<circle cx="351.8" cy="255" r="4.5" class="surf s-brisvox" stroke-width="2.5"/>
+<circle cx="386.4" cy="255" r="5" class="f-brisvox ring" stroke-width="2"/>
+<text x="397.4" y="259" class="t1" font-size="12" font-weight="600">p95 22 µs</text>
+<line x1="577" x2="577" y1="242" y2="268" class="slo" stroke-width="3"/>
+<text x="577" y="238" class="slot" font-size="12" text-anchor="middle">budget 1 ms</text>
+<text x="220" y="305" class="t1" font-size="13" text-anchor="end">speech stop to STT finalize</text>
+<line x1="321.5" x2="363.8" y1="301" y2="301" class="s-brisvox" stroke-width="3"/>
+<circle cx="321.5" cy="301" r="4.5" class="surf s-brisvox" stroke-width="2.5"/>
+<circle cx="363.8" cy="301" r="5" class="f-brisvox ring" stroke-width="2"/>
+<text x="374.8" y="305" class="t1" font-size="12" font-weight="600">p95 14 µs</text>
+<circle cx="232" cy="380" r="4.5" class="surf s-brisvox" stroke-width="2.5"/>
+<text x="242" y="384" class="t2" font-size="12">p50</text>
+<circle cx="288" cy="380" r="5" class="f-brisvox ring" stroke-width="2"/>
+<text x="298" y="384" class="t2" font-size="12">p95</text>
+<text x="24" y="410" class="t2" font-size="12">Source: bench/results/v2v-sim.json (engine_stages). Windows x86_64 development machine, release build.</text>
+</svg>

@@ -1,0 +1,30 @@
+[package]
+name = "brisvox-agent"
+description = "Brisvox agent: turn taking, interruptions, context, tools, TTS segmentation"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dependencies]
+brisvox-core = { workspace = true }
+futures = { workspace = true }
+jsonschema = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+thiserror = { workspace = true }
+tokio = { workspace = true, features = ["rt", "sync", "time"] }
+tokio-util = { workspace = true }
+tracing = { workspace = true }
+
+[dev-dependencies]
+# Test-only cycle (brisvox-sim depends on this crate): integration tests drive the machine with
+# the simulator's scripted callers and VAD timing (tests/interruption_sim.rs).
+brisvox-sim = { workspace = true }
+tokio = { workspace = true, features = ["macros", "rt", "rt-multi-thread", "test-util", "time"] }
+proptest = { workspace = true }
+tracing-subscriber = { workspace = true }
+
+[lints]
+workspace = true

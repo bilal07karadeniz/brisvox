@@ -1,0 +1,36 @@
+[package]
+name = "brisvox-agent-link"
+description = "Brisvox out-of-process agent protocol: versioned JSON over WebSocket between a call and an agent process, remote tools, and a reference agent in Rust"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dependencies]
+brisvox-agent = { workspace = true }
+brisvox-core = { workspace = true }
+brisvox-engine = { workspace = true }
+# The process-wide rustls client config of `wss://` agent URLs and the raced
+# (happy eyeballs) WebSocket dial.
+brisvox-providers = { workspace = true, features = ["ws"] }
+futures = { workspace = true }
+# The client TLS config type of a private CA (`BRISVOX_AGENT_TLS_CA`).
+rustls = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+thiserror = { workspace = true }
+tokio = { workspace = true, features = ["macros", "net", "rt", "sync", "time"] }
+tokio-tungstenite = { workspace = true }
+tokio-util = { workspace = true }
+tracing = { workspace = true }
+
+[dev-dependencies]
+# The loopback call (`brisvox_engine::sim`) of the end-to-end tests.
+brisvox-engine = { workspace = true, features = ["sim"] }
+brisvox-sim = { workspace = true }
+brisvox-transport = { workspace = true }
+tokio = { workspace = true, features = ["io-util", "macros", "net", "rt", "rt-multi-thread", "sync", "test-util", "time"] }
+
+[lints]
+workspace = true

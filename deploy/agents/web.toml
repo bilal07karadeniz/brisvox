@@ -1,0 +1,43 @@
+# WebSocket agent for the compose example (deploy/compose.yaml, docs/DEPLOY.md): Deepgram (STT)
+# + OpenAI (LLM) + Cartesia (TTS), no tools. Reference: docs/CONFIG.md. Secrets are never in
+# this file: every `api_key_env` names an environment variable (deploy/ws.env).
+#
+# Copy it, change the prompt and the voice, and mount your copy over /etc/brisvox/agent.toml.
+
+[agent]
+name = "web-agent"
+language = "en"
+system_prompt = """
+You are a voice assistant. Answer in one or two short spoken sentences. Never read out URLs or
+long numbers digit by digit unless asked.
+"""
+
+[turn]
+policy = "adaptive"          # Smart Turn decides (the model ships in the image)
+fallback_silence_ms = 3000
+
+[interruption]
+preset = "recommended"
+backchannels = ["en"]
+
+[stt]
+provider = "deepgram"
+api_key_env = "DEEPGRAM_API_KEY"
+
+[stt.deepgram]
+model = "nova-3"
+endpointing_ms = 300
+
+[llm]
+provider = "openai"
+api_key_env = "OPENAI_API_KEY"
+
+[llm.openai]
+reasoning_effort = "low"
+max_output_tokens = 400
+
+[tts]
+provider = "cartesia"
+api_key_env = "CARTESIA_API_KEY"
+voice = "replace-with-a-cartesia-voice-id"
+sample_rate = 24000

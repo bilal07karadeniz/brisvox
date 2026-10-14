@@ -1,0 +1,30 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "brisvox-agent"
+version = "0.1.0"
+description = "Python SDK for the brisvox agent protocol: the application logic of a real-time voice call (tools, events, commands) in async Python."
+readme = "README.md"
+requires-python = ">=3.11"
+license = { text = "MIT OR Apache-2.0" }
+dependencies = [
+    # websockets.asyncio.server is the stable asyncio implementation from 14. The tests ran on
+    # 15.0.1 only (Python 3.13, 2026-10-13), so the range is that major; widen it only after the
+    # suite ran on the new one (CI installs this exact range).
+    "websockets>=15,<16",
+]
+
+[project.optional-dependencies]
+test = ["pytest>=8"]
+
+[tool.setuptools]
+packages = ["brisvox_agent"]
+
+[tool.setuptools.package-data]
+brisvox_agent = ["py.typed"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"

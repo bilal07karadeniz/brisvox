@@ -1,0 +1,8 @@
+# Direct pins (the whole tree is in requirements.lock.txt). All 1.8.7 plugins are the release of
+# 2026-10-14 (PyPI), the newest on the day of the measurement.
+livekit-agents==1.8.7
+livekit-plugins-silero==1.8.7
+livekit-plugins-turn-detector==1.8.7
+livekit==1.1.20
+livekit-api==1.2.1
+numpy

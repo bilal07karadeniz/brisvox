@@ -1,0 +1,101 @@
+models: Silero VAD (tract) and Smart Turn v3.2 (ONNX Runtime) for every call
+stats calls 1 pool: 50 jobs/s busy 1% run 391.8 us/job wait 20 us/job queue 0 (max 2) rejected 0 (high 0) timed_out 0 skipped 0 | tokio: 25 tasks, global queue 0
+   smart turn: 0.1 analyses/s, 28.24 ms/analysis, 0% of the pool's capacity; VAD windows and features: 1% of it
+totals pool: 499 jobs, run 0.2 s (0.392 ms/job), wait 0.0 s | smart turn: 1 analyses, model run 0.0 s (28.24 ms/analysis, wall time on the pool thread) | the rest of the pool's run time (VAD windows, features): 0.2 s
+     1 concurrent (warm-up, not counted): 2/2 turns answered, 0 calls failed, p95 854 ms, target CPU 0.04 cores, harness 0.11 cores, pass
+stats calls 1 pool: 35 jobs/s busy 1% run 298.3 us/job wait 18 us/job queue 0 (max 2) rejected 0 (high 0) timed_out 0 skipped 0 | tokio: 24 tasks, global queue 0
+   smart turn: 0.1 analyses/s, 23.78 ms/analysis, 0% of the pool's capacity; VAD windows and features: 0% of it
+totals pool: 847 jobs, run 0.3 s (0.353 ms/job), wait 0.0 s | smart turn: 2 analyses, model run 0.1 s (26.01 ms/analysis, wall time on the pool thread) | the rest of the pool's run time (VAD windows, features): 0.2 s
+stats calls 1 pool: 50 jobs/s busy 1% run 329.2 us/job wait 21 us/job queue 0 (max 2) rejected 0 (high 0) timed_out 0 skipped 0 | tokio: 25 tasks, global queue 0
+   smart turn: 0.1 analyses/s, 25.80 ms/analysis, 0% of the pool's capacity; VAD windows and features: 1% of it
+totals pool: 1349 jobs, run 0.5 s (0.344 ms/job), wait 0.0 s | smart turn: 3 analyses, model run 0.1 s (25.94 ms/analysis, wall time on the pool thread) | the rest of the pool's run time (VAD windows, features): 0.4 s
+stats calls 1 pool: 49 jobs/s busy 1% run 364.3 us/job wait 20 us/job queue 0 (max 2) rejected 0 (high 0) timed_out 0 skipped 0 | tokio: 25 tasks, global queue 0
+   smart turn: 0.2 analyses/s, 25.32 ms/analysis, 0% of the pool's capacity; VAD windows and features: 1% of it
+totals pool: 1841 jobs, run 0.6 s (0.350 ms/job), wait 0.0 s | smart turn: 5 analyses, model run 0.1 s (25.69 ms/analysis, wall time on the pool thread) | the rest of the pool's run time (VAD windows, features): 0.5 s
+     1 concurrent: 4/4 turns answered, 0 calls failed, p95 841 ms, target CPU 0.05 cores, harness 0.12 cores, pass
+stats calls 0 pool: 37 jobs/s busy 0% run 270.7 us/job wait 19 us/job queue 0 (max 2) rejected 0 (high 0) timed_out 0 skipped 0 | tokio: 3 tasks, global queue 0
+   smart turn: 0.1 analyses/s, 19.59 ms/analysis, 0% of the pool's capacity; VAD windows and features: 0% of it
+totals pool: 2207 jobs, run 0.7 s (0.337 ms/job), wait 0.0 s | smart turn: 6 analyses, model run 0.1 s (24.68 ms/analysis, wall time on the pool thread) | the rest of the pool's run time (VAD windows, features): 0.6 s
+stats calls 25 pool: 970 jobs/s busy 6% run 116.5 us/job wait 265 us/job queue 0 (max 24) rejected 0 (high 0) timed_out 0 skipped 0 | tokio: 544 tasks, global queue 0
+   smart turn: 1.8 analyses/s, 23.80 ms/analysis, 2% of the pool's capacity; VAD windows and features: 4% of it
+totals pool: 11917 jobs, run 1.9 s (0.157 ms/job), wait 2.6 s | smart turn: 24 analyses, model run 0.6 s (24.02 ms/analysis, wall time on the pool thread) | the rest of the pool's run time (VAD windows, features): 1.3 s
+stats calls 25 pool: 1226 jobs/s busy 8% run 136.0 us/job wait 298 us/job queue 1 (max 25) rejected 0 (high 0) timed_out 0 skipped 20 | tokio: 528 tasks, global queue 0
+   smart turn: 3.2 analyses/s, 23.62 ms/analysis, 4% of the pool's capacity; VAD windows and features: 5% of it
+totals pool: 24181 jobs, run 3.5 s (0.146 ms/job), wait 6.3 s | smart turn: 56 analyses, model run 1.3 s (23.79 ms/analysis, wall time on the pool thread) | the rest of the pool's run time (VAD windows, features): 2.2 s
+stats calls 23 pool: 1255 jobs/s busy 9% run 149.8 us/job wait 328 us/job queue 0 (max 25) rejected 0 (high 0) timed_out 0 skipped 1 | tokio: 515 tasks, global queue 0
+   smart turn: 3.4 analyses/s, 25.97 ms/analysis, 4% of the pool's capacity; VAD windows and features: 5% of it
+totals pool: 36756 jobs, run 5.4 s (0.148 ms/job), wait 10.4 s | smart turn: 90 analyses, model run 2.2 s (24.62 ms/analysis, wall time on the pool thread) | the rest of the pool's run time (VAD windows, features): 3.2 s
+    25 concurrent: 100/100 turns answered, 0 calls failed, p95 847 ms, target CPU 0.31 cores, harness 0.16 cores, pass
+stats calls 41 pool: 557 jobs/s busy 4% run 149.0 us/job wait 232 us/job queue 0 (max 33) rejected 0 (high 0) timed_out 0 skipped 14 | tokio: 864 tasks, global queue 6
+   smart turn: 1.6 analyses/s, 23.51 ms/analysis, 2% of the pool's capacity; VAD windows and features: 2% of it
+totals pool: 42309 jobs, run 6.3 s (0.148 ms/job), wait 11.7 s | smart turn: 106 analyses, model run 2.6 s (24.45 ms/analysis, wall time on the pool thread) | the rest of the pool's run time (VAD windows, features): 3.7 s
+stats calls 50 pool: 2492 jobs/s busy 13% run 103.7 us/job wait 421 us/job queue 0 (max 47) rejected 0 (high 0) timed_out 0 skipped 0 | tokio: 1103 tasks, global queue 0
+   smart turn: 5.0 analyses/s, 22.66 ms/analysis, 6% of the pool's capacity; VAD windows and features: 7% of it
+totals pool: 67256 jobs, run 8.8 s (0.131 ms/job), wait 22.2 s | smart turn: 156 analyses, model run 3.7 s (23.87 ms/analysis, wall time on the pool thread) | the rest of the pool's run time (VAD windows, features): 5.1 s
+stats calls 50 pool: 2450 jobs/s busy 17% run 142.3 us/job wait 522 us/job queue 0 (max 49) rejected 0 (high 0) timed_out 0 skipped 31 | tokio: 1071 tasks, global queue 0
+   smart turn: 7.0 analyses/s, 26.35 ms/analysis, 9% of the pool's capacity; VAD windows and features: 8% of it
+totals pool: 91780 jobs, run 12.3 s (0.134 ms/job), wait 35.0 s | smart turn: 226 analyses, model run 5.6 s (24.64 ms/analysis, wall time on the pool thread) | the rest of the pool's run time (VAD windows, features): 6.8 s
+stats calls 2 pool: 2048 jobs/s busy 18% run 174.7 us/job wait 515 us/job queue 0 (max 49) rejected 0 (high 0) timed_out 0 skipped 40 | tokio: 47 tasks, global queue 0
+   smart turn: 8.0 analyses/s, 25.80 ms/analysis, 10% of the pool's capacity; VAD windows and features: 8% of it
+totals pool: 112285 jobs, run 15.9 s (0.142 ms/job), wait 45.5 s | smart turn: 306 analyses, model run 7.6 s (24.95 ms/analysis, wall time on the pool thread) | the rest of the pool's run time (VAD windows, features): 8.3 s
+    50 concurrent: 200/200 turns answered, 0 calls failed, p95 844 ms, target CPU 0.55 cores, harness 0.24 cores, pass
+stats calls 100 pool: 2376 jobs/s busy 7% run 58.5 us/job wait 501 us/job queue 0 (max 85) rejected 0 (high 0) timed_out 0 skipped 0 | tokio: 2103 tasks, global queue 0
+   smart turn: 0.0 analyses/s, 0.00 ms/analysis, 0% of the pool's capacity; VAD windows and features: 7% of it
+totals pool: 136064 jobs, run 17.3 s (0.127 ms/job), wait 57.4 s | smart turn: 306 analyses, model run 7.6 s (24.95 ms/analysis, wall time on the pool thread) | the rest of the pool's run time (VAD windows, features): 9.7 s
+stats calls 95 pool: 4967 jobs/s busy 36% run 145.7 us/job wait 1077 us/job queue 0 (max 100) rejected 0 (high 0) timed_out 0 skipped 41 | tokio: 2061 tasks, global queue 0
+   smart turn: 18.0 analyses/s, 24.84 ms/analysis, 22% of the pool's capacity; VAD windows and features: 14% of it
+totals pool: 185779 jobs, run 24.5 s (0.132 ms/job), wait 111.0 s | smart turn: 486 analyses, model run 12.1 s (24.91 ms/analysis, wall time on the pool thread) | the rest of the pool's run time (VAD windows, features): 12.4 s
+stats calls 100 pool: 4963 jobs/s busy 30% run 119.5 us/job wait 1171 us/job queue 0 (max 101) rejected 0 (high 0) timed_out 0 skipped 30 | tokio: 2203 tasks, global queue 0
+   smart turn: 12.0 analyses/s, 27.57 ms/analysis, 17% of the pool's capacity; VAD windows and features: 13% of it
+totals pool: 235463 jobs, run 30.5 s (0.129 ms/job), wait 169.2 s | smart turn: 606 analyses, model run 15.4 s (25.43 ms/analysis, wall time on the pool thread) | the rest of the pool's run time (VAD windows, features): 15.1 s
+   100 concurrent: 400/400 turns answered, 0 calls failed, p95 840 ms, target CPU 1.06 cores, harness 0.29 cores, pass
+stats calls 13 pool: 2358 jobs/s busy 22% run 182.7 us/job wait 1177 us/job queue 0 (max 101) rejected 0 (high 0) timed_out 0 skipped 82 | tokio: 267 tasks, global queue 0
+   smart turn: 10.0 analyses/s, 28.94 ms/analysis, 14% of the pool's capacity; VAD windows and features: 7% of it
+totals pool: 259051 jobs, run 34.8 s (0.134 ms/job), wait 197.0 s | smart turn: 706 analyses, model run 18.3 s (25.93 ms/analysis, wall time on the pool thread) | the rest of the pool's run time (VAD windows, features): 16.5 s
+stats calls 200 pool: 8243 jobs/s busy 41% run 98.4 us/job wait 2636 us/job queue 124 (max 206) rejected 0 (high 0) timed_out 0 skipped 0 | tokio: 4362 tasks, global queue 0
+   smart turn: 17.0 analyses/s, 24.47 ms/analysis, 21% of the pool's capacity; VAD windows and features: 20% of it
+totals pool: 341584 jobs, run 42.9 s (0.126 ms/job), wait 414.5 s | smart turn: 876 analyses, model run 22.5 s (25.65 ms/analysis, wall time on the pool thread) | the rest of the pool's run time (VAD windows, features): 20.4 s
+stats calls 200 pool: 9767 jobs/s busy 55% run 112.9 us/job wait 4693 us/job queue 0 (max 206) rejected 0 (high 0) timed_out 0 skipped 141 | tokio: 4203 tasks, global queue 0
+   smart turn: 23.0 analyses/s, 28.48 ms/analysis, 33% of the pool's capacity; VAD windows and features: 22% of it
+totals pool: 439342 jobs, run 54.0 s (0.123 ms/job), wait 873.3 s | smart turn: 1106 analyses, model run 29.0 s (26.24 ms/analysis, wall time on the pool thread) | the rest of the pool's run time (VAD windows, features): 24.9 s
+stats calls 160 pool: 9888 jobs/s busy 64% run 128.8 us/job wait 5768 us/job queue 12 (max 210) rejected 0 (high 0) timed_out 0 skipped 34 | tokio: 3563 tasks, global queue 0
+   smart turn: 29.2 analyses/s, 27.86 ms/analysis, 41% of the pool's capacity; VAD windows and features: 23% of it
+totals pool: 538334 jobs, run 66.7 s (0.124 ms/job), wait 1444.3 s | smart turn: 1398 analyses, model run 37.2 s (26.58 ms/analysis, wall time on the pool thread) | the rest of the pool's run time (VAD windows, features): 29.6 s
+   200 concurrent: 800/800 turns answered, 0 calls failed, p95 884 ms, target CPU 2.26 cores, harness 0.73 cores, pass
+stats calls 282 pool: 3906 jobs/s busy 22% run 112.1 us/job wait 1623 us/job queue 0 (max 210) rejected 0 (high 0) timed_out 0 skipped 115 | tokio: 5915 tasks, global queue 0
+   smart turn: 10.8 analyses/s, 23.21 ms/analysis, 13% of the pool's capacity; VAD windows and features: 9% of it
+totals pool: 577408 jobs, run 71.1 s (0.123 ms/job), wait 1507.7 s | smart turn: 1506 analyses, model run 39.7 s (26.33 ms/analysis, wall time on the pool thread) | the rest of the pool's run time (VAD windows, features): 31.4 s
+stats calls 300 pool: 15018 jobs/s busy 69% run 92.5 us/job wait 9778 us/job queue 198 (max 449) rejected 0 (high 0) timed_out 0 skipped 0 | tokio: 6614 tasks, global queue 0
+   smart turn: 30.8 analyses/s, 24.70 ms/analysis, 38% of the pool's capacity; VAD windows and features: 31% of it
+totals pool: 727729 jobs, run 85.0 s (0.117 ms/job), wait 2977.5 s | smart turn: 1814 analyses, model run 47.3 s (26.06 ms/analysis, wall time on the pool thread) | the rest of the pool's run time (VAD windows, features): 37.7 s
+stats calls 300 pool: 14640 jobs/s busy 84% run 114.4 us/job wait 11832 us/job queue 148 (max 449) rejected 0 (high 0) timed_out 0 skipped 220 | tokio: 6421 tasks, global queue 0
+   smart turn: 39.5 analyses/s, 26.44 ms/analysis, 52% of the pool's capacity; VAD windows and features: 32% of it
+totals pool: 874157 jobs, run 101.7 s (0.116 ms/job), wait 4710.1 s | smart turn: 2209 analyses, model run 57.7 s (26.12 ms/analysis, wall time on the pool thread) | the rest of the pool's run time (VAD windows, features): 44.0 s
+stats calls 60 pool: 12290 jobs/s busy 95% run 153.8 us/job wait 12866 us/job queue 1 (max 449) rejected 0 (high 0) timed_out 0 skipped 208 | tokio: 1361 tasks, global queue 0
+   smart turn: 49.3 analyses/s, 26.75 ms/analysis, 66% of the pool's capacity; VAD windows and features: 29% of it
+totals pool: 997163 jobs, run 120.7 s (0.121 ms/job), wait 6292.7 s | smart turn: 2702 analyses, model run 70.9 s (26.24 ms/analysis, wall time on the pool thread) | the rest of the pool's run time (VAD windows, features): 49.8 s
+   300 concurrent: 1200/1200 turns answered, 0 calls failed, p95 2958 ms, target CPU 3.01 cores, harness 0.79 cores, FAIL
+stats calls 250 pool: 4895 jobs/s busy 11% run 46.0 us/job wait 739 us/job queue 0 (max 449) rejected 0 (high 0) timed_out 0 skipped 42 | tokio: 5253 tasks, global queue 0
+   smart turn: 0.4 analyses/s, 25.18 ms/analysis, 1% of the pool's capacity; VAD windows and features: 11% of it
+totals pool: 1046170 jobs, run 122.9 s (0.118 ms/job), wait 6328.9 s | smart turn: 2706 analyses, model run 71.0 s (26.24 ms/analysis, wall time on the pool thread) | the rest of the pool's run time (VAD windows, features): 51.9 s
+stats calls 238 pool: 12454 jobs/s busy 79% run 126.3 us/job wait 10195 us/job queue 195 (max 449) rejected 0 (high 0) timed_out 0 skipped 69 | tokio: 5235 tasks, global queue 0
+   smart turn: 35.5 analyses/s, 28.21 ms/analysis, 50% of the pool's capacity; VAD windows and features: 29% of it
+totals pool: 1170748 jobs, run 138.7 s (0.118 ms/job), wait 7599.0 s | smart turn: 3061 analyses, model run 81.0 s (26.47 ms/analysis, wall time on the pool thread) | the rest of the pool's run time (VAD windows, features): 57.7 s
+stats calls 250 pool: 11963 jobs/s busy 80% run 133.2 us/job wait 12394 us/job queue 315 (max 449) rejected 0 (high 0) timed_out 0 skipped 131 | tokio: 5446 tasks, global queue 0
+   smart turn: 31.8 analyses/s, 31.67 ms/analysis, 50% of the pool's capacity; VAD windows and features: 29% of it
+totals pool: 1290402 jobs, run 154.6 s (0.120 ms/job), wait 9081.9 s | smart turn: 3379 analyses, model run 91.1 s (26.96 ms/analysis, wall time on the pool thread) | the rest of the pool's run time (VAD windows, features): 63.5 s
+   250 concurrent: 1000/1000 turns answered, 0 calls failed, p95 2623 ms, target CPU 2.93 cores, harness 0.68 cores, FAIL
+stats calls 0 pool: 7148 jobs/s busy 74% run 206.6 us/job wait 17193 us/job queue 0 (max 449) rejected 0 (high 0) timed_out 0 skipped 187 | tokio: 3 tasks, global queue 0
+   smart turn: 32.7 analyses/s, 32.86 ms/analysis, 54% of the pool's capacity; VAD windows and features: 20% of it
+totals pool: 1361902 jobs, run 169.4 s (0.124 ms/job), wait 10311.4 s | smart turn: 3706 analyses, model run 101.8 s (27.48 ms/analysis, wall time on the pool thread) | the rest of the pool's run time (VAD windows, features): 67.5 s
+stats calls 225 pool: 7057 jobs/s busy 28% run 79.9 us/job wait 3176 us/job queue 34 (max 449) rejected 0 (high 0) timed_out 0 skipped 0 | tokio: 4801 tasks, global queue 0
+   smart turn: 7.5 analyses/s, 27.56 ms/analysis, 10% of the pool's capacity; VAD windows and features: 18% of it
+totals pool: 1432491 jobs, run 175.0 s (0.122 ms/job), wait 10535.5 s | smart turn: 3781 analyses, model run 103.9 s (27.48 ms/analysis, wall time on the pool thread) | the rest of the pool's run time (VAD windows, features): 71.1 s
+stats calls 217 pool: 10845 jobs/s busy 81% run 149.6 us/job wait 10839 us/job queue 213 (max 449) rejected 0 (high 0) timed_out 0 skipped 170 | tokio: 4640 tasks, global queue 0
+   smart turn: 36.2 analyses/s, 30.11 ms/analysis, 54% of the pool's capacity; VAD windows and features: 27% of it
+totals pool: 1540960 jobs, run 191.2 s (0.124 ms/job), wait 11711.2 s | smart turn: 4143 analyses, model run 114.8 s (27.71 ms/analysis, wall time on the pool thread) | the rest of the pool's run time (VAD windows, features): 76.4 s
+stats calls 225 pool: 11254 jobs/s busy 57% run 101.7 us/job wait 5652 us/job queue 0 (max 449) rejected 0 (high 0) timed_out 0 skipped 20 | tokio: 4953 tasks, global queue 0
+   smart turn: 23.8 analyses/s, 27.00 ms/analysis, 32% of the pool's capacity; VAD windows and features: 25% of it
+totals pool: 1653517 jobs, run 202.7 s (0.123 ms/job), wait 12347.3 s | smart turn: 4381 analyses, model run 121.2 s (27.67 ms/analysis, wall time on the pool thread) | the rest of the pool's run time (VAD windows, features): 81.5 s
+   225 concurrent: 900/900 turns answered, 0 calls failed, p95 1457 ms, target CPU 2.64 cores, harness 0.80 cores, FAIL
+totals pool: 1690465 jobs, run 210.8 s (0.125 ms/job), wait 12663.2 s | smart turn: 4606 analyses, model run 127.3 s (27.64 ms/analysis, wall time on the pool thread) | the rest of the pool's run time (VAD windows, features): 83.5 s
