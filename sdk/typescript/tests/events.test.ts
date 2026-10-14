@@ -311,13 +311,15 @@ describe("commands", () => {
   it("raise CommandError with the code of a refusal", async () => {
     await withSession(async ({ fake, session }) => {
       const pending = session.transfer("+4930123456");
-      const command = await fake.recv();
-      await fake.fail(command["id"], "unsupported", "no call-control");
-      await assert.rejects(pending, (error: unknown) => {
+      // Expect the rejection before the refusal is sent: it can land before the next line runs.
+      const refused = assert.rejects(pending, (error: unknown) => {
         return (
           error instanceof CommandError && error.code === ErrorCode.Unsupported && error.detail === "no call-control"
         );
       });
+      const command = await fake.recv();
+      await fake.fail(command["id"], "unsupported", "no call-control");
+      await refused;
     });
   });
 
@@ -396,9 +398,11 @@ describe("commands", () => {
   it("fail waiting commands when the link closes, and refuse new ones", async () => {
     await withSession(async ({ fake, session }) => {
       const waiting = session.say("hi");
+      // Expect the rejection before the link closes: it can land before the next line runs.
+      const rejected = assert.rejects(waiting, SessionClosed);
       await fake.recv();
       await fake.close();
-      await assert.rejects(waiting, SessionClosed);
+      await rejected;
       await session.waitClosed();
       assert.equal(session.closed, true);
       await assert.rejects(session.say("again"), SessionClosed);
