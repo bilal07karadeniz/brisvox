@@ -5,7 +5,16 @@ version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
-publish.workspace = true
+publish = true
+authors.workspace = true
+repository.workspace = true
+homepage.workspace = true
+documentation = "https://docs.rs/brisvox-server"
+readme = "README.md"
+keywords = ["voice", "agent", "telephony", "webrtc", "llm"]
+categories = ["network-programming", "multimedia::audio", "command-line-utilities"]
+# Only what the crate needs to build: no tests, fixtures, examples or bench output.
+include = ["src/**", "README.md", "LICENSE-MIT", "LICENSE-APACHE"]
 
 [features]
 # Process-wide mimalloc allocator in the server binary (~2x faster cross-thread
@@ -115,7 +124,7 @@ tracing-subscriber = { workspace = true, features = ["env-filter", "json"] }
 rlimit = { workspace = true }
 
 [dev-dependencies]
-brisvox-sim = { workspace = true }
+brisvox-sim = { path = "../brisvox-sim" }
 # The example agent files are validated against the generated JSON Schema.
 jsonschema = { workspace = true }
 # A certificate for the SIPS settings test (rcgen is in the tree through str0m).

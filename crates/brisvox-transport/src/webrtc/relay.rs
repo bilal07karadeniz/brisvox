@@ -1235,20 +1235,27 @@ impl Session {
         }
         let finish = async {
             loop {
-                if self.cycle().await.is_err() {
+                // The TURN client sends at most one request per 50 ms: a release right behind
+                // another request (a hang-up just after the setup) is held back until `wake`,
+                // so the wait for the answer must also wake for the client's own timer, or the
+                // Refresh would only go out when `within` has run out.
+                let Ok(wake) = self.cycle().await else {
                     return;
-                }
-                match self.reader.read(&mut self.rbuf).await {
-                    Ok(n) if n > 0 => {
-                        if self.input(n).is_err() {
-                            return;
+                };
+                tokio::select! {
+                    read = self.reader.read(&mut self.rbuf) => match read {
+                        Ok(n) if n > 0 => {
+                            if self.input(n).is_err() {
+                                return;
+                            }
+                            // The answer to the Refresh closes the allocation in the client.
+                            if matches!(self.client.poll(self.now()), TurnPollRet::Closed) {
+                                return;
+                            }
                         }
-                        // The answer to the Refresh closes the allocation in the client.
-                        if matches!(self.client.poll(self.now()), TurnPollRet::Closed) {
-                            return;
-                        }
-                    }
-                    _ => return,
+                        _ => return,
+                    },
+                    () = clock.sleep_until(wake) => {}
                 }
             }
         };

@@ -5,7 +5,16 @@ version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
-publish.workspace = true
+publish = true
+authors.workspace = true
+repository.workspace = true
+homepage.workspace = true
+documentation = "https://docs.rs/brisvox-transport"
+readme = "README.md"
+keywords = ["webrtc", "websocket", "sip", "telephony", "voice"]
+categories = ["network-programming", "multimedia::audio", "asynchronous"]
+# Only what the crate needs to build: no tests, fixtures, examples or bench output.
+include = ["src/**", "README.md", "LICENSE-MIT", "LICENSE-APACHE"]
 
 [features]
 default = ["websocket", "twilio", "telnyx", "rtvi"]
@@ -118,7 +127,7 @@ base64 = { workspace = true }
 # the tree already through str0m's DTLS stack), and the sans-IO TURN server it is built on.
 rcgen = "0.14.10"
 turn-server-proto = { workspace = true }
-brisvox-sim = { workspace = true }
+brisvox-sim = { path = "../brisvox-sim" }
 # An independent SRTP implementation (webrtc-rs, MIT/Apache-2.0) to cross-check ours.
 webrtc-srtp = "0.17.2"
 # The log-capture test of the TURN client crates' events.

@@ -1180,10 +1180,19 @@ async fn a_consumer_that_does_not_read_holds_the_server_back_after_a_bounded_amo
     let plateau = mock.frames_sent();
     tokio::time::sleep(ms(300)).await;
     assert_eq!(mock.frames_sent(), plateau, "the server is still sending");
+    // What the sockets absorb depends on the operating system: under 1000 frames on Windows
+    // loopback (a quarter of the script), up to the kernel's autotuned buffer maximum on Linux
+    // (1044 frames seen; `loopback_buffer_bytes` is ~10 MiB there). The adapter's own queue and
+    // channel add 128 frames. The script (4000 frames) stays well above twice the bound.
+    let bound = if cfg!(target_os = "linux") {
+        brisvox_sim::platform::loopback_buffer_bytes() / FRAME + 192
+    } else {
+        total_frames / 4
+    };
     assert!(
-        plateau * 4 < total_frames,
-        "{plateau} of {total_frames} frames were sent to a consumer that reads nothing: the \
-         adapter's queue is not bounded"
+        plateau < bound && bound * 2 < total_frames,
+        "{plateau} of {total_frames} frames were sent to a consumer that reads nothing (bound \
+         {bound}): the adapter's queue is not bounded"
     );
     // Nothing is lost once the consumer reads again.
     let utterance = until_flushed_within(&mut session.events, 1, 10_000).await;

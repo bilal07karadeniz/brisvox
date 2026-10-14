@@ -13,6 +13,8 @@ create-missing = false
 [output.html]
 default-theme = "light"
 preferred-dark-theme = "navy"
+# Served from https://bilal07karadeniz.github.io/brisvox/ (a GitHub Pages project site).
+site-url = "/brisvox/"
 git-repository-url = "https://github.com/bilal07karadeniz/brisvox"
 # The configuration, telephony, operations, benchmark and reference chapters are the repository's
 # docs/*.md included verbatim (one source of truth). Keep their ASCII quotes and dashes as written.

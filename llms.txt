@@ -20,8 +20,10 @@ Things to know before writing anything:
 - Providers are Cargo features: build with `--features all-providers` (or the one you need, e.g.
   `provider-deepgram`); a definition naming a provider that is not compiled in is refused at
   startup with the feature to turn on. Transports are features too: `webrtc`, `sip`.
-- Tools: declare them in your application with the Python SDK (`sdk/python`, package
-  `brisvox_agent`) or the TypeScript SDK (`sdk/typescript`, `@brisvox/agent`); the server
+- Tools: declare them in your application with the Python SDK (`sdk/python`, `pip install
+  brisvox`, module `brisvox`; the package `brisvox-agent`, module `brisvox_agent`, is the same
+  SDK) or the TypeScript SDK (`sdk/typescript`, `npm i brisvox`; `@brisvox/agent` is the same
+  SDK, and `brisvox/web` or `@brisvox/web` the browser module); the server
   connects to your agent over the agent protocol (`BRISVOX_AGENT_URL`). Mark tools that change
   the world as side effects: they never run speculatively and never run twice.
 - Listeners fail closed: off loopback the server refuses to start without authentication
@@ -34,7 +36,8 @@ Things to know before writing anything:
 - The server does not read a `.env` file: export the variables (or use your platform's
   environment settings).
 - Tools written in Rust run inside your own binary: a three-line `main` over
-  `brisvox_server::app::run_with_tools` (see examples/rust-tools).
+  `brisvox::run_with_tools` (`cargo add brisvox`; the same function as
+  `brisvox_server::app::run_with_tools`; see examples/rust-tools).
 - Which Cargo features a goal needs (browser, phone, SIP, local speech, Rust tools) is the
   "What to build with" table in README.md.
 

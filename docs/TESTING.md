@@ -99,6 +99,19 @@ here). CI images (`ubuntu-latest`, `windows-latest`) ship cmake and a C compiler
 - System-lane priority lets lifecycle frames overtake queued data; race tests must yield between
   data and lifecycle frames, or drive units directly.
 - Mutation-check every regression/property test: re-introduce the bug, confirm the test fails.
+- The gate runs on Linux and Windows (`.github/workflows/ci.yml`); a test that passed on one
+  desktop only is a bug in the test (T-132). Reproduce Linux failures in a `rust:1.99.0` container
+  (WSL2 + Docker on the Windows machine) with `cargo nextest run --workspace --all-features`; for
+  racy ones add `--stress-count N` and CPU contention (`docker run --cpuset-cpus=0,1`, busy loops).
+  The causes found: model goldens that are platform-specific (Smart Turn: only compared where the
+  reference's kernels run, `docs/providers/smart-turn.md`; Silero: 1e-7 on Windows, 5e-6 elsewhere
+  with a proof that no golden window is within 10x of a threshold); kernel socket buffers (Linux
+  autotunes loopback buffers to MiB, Windows holds ~0.5 MiB: bound by the platform's limit, not a
+  fixed count); tokio's cooperative budget and a current-thread runtime that only polls its IO
+  driver when the task yields (a test that expects a message to be seen between two always-ready
+  sends must let the runtime run); the scheduler's lazily allocated defer list (one allocation the
+  first time a task yields: warm it before counting); work started "together" that is only
+  ordered by thread start-up (wait for the first job to run before filling the queue behind it).
 
 ## Session simulation
 - `brisvox_sim::scenario`: a `Scenario` (`speak(text, duration)`, `silence(duration)`) is the

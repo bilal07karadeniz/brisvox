@@ -1,0 +1,7 @@
+# The booking agent's dependencies besides the SDK itself (`pip install ./sdk/python`).
+#
+# SALON_TZ names an IANA zone, which Python's zoneinfo reads from the host's tz database. Windows
+# has none, and slim container images (python:3.x-slim) often do not either; the `tzdata` package
+# is that database. Linux and macOS hosts normally have one already (an unconditional `tzdata`
+# is harmless there too, the Dockerfile installs it that way).
+tzdata; sys_platform == "win32"

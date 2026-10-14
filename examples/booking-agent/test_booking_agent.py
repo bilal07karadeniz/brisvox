@@ -330,6 +330,21 @@ class EndToEnd(unittest.IsolatedAsyncioTestCase):
         with self.assertRaises(ValueError):
             BookingStore(timezone="Mars/Olympus")
 
+    def test_a_missing_time_zone_database_is_told_apart_from_a_misspelt_zone(self) -> None:
+        # Windows and slim images have no tz database: every IANA name fails there, and the fix
+        # is `pip install tzdata`, not a different spelling.
+        with unittest.mock.patch.object(booking_store.zoneinfo, "available_timezones", return_value=set()):
+            with self.assertRaises(ValueError) as without:
+                booking_store.salon_clock("Mars/Olympus")
+        self.assertIn("pip install tzdata", str(without.exception))
+        with unittest.mock.patch.object(
+            booking_store.zoneinfo, "available_timezones", return_value={"Australia/Sydney"}
+        ):
+            with self.assertRaises(ValueError) as misspelt:
+                booking_store.salon_clock("Mars/Olympus")
+        self.assertNotIn("pip install", str(misspelt.exception))
+        self.assertIn("Mars/Olympus", str(misspelt.exception))
+
     def test_the_module_level_agent_is_the_real_clock_one(self) -> None:
         self.assertEqual(set(booking_agent.agent.tools), set(booking_agent.build_agent(store()).tools))
 

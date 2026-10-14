@@ -57,6 +57,9 @@ if [ -n "$PYSDK" ]; then
   PYSDK="$("$PYSDK" -c 'import sys; print(sys.executable)')"
   export BRISVOX_PYTHON_SDK="$PYSDK"
   (cd sdk/python && PYTHONPATH="$PWD" "$PYSDK" -m unittest discover -s tests -t tests)
+  # The umbrella package `brisvox` (pip install brisvox) re-exports the SDK; its tests run against
+  # the checkout of both.
+  (cd sdk/python-umbrella && PYTHONPATH="$PWD:$PWD/../python" "$PYSDK" -m unittest discover -s tests -t tests)
 elif [ -n "${BRISVOX_REQUIRE_PYTHON_SDK:-}" ] && [ "${BRISVOX_REQUIRE_PYTHON_SDK}" != "0" ]; then
   echo "verify: ERROR BRISVOX_REQUIRE_PYTHON_SDK is set but no Python 3.11+ with websockets was found." >&2
   echo "        pip install 'websockets>=15,<16' (see sdk/python/pyproject.toml)." >&2
@@ -124,6 +127,25 @@ elif [ -n "${BRISVOX_REQUIRE_TS_SDK:-}" ] && [ "${BRISVOX_REQUIRE_TS_SDK}" != "0
 else
   echo "verify: WARNING no Node 20+ found; sdk/web tests are NOT run"
 fi
+echo "== npm umbrella"
+# sdk/npm-umbrella: the package `brisvox` (npm i brisvox) has no code of its own. Static checks
+# (pins, exports map, plain re-exports) always; then the way a user gets it: the three tarballs
+# (`brisvox`, `@brisvox/agent`, `@brisvox/web`) installed into a fresh project (the registry serves
+# only the agent SDK's `ws`), `brisvox` and `brisvox/web` imported, the types resolved.
+if [ -n "$WEBNODE" ]; then
+  (cd sdk/npm-umbrella && "$WEBNODE" scripts/smoke.mjs)
+  if [ -n "$TSNODE" ]; then
+    UMBDIR="$(mktemp -d)"
+    (cd sdk/typescript && npm pack --silent --pack-destination "$UMBDIR" >/dev/null)
+    (cd sdk/web && npm pack --silent --pack-destination "$UMBDIR" >/dev/null)
+    (cd sdk/npm-umbrella && npm pack --silent --pack-destination "$UMBDIR" >/dev/null)
+    (cd sdk/npm-umbrella && BRISVOX_TSC="$PWD/../typescript/node_modules/typescript/bin/tsc" "$WEBNODE" scripts/smoke.mjs --install \
+      "$UMBDIR"/brisvox-[0-9]*.tgz "$UMBDIR"/brisvox-agent-*.tgz "$UMBDIR"/brisvox-web-*.tgz)
+    rm -rf "$UMBDIR"
+  fi
+else
+  echo "verify: WARNING no Node 20+ found; sdk/npm-umbrella is NOT checked"
+fi
 echo "== examples"
 # examples/: the Python halves of the runnable examples, offline and without keys. The
 # phone receptionist's webhook scripts and the web page's static checks need only the standard
@@ -159,6 +181,11 @@ if command -v mdbook >/dev/null 2>&1; then
 else
   echo "verify: mdbook not installed; the book structure was checked but 'mdbook build book' was NOT run"
 fi
+echo "== release"
+# Release infrastructure (docs/RELEASING.md): one version everywhere, crates.io metadata, the
+# publish order, license files in every package, the embedded browser module equals sdk/web, and
+# the workflows parse with every third-party action pinned to a commit SHA.
+"$PY" scripts/check_release.py
 echo "== tests"
 if command -v cargo-nextest >/dev/null 2>&1; then
   cargo nextest run --workspace --all-features

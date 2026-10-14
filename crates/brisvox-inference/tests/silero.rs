@@ -20,9 +20,26 @@ use brisvox_sim::fixture::{Fixture, fixtures_dir};
 const FIXTURES: [&str; 3] = ["en_two_utterances", "tr_two_utterances", "en_tr_mixed"];
 
 /// The documented accuracy: every window within this of the onnxruntime reference. The
-/// goldens are rounded to 7 decimals, so the measured worst case (5.96e-8, one f32 ulp at 0.5)
-/// sits at the rounding floor; 1e-7 leaves room for another platform's float kernels.
+/// goldens are rounded to 7 decimals and were made on Windows x86_64 (Python onnxruntime 1.28.0),
+/// where the measured worst case is 5.96e-8 (one f32 ulp at 0.5), the rounding floor.
 const GOLDEN_TOLERANCE: f32 = 1e-7;
+
+/// The same bound on the other platforms' float kernels (the `ort` build for Linux differs in
+/// the last bits of the LSTM and convolutions; the first window of the first fixture there is
+/// already 1.1e-6 off, measured worst case below). It is far below anything a decision can
+/// feel: `golden_windows_are_far_from_the_decision_thresholds` pins that no golden window lies
+/// within 10x of it of a VAD threshold, so no window can flip at it.
+const PLATFORM_TOLERANCE: f32 = 5e-6;
+
+/// The tolerance on this platform: the goldens' own where their runtime is, else
+/// [`PLATFORM_TOLERANCE`].
+const fn tolerance() -> f32 {
+    if cfg!(windows) {
+        GOLDEN_TOLERANCE
+    } else {
+        PLATFORM_TOLERANCE
+    }
+}
 
 /// The documented boundary accuracy: start and stop within this of the ground truth.
 const BOUNDARY_TOLERANCE: Duration = Duration::from_millis(50);
@@ -126,7 +143,25 @@ async fn probabilities_match_the_reference_runtime_on_every_window() {
             "{name}: {} windows, max |p - reference| = {worst:e}",
             got.len()
         );
-        assert!(worst <= GOLDEN_TOLERANCE, "{name}: max deviation {worst}");
+        assert!(worst <= tolerance(), "{name}: max deviation {worst}");
+    }
+}
+
+/// What makes [`PLATFORM_TOLERANCE`] safe: every golden window is more than ten tolerances away
+/// from the start and stop thresholds, so another platform's float noise cannot move one across
+/// (and a window inside the hysteresis band stays there).
+#[test]
+fn golden_windows_are_far_from_the_decision_thresholds() {
+    let params = VadParams::default();
+    for name in FIXTURES {
+        for (window, p) in golden(name).into_iter().enumerate() {
+            for threshold in [params.threshold, params.neg_threshold] {
+                assert!(
+                    (p - threshold).abs() > 10.0 * PLATFORM_TOLERANCE,
+                    "{name} window {window}: {p} is within 10 tolerances of the threshold {threshold}"
+                );
+            }
+        }
     }
 }
 

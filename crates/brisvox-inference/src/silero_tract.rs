@@ -31,7 +31,7 @@ pub const SAMPLE_RATE: u32 = 16_000;
 pub const PREPARED_BYTES: u64 = 1_251_444;
 
 /// The prepared graph, embedded (SHA-256 9efbb701...accb8f, checked by a test).
-static BUNDLED: &[u8] = include_bytes!("../../../assets/models/silero_vad_16k_tract.onnx");
+static BUNDLED: &[u8] = include_bytes!("../assets/silero_vad_16k_tract.onnx");
 
 const STATE_SHAPE: [usize; 3] = [2, 1, 128];
 
@@ -53,8 +53,8 @@ impl std::fmt::Debug for SileroTractModel {
 }
 
 impl SileroTractModel {
-    /// The prepared graph bundled into the binary (`assets/models/silero_vad_16k_tract.onnx`,
-    /// MIT, see `assets/models/NOTICE`): no file or download needed at run time.
+    /// The prepared graph bundled into the binary (`assets/silero_vad_16k_tract.onnx`,
+    /// MIT, see `assets/NOTICE`): no file or download needed at run time.
     ///
     /// # Errors
     /// [`Error::Model`] if tract rejects the graph (not expected: covered by tests).

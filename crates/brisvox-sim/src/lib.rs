@@ -15,6 +15,7 @@ pub mod mock_stt;
 pub mod mock_tts;
 pub mod outage;
 pub mod output;
+pub mod platform;
 pub mod reference;
 pub mod scenario;
 pub mod session;

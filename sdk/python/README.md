@@ -25,7 +25,8 @@ async def heard(session: Session, event: UserText) -> None:
 agent.run(port=8765)                          # then: BRISVOX_AGENT_URL=ws://127.0.0.1:8765
 ```
 
-Install from the repository: `pip install ./sdk/python` (or `pip install -e './sdk/python[test]'`).
+Install from PyPI: `pip install brisvox-agent` (`pip install brisvox` installs the same SDK under the short name; `import brisvox` is `import brisvox_agent`). From a checkout of the repository: `pip install ./sdk/python`
+(or `pip install -e './sdk/python[test]'`).
 
 **Where it listens.** `host` defaults to `127.0.0.1`: only a server on the same machine can reach
 the agent. For a brisvox server in another container or service bind `0.0.0.0` (IPv4) or `::`
@@ -57,8 +58,9 @@ it to stderr when logging is not configured, and on a loopback address the line 
   `BRISVOX_AGENT_TOKEN` on both sides. An agent the server cannot reach is not an error for the
   call: it runs on the agent file alone, without your tools. `docs/DEPLOY.md`, "Your tools service".
 
-* **In a container.** The SDK is not on PyPI, so an image vendors it: the build context is a
-  checkout of this repository and `pip install` runs on the copied `sdk/python`.
+* **In a container.** `pip install brisvox-agent` in the image is enough. The template in this
+  repository vendors the SDK instead: the build context is a checkout of this repository and
+  `pip install` runs on the copied `sdk/python`.
   `examples/booking-agent/Dockerfile` is the template
   (`docker build -f examples/booking-agent/Dockerfile -t booking-agent .` from the repository
   root); it binds all interfaces and runs as a non-root user. `docs/DEPLOY.md`, "Your tools service".

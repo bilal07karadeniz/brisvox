@@ -5,7 +5,16 @@ version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
-publish.workspace = true
+publish = true
+authors.workspace = true
+repository.workspace = true
+homepage.workspace = true
+documentation = "https://docs.rs/brisvox-audio"
+readme = "README.md"
+keywords = ["audio", "codec", "g711", "resampling", "voice"]
+categories = ["multimedia::audio", "multimedia::encoding"]
+# Only what the crate needs to build: no tests, fixtures, examples or bench output.
+include = ["src/**", "README.md", "LICENSE-MIT", "LICENSE-APACHE"]
 
 [dependencies]
 audioadapter-buffers = { workspace = true }

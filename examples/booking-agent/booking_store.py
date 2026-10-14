@@ -15,9 +15,10 @@ from __future__ import annotations
 import datetime as dt
 import re
 import threading
+import zoneinfo
 from collections.abc import Callable
-from zoneinfo import ZoneInfo
 from dataclasses import asdict, dataclass, field
+from zoneinfo import ZoneInfo
 
 GRID = dt.timedelta(minutes=30)
 """Appointments start and end on this grid."""
@@ -44,6 +45,24 @@ _TIME = re.compile(r"^([01][0-9]|2[0-3]):([0-5][0-9])$")
 _PHONE = re.compile(r"^\+?[0-9][0-9 ()-]{5,19}$")
 
 
+def _zone_error(timezone: str) -> str:
+    """Why ``ZoneInfo(timezone)`` failed, in words that say what to do. Two causes look the same
+    to ``zoneinfo``: a name that is not an IANA zone, and a host without a tz database (Windows,
+    slim container images), where even ``Australia/Sydney`` is "not found" until the ``tzdata``
+    package is installed."""
+    try:
+        have_database = bool(zoneinfo.available_timezones())
+    except Exception:  # unreadable search path: treat as no database
+        have_database = False
+    if have_database:
+        return f"unknown time zone {timezone!r}: SALON_TZ must be an IANA name such as Australia/Sydney"
+    return (
+        f"no time zone database on this host, so {timezone!r} cannot be resolved: "
+        "install it with `pip install tzdata` (Windows and slim container images have none), "
+        "or leave SALON_TZ unset to use the host's local time"
+    )
+
+
 def salon_clock(timezone: str | None) -> Callable[[], dt.datetime]:
     """A clock that reads the wall time in ``timezone`` (an IANA name such as
     ``"Australia/Sydney"``) as a naive datetime, which is how the store compares times: opening
@@ -55,7 +74,7 @@ def salon_clock(timezone: str | None) -> Callable[[], dt.datetime]:
     try:
         zone = ZoneInfo(timezone)
     except Exception as exc:  # unknown name, or no tz database on this host
-        raise ValueError(f"unknown time zone {timezone!r} (an IANA name; pip install tzdata?)") from exc
+        raise ValueError(_zone_error(timezone)) from exc
     return lambda: dt.datetime.now(zone).replace(tzinfo=None)
 
 

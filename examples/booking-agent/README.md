@@ -69,7 +69,7 @@ availability and offer another start.").
    ```
 
    Set `SALON_TZ` to the salon's IANA time zone (for example `SALON_TZ=Australia/Sydney`; on a
-   host without a tz database also `pip install tzdata`). Opening hours, "today" in the prompt and
+   host without a tz database, such as Windows or a slim container image, also `pip install -r examples/booking-agent/requirements.txt`, which installs `tzdata`). Opening hours, "today" in the prompt and
    the one hour lead time are the salon's local time, and a container runs in UTC by default;
    unset, the host's local time is used, which is right only if the process runs in the salon's zone.
 

@@ -1843,19 +1843,42 @@ async fn an_analysis_refused_by_a_saturated_executor_fails_and_the_fallback_ends
         .unwrap();
     let handle = executor.handle();
     let capacity = brisvox_engine::offload::SMART_TURN_QUEUE_PER_THREAD;
-    // One job occupies the thread, `capacity` more fill the queue; all wait for the gate.
+    // One job occupies the thread, `capacity` more fill the queue; all wait for the gate. The
+    // first one is let start before the others are submitted: submitted together, the others
+    // can fill the queue before the executor's thread has taken the first job out of it (a
+    // slow thread start, as on a loaded CI runner), and the last one is refused for the wrong
+    // reason, leaving the queue one short of full for good.
     let (release, hold) = std::sync::mpsc::channel::<()>();
     let hold = Arc::new(Mutex::new(hold));
+    let (started, running) = std::sync::mpsc::channel::<()>();
     let mut fillers = Vec::new();
-    for _ in 0..=capacity {
+    let spawn_filler = |signal: Option<std::sync::mpsc::Sender<()>>| {
         let (handle, hold) = (handle.clone(), Arc::clone(&hold));
-        fillers.push(tokio::spawn(async move {
+        tokio::spawn(async move {
             handle
                 .run(Duration::from_secs(3600), move || {
+                    if let Some(signal) = signal {
+                        let _ = signal.send(());
+                    }
                     let _ = hold.lock().unwrap_or_else(PoisonError::into_inner).recv();
                 })
                 .await
-        }));
+        })
+    };
+    fillers.push(spawn_filler(Some(started)));
+    let mut spins = 0;
+    while running.try_recv().is_err() {
+        spins += 1;
+        assert!(
+            spins < 10_000,
+            "the executor never started the first job: {:?}",
+            executor.metrics()
+        );
+        tokio::task::yield_now().await;
+        std::thread::sleep(Duration::from_micros(200));
+    }
+    for _ in 0..capacity {
+        fillers.push(spawn_filler(None));
     }
     let mut spins = 0;
     while executor.metrics().queue_depth < capacity {

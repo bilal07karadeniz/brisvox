@@ -168,10 +168,12 @@ use demux::Registry;
 /// [`WebRtcConfig::ws_path`] and `__MODULE_PATH__` for [`WebRtcConfig::demo_module_path`].
 pub(crate) const DEMO_HTML: &str = include_str!("demo.html");
 
-/// The browser module the demo page imports (`sdk/web/brisvox-call.js`: WebRTC, the WebSocket
-/// fallback, microphone and playback). The same file is what a website imports from `@brisvox/web`,
-/// so the demo page and a site's button run the same audio code. Served next to the demo page.
-pub(crate) const DEMO_MODULE_JS: &str = include_str!("../../../../sdk/web/brisvox-call.js");
+/// The browser module the demo page imports (WebRTC, the WebSocket fallback, microphone and
+/// playback). It is a byte-identical copy of `sdk/web/brisvox-call.js`, the file a website imports
+/// from `@brisvox/web` (the copy lives here so the published crate is self-contained;
+/// `scripts/check_release.py` fails when the two differ). The demo page and a site's button
+/// therefore run the same audio code. Served next to the demo page.
+pub(crate) const DEMO_MODULE_JS: &str = include_str!("brisvox-call.js");
 
 /// The file name of the module under [`WebRtcConfig::demo_path`].
 pub(crate) const DEMO_MODULE_FILE: &str = "brisvox-call.js";

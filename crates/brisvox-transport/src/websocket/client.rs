@@ -382,8 +382,14 @@ pub async fn run(
                 }
             }
             // The read turn found nothing on the socket (it is polled before this branch): the
-            // next iteration sends again.
-            () = std::future::ready(()), if read_turn => read_turn = false,
+            // next iteration sends again. Without a timer between the frames (non-realtime) the
+            // turn must also let the runtime run: a current-thread runtime only learns that the
+            // socket became readable when its driver is polled, which happens when the task
+            // yields (and tokio's cooperative budget forces that only every ~128 operations, so
+            // a mark the server sent at once was seen after 127 frames on Linux, where sends
+            // never wait; on Windows they do).
+            () = tokio::task::yield_now(), if read_turn && !config.realtime => read_turn = false,
+            () = std::future::ready(()), if read_turn && config.realtime => read_turn = false,
         }
     }
 

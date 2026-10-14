@@ -44,8 +44,8 @@ the docs; this skill is the workflow and the traps.
 
 | Your tools are in | Agent file `agent.tools` | How |
 |---|---|---|
-| Python or TypeScript (another process) | **do not list them** | SDK agent (`sdk/python`, `sdk/typescript`); the server connects with `BRISVOX_AGENT_URL`. Listed in `agent.tools`, they stop the server at startup ("not registered in this server"), and `brisvox-server check` reports it as an error. |
-| Rust, in your binary | list them | `brisvox_server::app::run_with_tools(Arc::new(MyTools))` in a 3-line `main`; see `examples/rust-tools` |
+| Python or TypeScript (another process) | **do not list them** | SDK agent (`sdk/python`: `pip install brisvox`; `sdk/typescript`: `npm i brisvox`); the server connects with `BRISVOX_AGENT_URL`. Listed in `agent.tools`, they stop the server at startup ("not registered in this server"), and `brisvox-server check` reports it as an error. |
+| Rust, in your binary | list them | `brisvox::run_with_tools(Arc::new(MyTools))` in a 3-line `main` (`cargo add brisvox --features ...`); see `examples/rust-tools` |
 | Built-in telephony tools (transfer, DTMF, hang up) | list them | feature `call-control` plus `BRISVOX_CALL_CONTROL` |
 
 - Tools that change the world are `SideEffect`: never run speculatively, never twice for the same
@@ -260,7 +260,8 @@ bearer token. Without `BRISVOX_AGENT_URL`, calls run on the agent file alone.
 Python 3.11 or newer, one dependency (`websockets`).
 
 ```sh
-pip install ./sdk/python
+pip install brisvox-agent          # from PyPI (`pip install brisvox` installs it too, under the short name)
+pip install ./sdk/python             # or from a checkout of the repository
 ```
 
 ```python
@@ -291,10 +292,11 @@ tested example is `examples/booking-agent`.
 
 ## TypeScript
 
-Node 20 or newer, one runtime dependency (`ws`). The package is not on npm yet; build it from the
-repository.
+Node 20 or newer, one runtime dependency (`ws`).
 
 ```sh
+npm install @brisvox/agent              # from npm (`npm i brisvox` re-exports it; the browser client is `brisvox/web`)
+# or from a checkout of the repository:
 cd sdk/typescript && npm ci && npm run build
 ```
 
@@ -359,6 +361,14 @@ cp deploy/twilio.env.example deploy/twilio.env      # keys, Twilio settings and 
 docker compose -f deploy/compose.yaml up --build
 # or just one service:
 docker compose -f deploy/compose.yaml up --build agent-ws
+```
+
+Every release also publishes the image, so nothing has to be built: set `BRISVOX_IMAGE` to
+`ghcr.io/bilal07karadeniz/brisvox-server:vX.Y.Z` (or `:latest`) and start with `up --no-build`:
+
+```sh
+BRISVOX_IMAGE=ghcr.io/bilal07karadeniz/brisvox-server:latest \
+  docker compose -f deploy/compose.yaml up --no-build agent-ws
 ```
 
 `agent-twilio` does not start until `BRISVOX_TWILIO_STREAM_SECRET` (at least 32 random bytes, for
@@ -2987,18 +2997,21 @@ above, a build with `demo-tools` runs them.
 ### Rust tools in your own binary
 
 The stock `brisvox-server` binary has no tools of your own. To add Rust tools you write a small
-binary of your own that depends on `brisvox-server` and hands your `AppTools` to the same program
-the stock binary runs; you do not copy its `main`:
+binary of your own that depends on the `brisvox` crate (one dependency: it re-exports
+`brisvox-server` as `brisvox::server`, the tools API as `brisvox::agent::tools` and the clock types
+as `brisvox::core`, and forwards the server's features) and hands your `AppTools` to the same
+program the stock binary runs; you do not copy its `main`:
 
 ```rust
 use std::sync::Arc;
 
 fn main() -> std::process::ExitCode {
-    brisvox_server::app::run_with_tools(Arc::new(MyTools::default()))
+    brisvox::run_with_tools(Arc::new(MyTools::default()))
 }
 ```
 
-`brisvox_server::app::run()` is the stock program (no tools of your own) and
+`brisvox::run_with_tools` is `brisvox_server::app::run_with_tools`, and `brisvox::run()`
+(`brisvox_server::app::run()`) is the stock program (no tools of your own) and
 `run_with_tools(tools)` is the same with `tools` registered next to the built-in ones. Both take
 the settings from the environment exactly like `brisvox-server` (`docs/OPERATIONS.md`), keep its
 logging, its exit codes and its feature flags, and understand its command line: no arguments
@@ -3008,19 +3021,26 @@ names (`docs/CONFIG.md`, "Checking a file"), `--help`, `--version`. Enable in yo
 `call-control`). The stock binary's `mimalloc` global allocator is declared in its `main.rs`, not
 in the library: add your own `#[global_allocator]` if you want it.
 
-**From outside this repository.** The brisvox crates are not on crates.io: depend on them from
-git, pin a commit, and copy `rust-toolchain.toml` (Rust 1.99.0 is the pin; the crates use edition
-2024) and, to keep the tested dependency versions, `Cargo.lock` next to your `Cargo.toml`:
+**From outside this repository.** The brisvox crates are on crates.io. Use Rust 1.99 or newer (the
+crates use edition 2024) and depend on them by version; commit your own `Cargo.lock` to keep the
+dependency versions you tested:
 
 ```toml
 [dependencies]
-brisvox-server = { git = "https://github.com/bilal07karadeniz/brisvox", rev = "<commit>", features = [
+brisvox = { version = "0.1", features = [
     "provider-deepgram", "provider-openai", "provider-cartesia", "smart-turn-ort",
 ] }
-brisvox-agent = { git = "https://github.com/bilal07karadeniz/brisvox", rev = "<commit>" }  # Tool, ToolSpec
-brisvox-core = { git = "https://github.com/bilal07karadeniz/brisvox", rev = "<commit>" }   # SharedClock
 serde_json = "1"
 ```
+
+(`cargo add brisvox --features provider-deepgram,provider-openai,provider-cartesia` writes the
+same. The `brisvox` crate holds no logic of its own: `brisvox::agent::tools` has `Tool` and
+`ToolSpec`, `brisvox::core::SharedClock` the clock. Depending on `brisvox-server`, `brisvox-agent`
+and `brisvox-core` separately works the same.)
+
+To follow the development branch instead, depend on the git repository
+(`{ git = "https://github.com/bilal07karadeniz/brisvox", rev = "<commit>" }`, pinning a commit)
+and copy `rust-toolchain.toml` and `Cargo.lock` next to your `Cargo.toml`.
 
 A fully local agent (no API key) needs the features `provider-sherpa-onnx`,
 `provider-openai-compatible`, `provider-openai-speech`, `smart-turn-ort` and, for browsers,
@@ -3335,7 +3355,8 @@ async def heard(session: Session, event: UserText) -> None:
 agent.run(port=8765)                          # then: BRISVOX_AGENT_URL=ws://127.0.0.1:8765
 ```
 
-Install from the repository: `pip install ./sdk/python` (or `pip install -e './sdk/python[test]'`).
+Install from PyPI: `pip install brisvox-agent` (`pip install brisvox` installs the same SDK under the short name; `import brisvox` is `import brisvox_agent`). From a checkout of the repository: `pip install ./sdk/python`
+(or `pip install -e './sdk/python[test]'`).
 
 **Where it listens.** `host` defaults to `127.0.0.1`: only a server on the same machine can reach
 the agent. For a brisvox server in another container or service bind `0.0.0.0` (IPv4) or `::`
@@ -3367,8 +3388,9 @@ it to stderr when logging is not configured, and on a loopback address the line 
   `BRISVOX_AGENT_TOKEN` on both sides. An agent the server cannot reach is not an error for the
   call: it runs on the agent file alone, without your tools. `docs/DEPLOY.md`, "Your tools service".
 
-* **In a container.** The SDK is not on PyPI, so an image vendors it: the build context is a
-  checkout of this repository and `pip install` runs on the copied `sdk/python`.
+* **In a container.** `pip install brisvox-agent` in the image is enough. The template in this
+  repository vendors the SDK instead: the build context is a checkout of this repository and
+  `pip install` runs on the copied `sdk/python`.
   `examples/booking-agent/Dockerfile` is the template
   (`docker build -f examples/booking-agent/Dockerfile -t booking-agent .` from the repository
   root); it binds all interfaces and runs as a non-root user. `docs/DEPLOY.md`, "Your tools service".
@@ -3544,7 +3566,7 @@ agent.onUserText(async (session, event) => {
 await agent.run({ port: 8765 }); // then: BRISVOX_AGENT_URL=ws://127.0.0.1:8765
 ```
 
-Install from the repository (the package is not on npm yet):
+Install from npm: `npm install @brisvox/agent` (`npm i brisvox` re-exports it under the short name: `import { Agent } from "brisvox"`). From a checkout of the repository:
 `npm install ./sdk/typescript` after `npm run build` in it, or work in the repository directly.
 
 **Where it listens.** `host` defaults to `127.0.0.1`: only a server on the same machine can reach
@@ -3603,7 +3625,8 @@ typed by inference. A zod user can pass `z.toJSONSchema(schema)` as a raw `param
   `BRISVOX_AGENT_TOKEN` on both sides. An agent the server cannot reach is not an error for the
   call: it runs on the agent file alone, without your tools. `docs/DEPLOY.md`, "Your tools service".
 
-* **In a container.** The SDK is not on npm, so an image builds it: the build context is a
+* **In a container.** `npm install @brisvox/agent` in the image is enough. The template in this
+  repository builds the SDK instead: the build context is a
   checkout of this repository, `npm ci && npm run build` runs on the copied `sdk/typescript`, and
   `dist` plus the production `node_modules` go into the final stage.
   `sdk/typescript/examples/Dockerfile` is the template
@@ -3755,10 +3778,10 @@ when your application logic is Rust and you want one binary; use the
 
 | File | What it is |
 |---|---|
-| `src/main.rs` | The whole binary: `brisvox_server::app::run_with_tools(Arc::new(MyTools::default()))`. |
+| `src/main.rs` | The whole binary: `brisvox::run_with_tools(Arc::new(MyTools::default()))`. |
 | `src/lib.rs` | `MyTools`, an `AppTools` implementation: a read-only `get_time(timezone)` and a side-effect `save_note(text)`, with tests. |
 | `agent.toml` | The agent: Deepgram + OpenAI + Cartesia, and `tools = ["get_time", "save_note"]`. |
-| `Cargo.toml` | Depends on `brisvox-server` with the provider features `agent.toml` names. |
+| `Cargo.toml` | Depends on `brisvox` (the umbrella crate: server, tools API, core types) with the provider features `agent.toml` names. |
 
 ## Run it
 
@@ -3792,22 +3815,23 @@ pool), every IO await bounded by a timeout, state that outlives a call behind an
 
 ## Make it yours
 
-1. Copy this directory next to your own code, or depend on `brisvox-server` from your own crate
+1. Copy this directory next to your own code, or depend on `brisvox` from your own crate
    (next section).
 2. Replace the tools in `src/lib.rs`. Each is a `Tool` (an async `call(args, ctx)`) plus a
    `ToolSpec` (name, description the model reads, JSON Schema of the arguments, `ToolKind`);
    arguments are validated against the schema before your code runs.
 3. Name the tools in your agent file's `tools = [...]`. A name no tool provides is an error of
    `check` and of the server's start.
-4. In `Cargo.toml`, enable the `brisvox-server` features your agent file needs: the `provider-*`
+4. In `Cargo.toml`, enable the `brisvox` features your agent file needs: the `provider-*`
    of its three providers, plus `webrtc`, `smart-turn-ort` (for the `adaptive` turn policy),
    `call-control` or `otlp` as you use them. `all-providers` turns on every adapter.
 5. Run `check` after every change to the agent file.
 
 ## Outside this repository
 
-The brisvox crates are **not on crates.io**; depend on them from git. A standalone project is
-this `Cargo.toml` (pin `rev` to a commit you tested; a branch name moves under you):
+The brisvox crates are on crates.io. A standalone project is this `Cargo.toml` (to follow the
+development branch instead, replace each `version` by `git = "https://github.com/bilal07karadeniz/brisvox"`
+with a `rev` pinned to a commit you tested; a branch name moves under you):
 
 ```toml
 [package]
@@ -3817,25 +3841,25 @@ edition = "2024"
 rust-version = "1.99"
 
 [dependencies]
-brisvox-server = { git = "https://github.com/bilal07karadeniz/brisvox", rev = "<commit>", features = [
+# One dependency: the server, the Tool/ToolSpec types (`brisvox::agent::tools`) and the injected
+# clock (`brisvox::core`) that src/lib.rs imports.
+brisvox = { version = "0.1", features = [
     # The providers your agent file names (docs/CONFIG.md), or "all-providers".
     "provider-deepgram", "provider-openai", "provider-cartesia",
     # Optional, as in the README's "What to build with": "smart-turn-ort" (adaptive turns),
     # "webrtc" (browsers; needs cmake and a C compiler), "call-control" (telephony tools).
 ] }
-# What src/lib.rs imports for the tools: the Tool/ToolSpec types and the injected clock.
-brisvox-agent = { git = "https://github.com/bilal07karadeniz/brisvox", rev = "<commit>" }
-brisvox-core = { git = "https://github.com/bilal07karadeniz/brisvox", rev = "<commit>" }
 serde_json = "1"
 ```
 
 with `src/main.rs` and `src/lib.rs` copied from this directory. Three more things to copy or know:
 
-* **The toolchain.** Copy `rust-toolchain.toml` from the repository root (it pins Rust 1.99.0);
-  the crates use edition 2024 and need at least 1.99.
-* **The lockfile.** Copy the repository's `Cargo.lock` next to your `Cargo.toml` once: cargo
-  keeps the dependency versions the project was tested with and drops the entries it does not
-  use. A fresh resolution picks the newest compatible versions of every dependency instead.
+* **The toolchain.** The crates use edition 2024 and need Rust 1.99 or newer (the repository's
+  `rust-toolchain.toml` pins 1.99.0).
+* **The lockfile.** Commit your own `Cargo.lock`. To start from the dependency versions the
+  project was tested with, copy the repository's `Cargo.lock` next to your `Cargo.toml` once:
+  cargo keeps those versions and drops the entries it does not use. A fresh resolution picks the
+  newest compatible versions of every dependency instead.
 * **A fully local agent** (no API key; sherpa-onnx speech recognition, an OpenAI-compatible LLM
   server such as Ollama, an OpenAI-compatible speech server such as Kokoro, see
   `book/src/quickstart/local.md`) takes these features:
@@ -3887,8 +3911,9 @@ without writing any audio code:
 The module is also what the server's built-in `/demo` page and `examples/web-assistant/web/index.html`
 run, so those pages are a worked example of every option below.
 
-Not on npm yet: copy `brisvox-call.js` and `brisvox-call.d.ts` into your project (they are two
-plain files), or depend on the folder (`"@brisvox/web": "file:../brisvox/sdk/web"`).
+Install from npm: `npm install @brisvox/web` (`npm i brisvox` re-exports it as `brisvox/web`). Or copy `brisvox-call.js` and `brisvox-call.d.ts` into
+your project (they are two plain files), or depend on the folder from a checkout
+(`"@brisvox/web": "file:../brisvox/sdk/web"`).
 
 ## Plain HTML
 
@@ -3946,7 +3971,7 @@ to the page's origin (`docs/DEPLOY.md`).
 
 Two files: a route handler that mints a token for the visitor, and a client component with the
 button. Put the module in your project, for example `app/lib/brisvox-call.js` and
-`app/lib/brisvox-call.d.ts` (or install the folder as a dependency and import `@brisvox/web`).
+`app/lib/brisvox-call.d.ts` (or `npm install @brisvox/web` and import it).
 
 `app/api/voice-token/route.ts` (server side: the secret never reaches the browser):
 
@@ -5313,6 +5338,10 @@ Files: `Dockerfile`, `.dockerignore`, `deploy/compose.yaml`, `deploy/agents/{web
 
 ## The image
 
+Releases publish it as `ghcr.io/bilal07karadeniz/brisvox-server` (tags `vX.Y.Z` and `latest`,
+`linux/amd64` and `linux/arm64`), built with `BRISVOX_FEATURES=all-providers,call-control,smart-turn-ort,webrtc`
+(`docs/RELEASING.md`). To build it yourself, with another feature set if you need one:
+
 ```sh
 docker build -t brisvox/server .
 # another feature set (the SIP trunk listener, a smaller provider list):
@@ -5979,9 +6008,10 @@ the token:
 - **Health check.** None: the SDK agent answers a plain HTTP request with an error status (the
   TypeScript one with `426`), which a platform health check would count as unhealthy. Leave the
   platform's health check off for this service.
-- **Image.** The SDKs are not on PyPI or npm. Build the service from your own repository with the
-  SDK vendored into it (`pip install ./sdk/python` after copying the directory; `npm install` a
-  built `sdk/typescript`), as in `book/src/quickstart/sdk-agent.md`. Two ready Dockerfiles show it,
+- **Image.** Install the SDK from the registry in your own image (`pip install brisvox-agent`,
+  `npm install @brisvox/agent`; `pip install brisvox` and `npm i brisvox` are the same SDKs under the short name), or vendor it from a checkout of this repository (`pip install
+  ./sdk/python` after copying the directory; `npm install` a built `sdk/typescript`), as in
+  `book/src/quickstart/sdk-agent.md`. Two ready Dockerfiles show the vendored variant,
   both built with the **repository root as the build context** (a service whose source is your clone
   or fork, with the platform told which Dockerfile to use): `examples/booking-agent/Dockerfile`
   (Python: `pip install` of the copied `sdk/python`, the booking agent) and

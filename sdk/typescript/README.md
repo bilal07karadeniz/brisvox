@@ -29,7 +29,7 @@ agent.onUserText(async (session, event) => {
 await agent.run({ port: 8765 }); // then: BRISVOX_AGENT_URL=ws://127.0.0.1:8765
 ```
 
-Install from the repository (the package is not on npm yet):
+Install from npm: `npm install @brisvox/agent` (`npm i brisvox` re-exports it under the short name: `import { Agent } from "brisvox"`). From a checkout of the repository:
 `npm install ./sdk/typescript` after `npm run build` in it, or work in the repository directly.
 
 **Where it listens.** `host` defaults to `127.0.0.1`: only a server on the same machine can reach
@@ -88,7 +88,8 @@ typed by inference. A zod user can pass `z.toJSONSchema(schema)` as a raw `param
   `BRISVOX_AGENT_TOKEN` on both sides. An agent the server cannot reach is not an error for the
   call: it runs on the agent file alone, without your tools. `docs/DEPLOY.md`, "Your tools service".
 
-* **In a container.** The SDK is not on npm, so an image builds it: the build context is a
+* **In a container.** `npm install @brisvox/agent` in the image is enough. The template in this
+  repository builds the SDK instead: the build context is a
   checkout of this repository, `npm ci && npm run build` runs on the copied `sdk/typescript`, and
   `dist` plus the production `node_modules` go into the final stage.
   `sdk/typescript/examples/Dockerfile` is the template

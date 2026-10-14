@@ -1,0 +1,61 @@
+{
+  "name": "brisvox",
+  "version": "0.1.0",
+  "description": "Brisvox for JavaScript and TypeScript: npm i brisvox. The agent SDK (@brisvox/agent) for Node and the browser client (@brisvox/web) of the brisvox real-time voice engine, under the short name.",
+  "keywords": [
+    "voice",
+    "voice-agent",
+    "realtime",
+    "llm",
+    "telephony",
+    "webrtc"
+  ],
+  "homepage": "https://bilal07karadeniz.github.io/brisvox/",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/bilal07karadeniz/brisvox.git",
+    "directory": "sdk/npm-umbrella"
+  },
+  "bugs": {
+    "url": "https://github.com/bilal07karadeniz/brisvox/issues"
+  },
+  "author": "brisvox contributors",
+  "license": "MIT OR Apache-2.0",
+  "type": "module",
+  "main": "./index.js",
+  "types": "./index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./index.d.ts",
+      "default": "./index.js"
+    },
+    "./web": {
+      "types": "./web.d.ts",
+      "default": "./web.js"
+    },
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "index.js",
+    "index.d.ts",
+    "web.js",
+    "web.d.ts",
+    "README.md",
+    "LICENSE-MIT",
+    "LICENSE-APACHE"
+  ],
+  "engines": {
+    "node": ">=20.4"
+  },
+  "scripts": {
+    "test": "node scripts/smoke.mjs"
+  },
+  "dependencies": {
+    "@brisvox/agent": "0.1.0",
+    "@brisvox/web": "0.1.0"
+  },
+  "publishConfig": {
+    "access": "public",
+    "provenance": true
+  }
+}

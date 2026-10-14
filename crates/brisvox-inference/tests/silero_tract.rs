@@ -1,5 +1,5 @@
 //! Silero VAD on tract (pure Rust) against the reference runtime and the ground truth.
-//! Uses the bundled prepared graph (assets/models/silero_vad_16k_tract.onnx).
+//! Uses the bundled prepared graph (assets/silero_vad_16k_tract.onnx).
 #![cfg(feature = "silero-tract")]
 #![allow(
     clippy::unwrap_used,
@@ -20,7 +20,7 @@ use brisvox_sim::fixture::{Fixture, fixtures_dir};
 const FIXTURES: [&str; 3] = ["en_two_utterances", "tr_two_utterances", "en_tr_mixed"];
 
 fn model_path() -> PathBuf {
-    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../assets/models/silero_vad_16k_tract.onnx")
+    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("assets/silero_vad_16k_tract.onnx")
 }
 
 fn model() -> Arc<SileroTractModel> {

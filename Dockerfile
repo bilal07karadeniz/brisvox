@@ -88,6 +88,8 @@ RUN apt-get update \
 
 COPY --from=builder /out/brisvox-server /usr/local/bin/brisvox-server
 COPY --from=models /out/smart-turn-v3.2-cpu.onnx /opt/brisvox/models/smart-turn-v3.2-cpu.onnx
+# The notices that go with the two models (Smart Turn here, Silero inside the binary).
+COPY deploy/models-notice.txt /opt/brisvox/models/NOTICE
 COPY --chmod=0555 deploy/healthcheck.sh /usr/local/bin/brisvox-healthcheck
 # Reference definitions to start from (docs/CONFIG.md). A real deployment mounts its own file
 # over BRISVOX_AGENT_FILE (deploy/compose.yaml).

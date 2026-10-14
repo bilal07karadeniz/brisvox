@@ -198,6 +198,35 @@ Tolerances (measured, then enforced): features bit-identical on all 12 cases; pr
   runtime), 25-35 ms per analysis on the pool, pool wait ~10-20 us. bench/results/smart-turn.md.
   Tests: `crates/brisvox-inference/tests/smart_turn.rs`.
 
+## Platform dependence (measured 2026-10-15)
+The same file, the same features (bit for bit) and the same ONNX Runtime version (1.28.0) give
+different probabilities per operating system and CPU instruction set. 12 golden cases, `ort`
+2.0.0-rc.13 in the repository's tests, on one AMD Ryzen 9 9950X (AVX-512 with VNNI), difference to
+the goldens (which Python onnxruntime 1.28.0 reproduces to 1e-7 on both Windows and Linux on this
+CPU):
+
+| runtime | cases exact (< 1e-6) | off | verdict flips |
+|---|---|---|---|
+| `ort` on Windows x86_64 | 12 | none | 0 |
+| `ort` on Linux x86_64, AVX-512 + VNNI (WSL2, and the GitHub `ubuntu-latest` runner for the one case its log shows) | 10 | `en_tr_mixed/0/complete` 0.9333 for 0.9403 (0.007), `tr_two_utterances/0/cut` 0.8395 for 0.9357 (0.096) | 0 |
+| `ort` on Linux x86_64 restricted to AVX2, no VNNI (qemu-user TCG, CPU models Haswell and EPYC; emulated, not measured on silicon) | 0 | 4e-4 to 0.66, e.g. `tr_two_utterances/0/cut` 0.272 for 0.936, `en_tr_mixed/0/cut` 0.616 for 0.136 | 2 of 12 |
+
+Why: the model's uint8 activation quantization turns any last-bit float difference into a whole
+quantization step (above), and the int8 matrix kernels differ by instruction set (the u8s8 AVX2
+kernel saturates its 16-bit intermediate sums, the VNNI one does not; ONNX Runtime documents this
+for quantized models) and the Linux `ort` binary's float kernels are not bit-equal to the Windows
+one's. Consequences:
+- Tests: features and everything that compares two paths on one machine stay bit-exact on every
+  machine (the executor equals a direct call, thread counts and spinning change no bit, a bare ONNX
+  Runtime session equals `SmartTurnOrt`). The comparison with the goldens runs only where their kernels
+  run (`brisvox_sim::platform::smart_turn_goldens_apply_here`: Windows x86_64 with VNNI);
+  elsewhere the tests print the deviation. A tolerance would have to be 0.7 to hold for the
+  AVX2 row and would then protect nothing.
+- Product: a CPU without VNNI (AVX2-only server parts, such as AMD EPYC Zen 2/3 and older Intel
+  Xeons) can decide turns differently from the reference on this model. Not verified on real
+  hardware of that kind; measuring it on such hardware is an open item. Pipecat
+  runs the same file through the same runtime and has the same property.
+
 ## Pure-Rust backend (measured 2026-10-13): not adopted
 Question: can a pure-Rust runtime reproduce the ORT backend within 1e-3 with identical verdicts, at
 least as fast? Answer: no, and the 1e-3 bar is below what different correct implementations of

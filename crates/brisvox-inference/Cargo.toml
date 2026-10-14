@@ -5,7 +5,16 @@ version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
-publish.workspace = true
+publish = true
+authors.workspace = true
+repository.workspace = true
+homepage.workspace = true
+documentation = "https://docs.rs/brisvox-inference"
+readme = "README.md"
+keywords = ["vad", "onnx", "speech", "turn-detection", "voice"]
+categories = ["multimedia::audio", "algorithms"]
+# Only what the crate needs to build: no tests, fixtures, examples or bench output.
+include = ["src/**", "assets/**", "README.md", "LICENSE-MIT", "LICENSE-APACHE"]
 
 [features]
 # Silero VAD on ONNX Runtime (downloads the ORT binaries at build time; see
@@ -26,7 +35,7 @@ thiserror = { workspace = true }
 tokio = { workspace = true, features = ["sync", "macros", "time"] }
 
 [dev-dependencies]
-brisvox-sim = { workspace = true }
+brisvox-sim = { path = "../brisvox-sim" }
 serde_json = { workspace = true }
 tokio = { workspace = true, features = ["macros", "rt", "rt-multi-thread", "sync", "test-util", "time"] }
 

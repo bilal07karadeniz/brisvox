@@ -689,18 +689,21 @@ above, a build with `demo-tools` runs them.
 ### Rust tools in your own binary
 
 The stock `brisvox-server` binary has no tools of your own. To add Rust tools you write a small
-binary of your own that depends on `brisvox-server` and hands your `AppTools` to the same program
-the stock binary runs; you do not copy its `main`:
+binary of your own that depends on the `brisvox` crate (one dependency: it re-exports
+`brisvox-server` as `brisvox::server`, the tools API as `brisvox::agent::tools` and the clock types
+as `brisvox::core`, and forwards the server's features) and hands your `AppTools` to the same
+program the stock binary runs; you do not copy its `main`:
 
 ```rust
 use std::sync::Arc;
 
 fn main() -> std::process::ExitCode {
-    brisvox_server::app::run_with_tools(Arc::new(MyTools::default()))
+    brisvox::run_with_tools(Arc::new(MyTools::default()))
 }
 ```
 
-`brisvox_server::app::run()` is the stock program (no tools of your own) and
+`brisvox::run_with_tools` is `brisvox_server::app::run_with_tools`, and `brisvox::run()`
+(`brisvox_server::app::run()`) is the stock program (no tools of your own) and
 `run_with_tools(tools)` is the same with `tools` registered next to the built-in ones. Both take
 the settings from the environment exactly like `brisvox-server` (`docs/OPERATIONS.md`), keep its
 logging, its exit codes and its feature flags, and understand its command line: no arguments
@@ -710,19 +713,26 @@ names (`docs/CONFIG.md`, "Checking a file"), `--help`, `--version`. Enable in yo
 `call-control`). The stock binary's `mimalloc` global allocator is declared in its `main.rs`, not
 in the library: add your own `#[global_allocator]` if you want it.
 
-**From outside this repository.** The brisvox crates are not on crates.io: depend on them from
-git, pin a commit, and copy `rust-toolchain.toml` (Rust 1.99.0 is the pin; the crates use edition
-2024) and, to keep the tested dependency versions, `Cargo.lock` next to your `Cargo.toml`:
+**From outside this repository.** The brisvox crates are on crates.io. Use Rust 1.99 or newer (the
+crates use edition 2024) and depend on them by version; commit your own `Cargo.lock` to keep the
+dependency versions you tested:
 
 ```toml
 [dependencies]
-brisvox-server = { git = "https://github.com/bilal07karadeniz/brisvox", rev = "<commit>", features = [
+brisvox = { version = "0.1", features = [
     "provider-deepgram", "provider-openai", "provider-cartesia", "smart-turn-ort",
 ] }
-brisvox-agent = { git = "https://github.com/bilal07karadeniz/brisvox", rev = "<commit>" }  # Tool, ToolSpec
-brisvox-core = { git = "https://github.com/bilal07karadeniz/brisvox", rev = "<commit>" }   # SharedClock
 serde_json = "1"
 ```
+
+(`cargo add brisvox --features provider-deepgram,provider-openai,provider-cartesia` writes the
+same. The `brisvox` crate holds no logic of its own: `brisvox::agent::tools` has `Tool` and
+`ToolSpec`, `brisvox::core::SharedClock` the clock. Depending on `brisvox-server`, `brisvox-agent`
+and `brisvox-core` separately works the same.)
+
+To follow the development branch instead, depend on the git repository
+(`{ git = "https://github.com/bilal07karadeniz/brisvox", rev = "<commit>" }`, pinning a commit)
+and copy `rust-toolchain.toml` and `Cargo.lock` next to your `Cargo.toml`.
 
 A fully local agent (no API key) needs the features `provider-sherpa-onnx`,
 `provider-openai-compatible`, `provider-openai-speech`, `smart-turn-ort` and, for browsers,

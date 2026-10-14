@@ -5,7 +5,16 @@ version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
-publish.workspace = true
+publish = true
+authors.workspace = true
+repository.workspace = true
+homepage.workspace = true
+documentation = "https://docs.rs/brisvox-engine"
+readme = "README.md"
+keywords = ["voice", "realtime", "pipeline", "stt", "tts"]
+categories = ["multimedia::audio", "asynchronous"]
+# Only what the crate needs to build: no tests, fixtures, examples or bench output.
+include = ["src/**", "README.md", "LICENSE-MIT", "LICENSE-APACHE"]
 
 [features]
 default = ["rtvi"]
@@ -39,11 +48,11 @@ tracing = { workspace = true }
 
 [dev-dependencies]
 # The crate itself with the `sim` feature, so tests reach `EngineFactory` without `--features`.
-brisvox-engine = { workspace = true, features = ["sim"] }
-brisvox-sim = { workspace = true }
+brisvox-engine = { path = ".", features = ["sim"] }
+brisvox-sim = { path = "../brisvox-sim" }
 # The real HTTP/SSE and Live adapters of the tool-calling scenarios (tests/tool_scenarios):
 # each runs against a loopback server that speaks its wire format, and live with BRISVOX_LIVE_TESTS=1.
-brisvox-providers = { workspace = true, features = ["provider-openai-compatible", "provider-anthropic", "provider-gemini", "provider-gemini-live", "provider-sherpa-onnx"] }
+brisvox-providers = { path = "../brisvox-providers", features = ["provider-openai-compatible", "provider-anthropic", "provider-gemini", "provider-gemini-live", "provider-sherpa-onnx"] }
 # The scripted Pipecat-wire client of the RTVI end-to-end test (workspace crates already used by
 # brisvox-transport; no new dependency).
 futures = { workspace = true }

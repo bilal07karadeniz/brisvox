@@ -1089,7 +1089,9 @@ async fn speech_without_a_partial_yet_makes_a_finalize_wait_for_its_final() {
         s.until_audio(1).await;
         s.send(transcript("u0", "önce", true, 0.4)).await;
         s.send(speech("speech_start", 1.0)).await;
-        tokio::time::sleep(Duration::from_millis(150)).await;
+        // Long enough that the client's Finalize (300 ms after the first final) still comes before the
+        // final even when the machine is busy.
+        tokio::time::sleep(Duration::from_millis(900)).await;
         s.send(transcript("u1", "Sonra.", true, 1.4)).await;
         s.drain().await;
     }))
@@ -1101,8 +1103,11 @@ async fn speech_without_a_partial_yet_makes_a_finalize_wait_for_its_final() {
         flat(event(&mut session).await),
         t("önce", true, true, false)
     );
-    // speech_start has been seen (it arrives right after the final), no partial yet.
-    tokio::time::sleep(Duration::from_millis(40)).await;
+    // speech_start has been seen (it arrives right after the final), no partial yet. The adapter
+    // exposes no sign that it has processed it, so the test gives it time: a Finalize that got
+    // there first would be answered at once as "nothing open" (an empty final), which is what a
+    // busy machine produced with 40 ms.
+    tokio::time::sleep(Duration::from_millis(300)).await;
     session.input.send(SttInput::Finalize).await.unwrap();
     assert_eq!(
         flat(event(&mut session).await),

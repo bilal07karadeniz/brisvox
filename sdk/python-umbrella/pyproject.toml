@@ -1,0 +1,43 @@
+[build-system]
+# >=77: SPDX license expressions (PEP 639).
+requires = ["setuptools>=77"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "brisvox"
+version = "0.1.0"
+description = "Brisvox for Python: pip install brisvox. The agent SDK of the brisvox real-time voice engine (the brisvox-agent package), under the short name."
+readme = "README.md"
+requires-python = ">=3.11"
+license = "MIT OR Apache-2.0"
+license-files = ["LICENSE-MIT", "LICENSE-APACHE"]
+authors = [{ name = "brisvox contributors" }]
+keywords = ["voice", "voice-agent", "realtime", "llm", "telephony"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Framework :: AsyncIO",
+    "Intended Audience :: Developers",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Multimedia :: Sound/Audio :: Speech",
+    "Typing :: Typed",
+]
+# Exactly the agent SDK of the same release: the two are published together from one tag.
+dependencies = [
+    "brisvox-agent==0.1.0",
+]
+
+[project.urls]
+Homepage = "https://bilal07karadeniz.github.io/brisvox/"
+Documentation = "https://bilal07karadeniz.github.io/brisvox/"
+Repository = "https://github.com/bilal07karadeniz/brisvox"
+Issues = "https://github.com/bilal07karadeniz/brisvox/issues"
+Changelog = "https://github.com/bilal07karadeniz/brisvox/blob/main/CHANGELOG.md"
+
+[tool.setuptools]
+packages = ["brisvox"]
+
+[tool.setuptools.package-data]
+brisvox = ["py.typed"]

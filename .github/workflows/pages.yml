@@ -1,0 +1,58 @@
+# The book (book/, with the design and reference documents of docs/ included) built with mdBook and
+# deployed to GitHub Pages on every push to main: https://bilal07karadeniz.github.io/brisvox/
+# One-time setting: repository Settings > Pages > Build and deployment > Source: GitHub Actions
+# (docs/RELEASING.md). Third-party actions are pinned to commit SHAs (version in the trailing comment).
+name: pages
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# One deployment at a time; a newer push waits instead of cancelling a running deployment.
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      # Links, includes and chapter coverage; fails before mdbook does with a clearer message.
+      - name: Check the book structure
+        run: python3 scripts/check_book.py
+
+      - uses: taiki-e/install-action@1168f6810a3cb30a3514bf5756a3b7f0422c6df8 # v2.87.28
+        with:
+          tool: mdbook@0.5.4
+
+      - name: Build the book
+        run: mdbook build book
+
+      - uses: actions/configure-pages@45bfe0192ca1faeb007ade9deae92b16b8254a0d # v6.0.0
+
+      - uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9 # v5.0.0
+        with:
+          path: target/book
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@368f82528645a54fb793d4d04e342629a3f51346 # v5.0.1

@@ -7,6 +7,11 @@ version = "0.1.0"
 edition = "2024"
 rust-version = "1.99"
 license = "MIT OR Apache-2.0"
+authors = ["brisvox contributors"]
+repository = "https://github.com/bilal07karadeniz/brisvox"
+homepage = "https://bilal07karadeniz.github.io/brisvox/"
+# Safe default: a crate must opt in with `publish = true` (the eleven library and binary crates listed
+# in docs/RELEASING.md do; brisvox-bench and the examples never do).
 publish = false
 
 # Versions checked on crates.io 2026-10-07. Crates opt in with
@@ -98,16 +103,17 @@ toml = { version = "1.1.8", default-features = false, features = ["std", "serde"
 tracing = "0.1.44"
 tracing-subscriber = "0.3.23"
 
-brisvox-core = { path = "crates/brisvox-core" }
-brisvox-audio = { path = "crates/brisvox-audio" }
-brisvox-inference = { path = "crates/brisvox-inference" }
-brisvox-agent = { path = "crates/brisvox-agent" }
-brisvox-agent-link = { path = "crates/brisvox-agent-link" }
-brisvox-providers = { path = "crates/brisvox-providers" }
-brisvox-transport = { path = "crates/brisvox-transport" }
-brisvox-engine = { path = "crates/brisvox-engine" }
-brisvox-server = { path = "crates/brisvox-server" }
-brisvox-sim = { path = "crates/brisvox-sim" }
+brisvox = { path = "crates/brisvox", version = "0.1.0" }
+brisvox-core = { path = "crates/brisvox-core", version = "0.1.0" }
+brisvox-audio = { path = "crates/brisvox-audio", version = "0.1.0" }
+brisvox-inference = { path = "crates/brisvox-inference", version = "0.1.0" }
+brisvox-agent = { path = "crates/brisvox-agent", version = "0.1.0" }
+brisvox-agent-link = { path = "crates/brisvox-agent-link", version = "0.1.0" }
+brisvox-providers = { path = "crates/brisvox-providers", version = "0.1.0" }
+brisvox-transport = { path = "crates/brisvox-transport", version = "0.1.0" }
+brisvox-engine = { path = "crates/brisvox-engine", version = "0.1.0" }
+brisvox-server = { path = "crates/brisvox-server", version = "0.1.0" }
+brisvox-sim = { path = "crates/brisvox-sim", version = "0.1.0" }
 
 [workspace.lints.rust]
 unsafe_code = "deny"

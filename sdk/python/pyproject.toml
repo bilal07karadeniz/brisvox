@@ -1,5 +1,6 @@
 [build-system]
-requires = ["setuptools>=68"]
+# >=77: SPDX license expressions (PEP 639).
+requires = ["setuptools>=77"]
 build-backend = "setuptools.build_meta"
 
 [project]
@@ -8,13 +9,34 @@ version = "0.1.0"
 description = "Python SDK for the brisvox agent protocol: the application logic of a real-time voice call (tools, events, commands) in async Python."
 readme = "README.md"
 requires-python = ">=3.11"
-license = { text = "MIT OR Apache-2.0" }
+license = "MIT OR Apache-2.0"
+license-files = ["LICENSE-MIT", "LICENSE-APACHE"]
+authors = [{ name = "brisvox contributors" }]
+keywords = ["voice", "voice-agent", "realtime", "llm", "telephony"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Framework :: AsyncIO",
+    "Intended Audience :: Developers",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Multimedia :: Sound/Audio :: Speech",
+    "Typing :: Typed",
+]
 dependencies = [
     # websockets.asyncio.server is the stable asyncio implementation from 14. The tests ran on
     # 15.0.1 only (Python 3.13, 2026-10-13), so the range is that major; widen it only after the
     # suite ran on the new one (CI installs this exact range).
     "websockets>=15,<16",
 ]
+
+[project.urls]
+Homepage = "https://bilal07karadeniz.github.io/brisvox/"
+Documentation = "https://bilal07karadeniz.github.io/brisvox/"
+Repository = "https://github.com/bilal07karadeniz/brisvox"
+Issues = "https://github.com/bilal07karadeniz/brisvox/issues"
+Changelog = "https://github.com/bilal07karadeniz/brisvox/blob/main/CHANGELOG.md"
 
 [project.optional-dependencies]
 test = ["pytest>=8"]

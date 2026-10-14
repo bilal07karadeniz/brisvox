@@ -425,6 +425,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "brisvox"
+version = "0.1.0"
+dependencies = [
+ "brisvox-agent",
+ "brisvox-core",
+ "brisvox-providers",
+ "brisvox-server",
+]
+
+[[package]]
 name = "brisvox-agent"
 version = "0.1.0"
 dependencies = [
@@ -538,9 +548,7 @@ dependencies = [
 name = "brisvox-example-rust-tools"
 version = "0.1.0"
 dependencies = [
- "brisvox-agent",
- "brisvox-core",
- "brisvox-server",
+ "brisvox",
  "serde_json",
  "tokio",
  "tokio-util",

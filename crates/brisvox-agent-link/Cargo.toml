@@ -5,7 +5,16 @@ version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
-publish.workspace = true
+publish = true
+authors.workspace = true
+repository.workspace = true
+homepage.workspace = true
+documentation = "https://docs.rs/brisvox-agent-link"
+readme = "README.md"
+keywords = ["voice", "agent", "websocket", "protocol", "llm"]
+categories = ["network-programming", "asynchronous"]
+# Only what the crate needs to build: no tests, fixtures, examples or bench output.
+include = ["src/**", "README.md", "LICENSE-MIT", "LICENSE-APACHE"]
 
 [dependencies]
 brisvox-agent = { workspace = true }
@@ -27,9 +36,9 @@ tracing = { workspace = true }
 
 [dev-dependencies]
 # The loopback call (`brisvox_engine::sim`) of the end-to-end tests.
-brisvox-engine = { workspace = true, features = ["sim"] }
-brisvox-sim = { workspace = true }
-brisvox-transport = { workspace = true }
+brisvox-engine = { path = "../brisvox-engine", features = ["sim"] }
+brisvox-sim = { path = "../brisvox-sim" }
+brisvox-transport = { path = "../brisvox-transport" }
 tokio = { workspace = true, features = ["io-util", "macros", "net", "rt", "rt-multi-thread", "sync", "test-util", "time"] }
 
 [lints]

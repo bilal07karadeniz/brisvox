@@ -75,3 +75,4 @@
 - [Risk register](reference/risks.md)
 - [Turkish support](reference/turkish.md)
 - [Fixture sources](reference/fixtures-sources.md)
+- [Releasing](reference/releasing.md)

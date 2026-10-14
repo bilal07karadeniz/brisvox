@@ -980,13 +980,24 @@ async fn a_stalled_consumer_stops_the_reader_instead_of_buffering_the_response()
     // fits in the event channel (64) plus socket buffers, but it must stop reading the socket,
     // so the server's writes block far short of the total. Then the consumer resumes and gets
     // everything, in order.
-    const EVENTS: usize = 4000;
+    const MIN_EVENTS: usize = 4000;
     const PAYLOAD: usize = 4096;
+    // What the sockets alone absorb depends on the operating system: under 2000 events of this
+    // size on Windows loopback, up to the kernel's autotuned buffer maximum on Linux
+    // (`loopback_buffer_bytes`, ~10 MiB: ~2500 events). The bound is that plus 256 events for
+    // the reader, and the script is twice as long as the bound, so an unbounded reader (all
+    // events sent) still fails it by 2x.
+    let bound = if cfg!(target_os = "linux") {
+        brisvox_sim::platform::loopback_buffer_bytes() / PAYLOAD + 256
+    } else {
+        MIN_EVENTS / 2
+    };
+    let events: usize = (2 * bound).max(MIN_EVENTS);
     let mock = Mock::start(false).await;
     let llm = provider(&mock);
     let pad = "p".repeat(PAYLOAD - 16);
     let mut steps = vec![Step::event(wire::text_start(0))];
-    steps.extend((0..EVENTS).map(|n| Step::counted(wire::text_delta(0, &format!("{n:06}{pad}")))));
+    steps.extend((0..events).map(|n| Step::counted(wire::text_delta(0, &format!("{n:06}{pad}")))));
     steps.push(Step::counted(wire::message_stop()));
     mock.script(Script::stream(steps));
 
@@ -1003,8 +1014,8 @@ async fn a_stalled_consumer_stops_the_reader_instead_of_buffering_the_response()
     }
     let held = mock.events_sent();
     assert!(
-        held < EVENTS / 2,
-        "{held} of {EVENTS} events were sent while nobody consumed: the reader is not bounded"
+        held < bound,
+        "{held} of {events} events were sent while nobody consumed (bound {bound}): the reader is not bounded"
     );
 
     let received = tokio::time::timeout(Duration::from_secs(20), async {
@@ -1027,7 +1038,7 @@ async fn a_stalled_consumer_stops_the_reader_instead_of_buffering_the_response()
     })
     .await
     .expect("the resumed consumer finished");
-    assert_eq!(received, (EVENTS, true));
+    assert_eq!(received, (events, true));
 }
 
 #[tokio::test]

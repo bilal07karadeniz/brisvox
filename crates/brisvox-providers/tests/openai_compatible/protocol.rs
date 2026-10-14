@@ -1415,11 +1415,26 @@ async fn a_stalled_consumer_stops_the_reader_instead_of_buffering_the_response()
     // hold what fits in the event channel (64) plus socket buffers, but it must stop reading
     // the socket, so the server's writes block far short of the total. Then the consumer
     // resumes and gets everything, in order.
-    const EVENTS: usize = 6000;
+    //
+    // How many events the sockets alone absorb depends on the operating system. Measured on
+    // Windows loopback: about 270 events (64 in the channel, the rest in socket buffers, ~2 KiB
+    // each), so 1000 leaves ~4x headroom and fails for any internal queue of ~1000 events or
+    // more, let alone an unbounded one. Measured on Linux loopback: 2000-2500 events (2027 on
+    // a GitHub runner, 2480 on WSL2), all of them kernel buffers (`brisvox_sim::platform::loopback_buffer_bytes`), which
+    // can grow to ~5000. There the bound
+    // is the kernel's maximum plus 256 events for the reader, and the script is twice as long as
+    // that bound, so an unbounded reader (everything sent) still fails it by a wide margin.
+    const DELTA_BYTES: usize = 2048;
+    let bound = if cfg!(target_os = "linux") {
+        brisvox_sim::platform::loopback_buffer_bytes() / DELTA_BYTES + 256
+    } else {
+        1000
+    };
+    let events: usize = (2 * bound).max(6000);
     let mock = Mock::start(false).await;
     let llm = provider(&mock);
-    let pad = "p".repeat(2048);
-    let mut steps: Vec<Step> = (0..EVENTS)
+    let pad = "p".repeat(DELTA_BYTES);
+    let mut steps: Vec<Step> = (0..events)
         .map(|n| Step::counted(text_chunk(&format!("{n:06}{pad}"))))
         .collect();
     steps.push(Step::counted(finish_chunk("stop")));
@@ -1436,12 +1451,9 @@ async fn a_stalled_consumer_stops_the_reader_instead_of_buffering_the_response()
         last = now;
     }
     let held = mock.events_sent();
-    // Measured on Windows loopback: about 270 events (64 in the channel, the rest in socket
-    // buffers, ~2 KiB each). The bound leaves ~4x headroom for buffer autotuning elsewhere, and
-    // fails for any internal queue of ~1000 events or more, let alone an unbounded one.
     assert!(
-        held < 1000,
-        "{held} of {EVENTS} events were sent while nobody consumed: the reader is not bounded"
+        held < bound,
+        "{held} of {events} events were sent while nobody consumed (bound {bound}): the reader is not bounded"
     );
     let received = tokio::time::timeout(Duration::from_secs(30), async {
         let mut deltas = 0_usize;
@@ -1463,7 +1475,7 @@ async fn a_stalled_consumer_stops_the_reader_instead_of_buffering_the_response()
     })
     .await
     .expect("the resumed consumer finished");
-    assert_eq!(received, (EVENTS, true));
+    assert_eq!(received, (events, true));
 }
 
 #[tokio::test]

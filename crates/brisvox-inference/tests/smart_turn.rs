@@ -212,20 +212,78 @@ mod ort {
         assert_eq!(std::fs::metadata(model_path()).unwrap().len(), MODEL_BYTES);
     }
 
+    /// The probabilities of every golden case from a bare ONNX Runtime session on the Rust
+    /// extractor's features, in the order of [`cases`]: an oracle for [`SmartTurnOrt`]'s own
+    /// session handling that holds on every machine (same file, same runtime, same CPU).
+    fn bare_session_probabilities() -> Vec<f32> {
+        use ::ort::session::Session;
+        use ::ort::value::TensorRef;
+        use brisvox_inference::mel::{FEATURES, FRAMES, N_MELS, WhisperLogMel};
+
+        let mut session = Session::builder()
+            .unwrap()
+            .commit_from_file(model_path())
+            .unwrap();
+        let mut mel = WhisperLogMel::new();
+        cases()
+            .into_iter()
+            .map(|(_, fixture, start, end, _)| {
+                let pcm = samples(&fixture);
+                let mut features = vec![0.0; FEATURES];
+                mel.compute(&super::last_8_seconds(&pcm[start..end]), &mut features)
+                    .unwrap();
+                let shape = [1_i64, N_MELS as i64, FRAMES as i64];
+                let input = TensorRef::from_array_view((shape, &features[..])).unwrap();
+                let outputs = session
+                    .run(::ort::inputs!["input_features" => input])
+                    .unwrap();
+                let (_, logits) = outputs["logits"].try_extract_tensor::<f32>().unwrap();
+                logits[0]
+            })
+            .collect()
+    }
+
+    /// Every golden case through `model`. On every machine the probability must equal a bare
+    /// session's bit for bit. Against the reference's goldens (to their rounding, same verdict)
+    /// it is compared only where those kernels run (`smart_turn_goldens_apply_here`): elsewhere
+    /// the int8 model legitimately answers differently (2 of 12 cases on Linux, 0.007 and 0.096
+    /// off; far more without VNNI, docs/providers/smart-turn.md "Platform dependence").
     fn check_goldens(model: &Arc<dyn TurnModel>, label: &str) {
+        let reference_kernels = brisvox_sim::platform::smart_turn_goldens_apply_here();
+        let bare = bare_session_probabilities();
+        let rows = run_cases(model);
+        assert_eq!(rows.len(), bare.len());
         let mut worst = 0.0_f32;
-        for (key, got, expected) in run_cases(model) {
+        for ((key, got, expected), bare) in rows.into_iter().zip(bare) {
             let error = (got - expected).abs();
             worst = worst.max(error);
             println!("{label} {key}: rust {got} vs reference {expected} ({error:.2e})");
-            // Goldens are rounded to 7 decimals.
             assert!(
-                error < 1e-6,
-                "{label} {key}: rust {got} vs reference {expected}"
+                (0.0..=1.0).contains(&got),
+                "{label} {key}: not a probability: {got}"
             );
-            assert_eq!(got > 0.5, expected > 0.5, "{label} {key}: verdict differs");
+            assert_eq!(
+                got.to_bits(),
+                bare.to_bits(),
+                "{label} {key}: {got} differs from a bare ONNX Runtime session ({bare})"
+            );
+            if reference_kernels {
+                // Goldens are rounded to 7 decimals.
+                assert!(
+                    error < 1e-6,
+                    "{label} {key}: rust {got} vs reference {expected}"
+                );
+                assert_eq!(got > 0.5, expected > 0.5, "{label} {key}: verdict differs");
+            }
         }
-        println!("ort {label}: worst |rust - reference| probability: {worst}");
+        println!(
+            "ort {label}: worst |rust - reference| probability: {worst} (goldens {} here)",
+            if reference_kernels {
+                "enforced"
+            } else {
+                "not enforced"
+            }
+        );
     }
 
     #[test]

@@ -117,8 +117,9 @@ async fn the_smart_turn_model_warms_on_the_executor_and_not_on_the_vad_pool() {
 }
 
 /// The golden cases of the real Smart Turn model through the executor's threads give the
-/// bit-identical probabilities of the same analysis on the test thread, and the reference's
-/// within the goldens' rounding: where the analysis runs changes nothing it computes.
+/// bit-identical probabilities of the same analysis on the test thread (on every machine), and
+/// on a machine running the reference's kernels also the reference's within the goldens'
+/// rounding: where the analysis runs changes nothing it computes.
 #[cfg(feature = "smart-turn-ort")]
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn golden_cases_through_the_executor_are_bit_identical() {
@@ -140,6 +141,7 @@ async fn golden_cases_through_the_executor_are_bit_identical() {
     .unwrap();
     let cases = golden["cases"].as_object().unwrap();
     assert_eq!(cases.len(), 12);
+    let reference_kernels = brisvox_sim::platform::smart_turn_goldens_apply_here();
     for (key, case) in cases {
         let fixture = Fixture::load(&fixtures_dir(), case["fixture"].as_str().unwrap()).unwrap();
         let pcm: Vec<i16> = fixture
@@ -182,10 +184,14 @@ async fn golden_cases_through_the_executor_are_bit_identical() {
             direct.to_bits(),
             "{key}: executor {via_executor} vs test thread {direct}"
         );
-        assert!(
-            (via_executor - expected).abs() < 1e-6,
-            "{key}: {via_executor} vs reference {expected}"
-        );
+        // The reference's goldens hold only where their ONNX Runtime kernels run; the
+        // exactness above (executor == this thread, bit for bit) holds everywhere.
+        if reference_kernels {
+            assert!(
+                (via_executor - expected).abs() < 1e-6,
+                "{key}: {via_executor} vs reference {expected}"
+            );
+        }
     }
     tokio::task::spawn_blocking(move || executor.shutdown())
         .await

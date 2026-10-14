@@ -27,8 +27,9 @@ without writing any audio code:
 The module is also what the server's built-in `/demo` page and `examples/web-assistant/web/index.html`
 run, so those pages are a worked example of every option below.
 
-Not on npm yet: copy `brisvox-call.js` and `brisvox-call.d.ts` into your project (they are two
-plain files), or depend on the folder (`"@brisvox/web": "file:../brisvox/sdk/web"`).
+Install from npm: `npm install @brisvox/web` (`npm i brisvox` re-exports it as `brisvox/web`). Or copy `brisvox-call.js` and `brisvox-call.d.ts` into
+your project (they are two plain files), or depend on the folder from a checkout
+(`"@brisvox/web": "file:../brisvox/sdk/web"`).
 
 ## Plain HTML
 
@@ -86,7 +87,7 @@ to the page's origin (`docs/DEPLOY.md`).
 
 Two files: a route handler that mints a token for the visitor, and a client component with the
 button. Put the module in your project, for example `app/lib/brisvox-call.js` and
-`app/lib/brisvox-call.d.ts` (or install the folder as a dependency and import `@brisvox/web`).
+`app/lib/brisvox-call.d.ts` (or `npm install @brisvox/web` and import it).
 
 `app/api/voice-token/route.ts` (server side: the secret never reaches the browser):
 

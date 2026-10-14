@@ -186,7 +186,7 @@ Reviewed behaviour (review fixes, `crates/brisvox-inference/src/vad.rs`):
 
 ## Pure-Rust backend
 `brisvox_inference::silero_tract` (feature `silero-tract`) runs the prepared graph
-(assets/models/silero_vad_16k_tract.onnx, embedded): 36-45 µs per window, within 2.1e-6 of the
+(crates/brisvox-inference/assets/silero_vad_16k_tract.onnx, embedded): 36-45 µs per window, within 2.1e-6 of the
 reference, identical boundaries. Prepare/regenerate it with scripts/models/prepare_silero_tract.py
 (needs onnx + onnxruntime; byte-identical with onnxruntime 1.30.0). Speed comparison test:
 `cargo test --release -p brisvox-inference --all-features --test vad_speed -- --nocapture`.

@@ -2,6 +2,23 @@
   "name": "@brisvox/web",
   "version": "0.1.0",
   "description": "Browser client for Brisvox voice calls: WebRTC with an automatic WebSocket fallback, microphone capture, playback and barge-in, in one dependency-free ES module.",
+  "keywords": [
+    "voice",
+    "webrtc",
+    "websocket",
+    "microphone",
+    "browser"
+  ],
+  "homepage": "https://bilal07karadeniz.github.io/brisvox/",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/bilal07karadeniz/brisvox.git",
+    "directory": "sdk/web"
+  },
+  "bugs": {
+    "url": "https://github.com/bilal07karadeniz/brisvox/issues"
+  },
+  "author": "brisvox contributors",
   "license": "MIT OR Apache-2.0",
   "type": "module",
   "main": "./brisvox-call.js",
@@ -20,7 +37,9 @@
   "files": [
     "brisvox-call.js",
     "brisvox-call.d.ts",
-    "README.md"
+    "README.md",
+    "LICENSE-MIT",
+    "LICENSE-APACHE"
   ],
   "sideEffects": false,
   "engines": {
@@ -28,5 +47,9 @@
   },
   "scripts": {
     "test": "node scripts/run-tests.mjs"
+  },
+  "publishConfig": {
+    "access": "public",
+    "provenance": true
   }
 }

@@ -1,0 +1,58 @@
+[package]
+name = "brisvox"
+description = "Brisvox: a Rust engine for real-time voice agents. One dependency for the server, the tools API and the core types."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish = true
+authors.workspace = true
+repository.workspace = true
+homepage.workspace = true
+documentation = "https://docs.rs/brisvox"
+readme = "README.md"
+keywords = ["voice", "agent", "telephony", "webrtc", "llm"]
+categories = ["network-programming", "multimedia::audio", "asynchronous"]
+# Only what the crate needs to build: no tests, fixtures, examples or bench output.
+include = ["src/**", "README.md", "LICENSE-MIT", "LICENSE-APACHE"]
+
+# The features forward to `brisvox-server` and are named like its own (docs/CONFIG.md lists the
+# providers, README "What to build with" the rest). Same defaults as brisvox-server minus
+# `mimalloc`, which only the server's binary uses: a library does not choose your global allocator.
+[features]
+default = ["yaml", "silero-tract"]
+yaml = ["brisvox-server/yaml"]
+silero-tract = ["brisvox-server/silero-tract"]
+schema = ["brisvox-server/schema"]
+sip = ["brisvox-server/sip"]
+webrtc = ["brisvox-server/webrtc"]
+smart-turn-ort = ["brisvox-server/smart-turn-ort"]
+call-control = ["brisvox-server/call-control"]
+otlp = ["brisvox-server/otlp"]
+recording-encryption = ["brisvox-server/recording-encryption"]
+demo-tools = ["brisvox-server/demo-tools"]
+all-providers = ["brisvox-server/all-providers"]
+provider-deepgram = ["brisvox-server/provider-deepgram"]
+provider-assemblyai = ["brisvox-server/provider-assemblyai"]
+provider-gladia = ["brisvox-server/provider-gladia"]
+provider-sherpa-onnx = ["brisvox-server/provider-sherpa-onnx"]
+provider-openai-realtime-stt = ["brisvox-server/provider-openai-realtime-stt"]
+provider-openai = ["brisvox-server/provider-openai"]
+provider-anthropic = ["brisvox-server/provider-anthropic"]
+provider-gemini = ["brisvox-server/provider-gemini"]
+provider-openai-compatible = ["brisvox-server/provider-openai-compatible"]
+provider-cartesia = ["brisvox-server/provider-cartesia"]
+provider-elevenlabs = ["brisvox-server/provider-elevenlabs"]
+provider-deepgram-aura = ["brisvox-server/provider-deepgram-aura"]
+provider-openai-speech = ["brisvox-server/provider-openai-speech"]
+
+[dependencies]
+brisvox-agent = { workspace = true }
+brisvox-core = { workspace = true }
+brisvox-providers = { workspace = true }
+# Its default features are the ones listed above, so `default-features = false` here really turns
+# them off.
+brisvox-server = { workspace = true, default-features = false }
+
+[lints]
+workspace = true

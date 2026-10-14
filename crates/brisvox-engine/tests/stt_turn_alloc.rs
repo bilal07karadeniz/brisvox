@@ -304,6 +304,13 @@ async fn a_pool_job_costs_a_fixed_number_of_allocations_on_the_submitting_thread
     for _ in 0..8 {
         offload.run(timeout, || 1u32).await.unwrap();
     }
+    // The current-thread scheduler keeps the wakers of tasks that yield (also the ones tokio's
+    // cooperative budget makes yield) in a list it allocates on the first use. A pool job that is
+    // already answered when it is first polled spends budget, so after enough of them in one
+    // poll of this task the budget runs out and that first use falls inside the measured jobs,
+    // once, depending on whether the pool thread or this one is quicker (one allocation too
+    // many on a loaded 2-core CI runner, never on an idle desktop). Make that use happen here.
+    tokio::task::yield_now().await;
     const JOBS: usize = 200;
     let before = allocations();
     for i in 0..JOBS {

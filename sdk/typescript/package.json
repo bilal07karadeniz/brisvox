@@ -2,6 +2,23 @@
   "name": "@brisvox/agent",
   "version": "0.1.0",
   "description": "TypeScript SDK for the brisvox agent protocol: the application logic of a real-time voice call (tools, events, commands) in async TypeScript.",
+  "keywords": [
+    "voice",
+    "voice-agent",
+    "realtime",
+    "llm",
+    "telephony"
+  ],
+  "homepage": "https://bilal07karadeniz.github.io/brisvox/",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/bilal07karadeniz/brisvox.git",
+    "directory": "sdk/typescript"
+  },
+  "bugs": {
+    "url": "https://github.com/bilal07karadeniz/brisvox/issues"
+  },
+  "author": "brisvox contributors",
   "license": "MIT OR Apache-2.0",
   "type": "module",
   "main": "./dist/src/index.js",
@@ -14,13 +31,16 @@
   },
   "files": [
     "dist/src",
-    "README.md"
+    "README.md",
+    "LICENSE-MIT",
+    "LICENSE-APACHE"
   ],
   "engines": {
     "node": ">=20"
   },
   "scripts": {
     "build": "tsc -p tsconfig.json",
+    "prepack": "npm run build",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "tsc -p tsconfig.json && node scripts/run-tests.mjs"
   },
@@ -31,5 +51,9 @@
     "@types/node": "20.19.43",
     "@types/ws": "8.18.2",
     "typescript": "7.0.2"
+  },
+  "publishConfig": {
+    "access": "public",
+    "provenance": true
   }
 }

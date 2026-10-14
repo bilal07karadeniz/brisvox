@@ -18,7 +18,8 @@ bearer token. Without `BRISVOX_AGENT_URL`, calls run on the agent file alone.
 Python 3.11 or newer, one dependency (`websockets`).
 
 ```sh
-pip install ./sdk/python
+pip install brisvox-agent          # from PyPI (`pip install brisvox` installs it too, under the short name)
+pip install ./sdk/python             # or from a checkout of the repository
 ```
 
 ```python
@@ -49,10 +50,11 @@ tested example is `examples/booking-agent`.
 
 ## TypeScript
 
-Node 20 or newer, one runtime dependency (`ws`). The package is not on npm yet; build it from the
-repository.
+Node 20 or newer, one runtime dependency (`ws`).
 
 ```sh
+npm install @brisvox/agent              # from npm (`npm i brisvox` re-exports it; the browser client is `brisvox/web`)
+# or from a checkout of the repository:
 cd sdk/typescript && npm ci && npm run build
 ```
 

@@ -9,5 +9,5 @@ use std::sync::Arc;
 use brisvox_example_rust_tools::MyTools;
 
 fn main() -> ExitCode {
-    brisvox_server::app::run_with_tools(Arc::new(MyTools::default()))
+    brisvox::run_with_tools(Arc::new(MyTools::default()))
 }

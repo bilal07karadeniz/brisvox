@@ -67,6 +67,10 @@ pub struct Fixture {
 }
 
 /// The repository's `fixtures/` directory (from this crate's manifest location).
+///
+/// It exists in a checkout of the repository only: the speech fixtures (audio under CC BY-SA 4.0)
+/// are not part of the published crate, so with the crate from crates.io pass your own directory
+/// to [`Fixture::load`].
 pub fn fixtures_dir() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("..")

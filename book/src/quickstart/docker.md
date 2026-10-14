@@ -16,6 +16,14 @@ docker compose -f deploy/compose.yaml up --build
 docker compose -f deploy/compose.yaml up --build agent-ws
 ```
 
+Every release also publishes the image, so nothing has to be built: set `BRISVOX_IMAGE` to
+`ghcr.io/bilal07karadeniz/brisvox-server:vX.Y.Z` (or `:latest`) and start with `up --no-build`:
+
+```sh
+BRISVOX_IMAGE=ghcr.io/bilal07karadeniz/brisvox-server:latest \
+  docker compose -f deploy/compose.yaml up --no-build agent-ws
+```
+
 `agent-twilio` does not start until `BRISVOX_TWILIO_STREAM_SECRET` (at least 32 random bytes, for
 example `openssl rand -base64 48`) has a value in `deploy/twilio.env`; the same secret goes to your
 voice webhook, which answers each call with a signed per-call stream URL

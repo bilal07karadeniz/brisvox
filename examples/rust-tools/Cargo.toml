@@ -13,11 +13,10 @@ name = "my-voice-agent"
 path = "src/main.rs"
 
 [dependencies]
-brisvox-agent = { workspace = true }
-brisvox-core = { workspace = true }
-# The three provider adapters agent.toml names (Deepgram STT, OpenAI LLM, Cartesia TTS). Add the
-# features of the providers your own agent file uses (docs/CONFIG.md).
-brisvox-server = { workspace = true, features = ["provider-deepgram", "provider-openai", "provider-cartesia"] }
+# The umbrella crate: the server, the tools API and the core types behind one dependency. The
+# features are the three provider adapters agent.toml names (Deepgram STT, OpenAI LLM, Cartesia
+# TTS); add the features of the providers your own agent file uses (docs/CONFIG.md).
+brisvox = { workspace = true, features = ["provider-deepgram", "provider-openai", "provider-cartesia"] }
 serde_json = { workspace = true }
 
 [dev-dependencies]

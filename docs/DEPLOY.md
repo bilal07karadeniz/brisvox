@@ -10,6 +10,10 @@ Files: `Dockerfile`, `.dockerignore`, `deploy/compose.yaml`, `deploy/agents/{web
 
 ## The image
 
+Releases publish it as `ghcr.io/bilal07karadeniz/brisvox-server` (tags `vX.Y.Z` and `latest`,
+`linux/amd64` and `linux/arm64`), built with `BRISVOX_FEATURES=all-providers,call-control,smart-turn-ort,webrtc`
+(`docs/RELEASING.md`). To build it yourself, with another feature set if you need one:
+
 ```sh
 docker build -t brisvox/server .
 # another feature set (the SIP trunk listener, a smaller provider list):
@@ -676,9 +680,10 @@ the token:
 - **Health check.** None: the SDK agent answers a plain HTTP request with an error status (the
   TypeScript one with `426`), which a platform health check would count as unhealthy. Leave the
   platform's health check off for this service.
-- **Image.** The SDKs are not on PyPI or npm. Build the service from your own repository with the
-  SDK vendored into it (`pip install ./sdk/python` after copying the directory; `npm install` a
-  built `sdk/typescript`), as in `book/src/quickstart/sdk-agent.md`. Two ready Dockerfiles show it,
+- **Image.** Install the SDK from the registry in your own image (`pip install brisvox-agent`,
+  `npm install @brisvox/agent`; `pip install brisvox` and `npm i brisvox` are the same SDKs under the short name), or vendor it from a checkout of this repository (`pip install
+  ./sdk/python` after copying the directory; `npm install` a built `sdk/typescript`), as in
+  `book/src/quickstart/sdk-agent.md`. Two ready Dockerfiles show the vendored variant,
   both built with the **repository root as the build context** (a service whose source is your clone
   or fork, with the platform told which Dockerfile to use): `examples/booking-agent/Dockerfile`
   (Python: `pip install` of the copied `sdk/python`, the booking agent) and

@@ -1,12 +1,20 @@
 # brisvox
 
+[![ci](https://github.com/bilal07karadeniz/brisvox/actions/workflows/ci.yml/badge.svg)](https://github.com/bilal07karadeniz/brisvox/actions/workflows/ci.yml)
+[![crates.io](https://img.shields.io/crates/v/brisvox-server.svg?label=crates.io)](https://crates.io/crates/brisvox-server)
+[![PyPI](https://img.shields.io/pypi/v/brisvox-agent.svg?label=PyPI)](https://pypi.org/project/brisvox-agent/)
+[![npm](https://img.shields.io/npm/v/@brisvox/agent.svg?label=npm%20%40brisvox%2Fagent)](https://www.npmjs.com/package/@brisvox/agent)
+[![npm](https://img.shields.io/npm/v/@brisvox/web.svg?label=npm%20%40brisvox%2Fweb)](https://www.npmjs.com/package/@brisvox/web)
+[![license](https://img.shields.io/badge/license-MIT%20OR%20Apache--2.0-blue.svg)](#license)
+[![docs](https://img.shields.io/badge/docs-the%20book-informational.svg)](https://bilal07karadeniz.github.io/brisvox/)
+
 **A Rust engine for real-time voice agents: phone calls and browser sessions where a caller talks,
 the agent listens, thinks (an LLM, with tools) and answers, and the caller can interrupt at any
 moment. Open source, one process, hundreds of isolated calls per container.**
 
 <p align="center"><img src="assets/architecture.svg" alt="brisvox architecture: callers reach one brisvox-server process through Twilio, Telnyx, SIP, WebRTC or WebSocket transports; each call is an isolated session running VAD and turn detection, STT, the LLM with tools and TTS, with an inference pool for the models; providers are cloud or local; your agent in Python or TypeScript holds the tools" width="960"></p>
 
-[Quickstart](#quickstart) · [Comparison](#brisvox-vs-livekit-agents-vs-pipecat) ·
+[Install](#install) · [Quickstart](#quickstart) · [Comparison](#brisvox-vs-livekit-agents-vs-pipecat) ·
 [Features](#features) · [For AI coding agents](#for-ai-coding-agents) ·
 [Docs: the book](book/src/introduction.md) · [License](#license)
 
@@ -152,7 +160,7 @@ fact carries its URL and what is inferred or not stated is marked as such.
 
 | Documented (2026-10-14) | brisvox | LiveKit Agents | Pipecat |
 |---|---|---|---|
-| Language | Rust engine; your agent in Python or TypeScript (SDKs, not published to PyPI or npm yet) or in Rust | Python (`livekit-agents` 1.8.7); Node.js in a separate repo [L2][L5] | Python (`pipecat-ai` 1.12.0) [P2][P4] |
+| Language | Rust engine; your agent in Python or TypeScript (SDKs on PyPI and npm) or in Rust | Python (`livekit-agents` 1.8.7); Node.js in a separate repo [L2][L5] | Python (`pipecat-ai` 1.12.0) [P2][P4] |
 | License | Apache-2.0 or MIT | Apache-2.0; the turn-detector text model and `v1-mini` use the LiveKit Model License [L6][L8] | BSD-2-Clause [P3] |
 | Runtime model | one process, one isolated async session per call, models on a dedicated thread pool | one OS process per job, "each in its own process for isolation" [L7] | documented as one session per process or container [P5] |
 | Needs a media server | no: WebSocket, Twilio and Telnyx built in; WebRTC and SIP are cargo features | yes: a LiveKit server (Cloud or self-hosted), the agent joins a room [L6] | no for WebSocket and SmallWebRTC; the Daily and LiveKit transports use those vendors' infrastructure [P7] |
@@ -168,6 +176,74 @@ fact carries its URL and what is inferred or not stated is marked as such.
 
 None of this is an independent benchmark: no third-party density comparison of the three was found
 ([research notes](docs/research/frameworks-2026-10-14.md#3-independent-benchmarks-2025-2026)).
+
+## Install
+
+**Prebuilt binary.** Every release has `brisvox-server` archives for Linux (x86_64, aarch64), macOS
+(aarch64) and Windows (x86_64) with a `SHA256SUMS` file, on the
+[Releases page](https://github.com/bilal07karadeniz/brisvox/releases). Linux binaries need glibc
+2.39 or newer.
+
+```sh
+v=v0.1.0; t=x86_64-unknown-linux-gnu        # pick the release and your platform
+curl -fLO https://github.com/bilal07karadeniz/brisvox/releases/download/$v/brisvox-server-$v-$t.tar.gz
+curl -fLO https://github.com/bilal07karadeniz/brisvox/releases/download/$v/SHA256SUMS
+sha256sum --ignore-missing -c SHA256SUMS && tar xzf brisvox-server-$v-$t.tar.gz
+cd brisvox-server-$v-$t
+python3 scripts/models/fetch_models.py     # the Smart Turn model (pinned SHA-256)
+./brisvox-server --version
+```
+
+**Docker.** A multi-architecture image (`linux/amd64`, `linux/arm64`) with the Smart Turn model
+inside:
+
+```sh
+docker run --rm ghcr.io/bilal07karadeniz/brisvox-server:latest --version
+```
+
+Tags are `vX.Y.Z` and `latest`. Running it with an agent file and your keys:
+[Docker and compose](book/src/quickstart/docker.md).
+
+**From crates.io.** Needs Rust 1.99 or newer, a C compiler and cmake (libopus, ONNX Runtime):
+
+```sh
+cargo install brisvox-server --locked --features all-providers,call-control,smart-turn-ort,webrtc
+```
+
+**What to build with.** The prebuilt binaries and the image are built with
+`all-providers,call-control,smart-turn-ort,webrtc`: every STT/LLM/TTS adapter, the carriers' call
+control (`transfer_call`, `send_dtmf`, `end_call`), Smart Turn on ONNX Runtime and the WebRTC
+listener. The crate's own default features are deliberately small (no provider adapter): an
+application that only needs some of them names just those, for example
+`--features provider-deepgram,provider-openai,provider-cartesia`. Not in the prebuilt set: `sip`
+(the SIP trunk listener), `otlp` (OpenTelemetry export) and `recording-encryption`; build from
+source with them added when you need them.
+
+**SDKs.**
+
+```sh
+pip install brisvox                   # Python 3.11+; installs brisvox-agent, the SDK itself
+npm i brisvox                         # TypeScript / Node 20+; brisvox/web is the browser client
+```
+
+The short names are umbrella packages: `brisvox` on PyPI depends on `brisvox-agent` and re-exports
+it, `brisvox` on npm depends on `@brisvox/agent` and `@brisvox/web` and re-exports them (the agent
+SDK as `brisvox`, the browser module as `brisvox/web`). Install the specific packages instead if
+you want only one:
+
+```sh
+pip install brisvox-agent             # Python 3.11+
+npm install @brisvox/agent            # TypeScript / Node 20+
+npm install @brisvox/web              # the browser module for a "Talk to us" button
+```
+
+**As a Rust library.** `cargo add brisvox --features all-providers` is one dependency for a server
+with your own Rust tools: it re-exports `brisvox-server`, the tools API (`brisvox-agent`), the
+provider adapters and the core types, and forwards the server's features. The other crates
+(`brisvox-server`, `brisvox-core`, `brisvox-agent`, `brisvox-providers`, `brisvox-transport`,
+`brisvox-engine`, `brisvox-agent-link`, `brisvox-inference`, `brisvox-audio`, `brisvox-sim`) are on
+crates.io too, for those who need one alone. Release notes are in the
+[changelog](CHANGELOG.md); security reports go to the [security policy](SECURITY.md).
 
 ## Quickstart
 

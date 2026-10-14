@@ -18,12 +18,12 @@ use std::collections::HashMap;
 use std::sync::{Arc, Mutex, PoisonError};
 use std::time::UNIX_EPOCH;
 
-use brisvox_agent::tools::{
+use brisvox::AppTools;
+use brisvox::agent::tools::{
     IdempotencyKey, RegistryError, Tool, ToolCallCtx, ToolError, ToolFuture, ToolKind, ToolOutput,
     ToolRegistry, ToolSpec,
 };
-use brisvox_core::SharedClock;
-use brisvox_server::AppTools;
+use brisvox::core::SharedClock;
 use serde_json::{Value, json};
 
 /// Longest note the tool accepts (the schema says so too, so the model is told).
@@ -275,9 +275,9 @@ fn civil_from_days(days: i64) -> (i64, i64, i64) {
 
 #[cfg(test)]
 mod tests {
-    use brisvox_agent::ToolCallId;
-    use brisvox_agent::tools::{Confirmations, DEFAULT_CONFIRM_TTL, SessionId};
-    use brisvox_core::{SystemClock, TurnEpoch};
+    use brisvox::agent::ToolCallId;
+    use brisvox::agent::tools::{Confirmations, DEFAULT_CONFIRM_TTL, SessionId};
+    use brisvox::core::{SystemClock, TurnEpoch};
     use tokio_util::sync::CancellationToken;
 
     use super::*;
@@ -326,7 +326,7 @@ mod tests {
                 .into_iter()
                 .map(|k| (k.to_owned(), "placeholder".to_owned()))
                 .collect();
-        let agent = brisvox_server::config::load_file(&path, &keys).unwrap();
+        let agent = brisvox::server::config::load_file(&path, &keys).unwrap();
         let offered = agent.tool_registry(&registry(&MyTools::default())).unwrap();
         assert_eq!(offered.len(), 2);
         assert_eq!(

@@ -5,7 +5,16 @@ version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
-publish.workspace = true
+publish = true
+authors.workspace = true
+repository.workspace = true
+homepage.workspace = true
+documentation = "https://docs.rs/brisvox-providers"
+readme = "README.md"
+keywords = ["stt", "tts", "llm", "speech", "voice"]
+categories = ["api-bindings", "multimedia::audio", "asynchronous"]
+# Only what the crate needs to build: no tests, fixtures, examples or bench output.
+include = ["src/**", "README.md", "LICENSE-MIT", "LICENSE-APACHE"]
 
 [features]
 # Shared TLS (rustls + ring, webpki roots) for the network adapters.
@@ -192,9 +201,9 @@ webpki-roots = { workspace = true, optional = true }
 
 [dev-dependencies]
 base64 = { workspace = true }
-brisvox-agent = { workspace = true }
-brisvox-audio = { workspace = true }
-brisvox-sim = { workspace = true }
+brisvox-agent = { path = "../brisvox-agent" }
+brisvox-audio = { path = "../brisvox-audio" }
+brisvox-sim = { path = "../brisvox-sim" }
 futures = { workspace = true }
 h2 = { workspace = true }
 http = { workspace = true }

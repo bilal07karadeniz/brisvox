@@ -36,8 +36,8 @@ the docs; this skill is the workflow and the traps.
 
 | Your tools are in | Agent file `agent.tools` | How |
 |---|---|---|
-| Python or TypeScript (another process) | **do not list them** | SDK agent (`sdk/python`, `sdk/typescript`); the server connects with `BRISVOX_AGENT_URL`. Listed in `agent.tools`, they stop the server at startup ("not registered in this server"), and `brisvox-server check` reports it as an error. |
-| Rust, in your binary | list them | `brisvox_server::app::run_with_tools(Arc::new(MyTools))` in a 3-line `main`; see `examples/rust-tools` |
+| Python or TypeScript (another process) | **do not list them** | SDK agent (`sdk/python`: `pip install brisvox`; `sdk/typescript`: `npm i brisvox`); the server connects with `BRISVOX_AGENT_URL`. Listed in `agent.tools`, they stop the server at startup ("not registered in this server"), and `brisvox-server check` reports it as an error. |
+| Rust, in your binary | list them | `brisvox::run_with_tools(Arc::new(MyTools))` in a 3-line `main` (`cargo add brisvox --features ...`); see `examples/rust-tools` |
 | Built-in telephony tools (transfer, DTMF, hang up) | list them | feature `call-control` plus `BRISVOX_CALL_CONTROL` |
 
 - Tools that change the world are `SideEffect`: never run speculatively, never twice for the same
