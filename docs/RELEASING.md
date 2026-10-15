@@ -184,6 +184,9 @@ token (below), and the token is removed afterwards.
 Trusted publishing is configured per crate and, as of 2026-10-15, only for a crate that already
 exists; the crates.io announcement says the first release of a crate is published with a token.
 
+0. Verify the account's email address at https://crates.io/settings/profile: crates.io refuses
+   every publish from an account without a verified email (`400 Bad Request: A verified email
+   address is required`), token or not.
 1. Create a token at https://crates.io/settings/tokens: scopes **publish-new** and
    **publish-update**, crate patterns `brisvox-*` **and `brisvox`** (the pattern `brisvox-*` does
    not match the umbrella crate's plain name), an expiry of a few weeks.

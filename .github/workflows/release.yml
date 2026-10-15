@@ -593,7 +593,8 @@ jobs:
             echo "$PKG_NAME@$VERSION is already on npm, skipping"
             exit 0
           fi
-          npm publish pkg/*.tgz --provenance --access public
+          # "./": without it npm reads `pkg/name.tgz` as the GitHub repository shorthand user/repo.
+          npm publish ./pkg/*.tgz --provenance --access public
 
   # `brisvox` on npm last: it depends on the two packages above, which must be on the registry.
   # Same token / trusted publishing rules as above; the package needs its own trusted publisher
@@ -629,4 +630,5 @@ jobs:
             echo "$PKG_NAME@$VERSION is already on npm, skipping"
             exit 0
           fi
-          npm publish pkg/*.tgz --provenance --access public
+          # "./": without it npm reads `pkg/name.tgz` as the GitHub repository shorthand user/repo.
+          npm publish ./pkg/*.tgz --provenance --access public
