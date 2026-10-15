@@ -1316,6 +1316,7 @@ fn pool_policy(pool: &Arc<ScriptedPool>, limits: &[(&str, usize)]) -> AdmissionP
         overload: Some(OverloadConfig {
             shed_queue_per_thread: 4,
             resume_queue_per_thread: 1,
+            depth_confirm: Duration::ZERO,
             wait_limit: Duration::ZERO,
             window: Duration::from_millis(50),
         }),

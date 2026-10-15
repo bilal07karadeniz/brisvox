@@ -4,7 +4,9 @@
 #   load: synthetic calls from the load generator, private network [::]:9001, fake providers only
 #         (a clean environment: it never sees a real key), 4 uvicorn workers (one event loop per
 #         vCPU, as in the capacity benchmark);
-#   real: the owner's call from the browser, public $PORT, real providers, one worker.
+#   real: the owner's call from the browser, public $PORT, real providers, one worker. It binds
+#         0.0.0.0: Python binds "::" as IPv6 only, and the platform's public proxy connects over
+#         IPv4 (the private network is IPv6, so the load process binds "::").
 set -eu
 
 FAKES=${FAKES_HOST:-fakes.railway.internal}
@@ -25,7 +27,7 @@ env -i PATH="$PATH" HOME=/tmp \
 
 BOT_ACCESS_TOKEN="$CALL_TOKEN" BRISVOX_MODELS_DIR=/opt/models \
   python bot.py --agent agent_live_en_aura.toml --env-file /dev/null \
-    --host '::' --port "${PORT:-8080}" --workers 1 &
+    --host 0.0.0.0 --port "${PORT:-8080}" --workers 1 &
 
 wait -n
 echo "start: a process exited; stopping"

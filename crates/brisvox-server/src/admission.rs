@@ -10,10 +10,13 @@
 //!    the pool (queue depth per worker thread, jobs refused or timed out, and the mean time a
 //!    job waited in the queue over a window) and answers [`AdmissionError::Overloaded`] while it
 //!    is hot. The queue-wait signal doubles as the CPU signal: a job waits in the queue only
-//!    when the worker threads (hence the cores) are busy. Hot is entered at once, the first
-//!    sample over a limit; it is left only after one full window of calm samples at or below
-//!    the lower resume limit (hysteresis, so the verdict does not flap at the limit). All time
-//!    comes from the manager's injected clock.
+//!    when the worker threads (hence the cores) are busy. Hot is entered on the first sample
+//!    over the wait limit or with new refused or timed-out jobs; the queue depth counts once it
+//!    has stayed over its limit for `depth_confirm` (a burst of call starts queues one job per
+//!    call for microseconds, and a 2-thread pool sees 8 queued jobs at once without being
+//!    behind). It is left only after one full window of calm samples at or below the lower
+//!    resume limit (hysteresis, so the verdict does not flap at the limit). All time comes from
+//!    the manager's injected clock.
 //! 2. **Provider budgets** ([`AdmissionSettings::provider_limits`]). A call holds one permit of
 //!    the semaphore of every limited provider it uses, for its whole life, and a call that finds
 //!    one exhausted is refused with [`AdmissionError::ProviderBudget`] (all or none: permits
@@ -35,6 +38,7 @@
 //! |---|---|---|
 //! | `BRISVOX_OVERLOAD_QUEUE_PER_THREAD` | `4` | queued jobs per pool thread that turn the server overloaded; `0` ignores queue depth |
 //! | `BRISVOX_OVERLOAD_RESUME_QUEUE_PER_THREAD` | half of the above | queued jobs per thread at or below which the server may recover |
+//! | `BRISVOX_OVERLOAD_QUEUE_CONFIRM` | `100ms` | how long the queue must stay over its limit before it counts; `0` sheds on the first such sample |
 //! | `BRISVOX_OVERLOAD_QUEUE_WAIT` | `50ms` | mean queue wait over a window that turns it overloaded; `0` ignores waits |
 //! | `BRISVOX_OVERLOAD_WINDOW` | `2s` | calm time needed to recover, and the window of the wait average |
 //! | `BRISVOX_PROVIDER_LIMITS` | none | `name=n,...`: concurrent calls per provider (`deepgram=50,openai=100`) |
@@ -58,6 +62,8 @@ use crate::{Error, Result};
 pub const ENV_OVERLOAD_QUEUE_PER_THREAD: &str = "BRISVOX_OVERLOAD_QUEUE_PER_THREAD";
 /// Environment variable: queued jobs per pool thread at or below which the server recovers.
 pub const ENV_OVERLOAD_RESUME_QUEUE_PER_THREAD: &str = "BRISVOX_OVERLOAD_RESUME_QUEUE_PER_THREAD";
+/// Environment variable: how long the queue depth must stay over its limit to count.
+pub const ENV_OVERLOAD_QUEUE_CONFIRM: &str = "BRISVOX_OVERLOAD_QUEUE_CONFIRM";
 /// Environment variable: mean pool queue wait that makes the server overloaded.
 pub const ENV_OVERLOAD_QUEUE_WAIT: &str = "BRISVOX_OVERLOAD_QUEUE_WAIT";
 /// Environment variable: calm time needed to recover.
@@ -138,6 +144,10 @@ pub struct OverloadConfig {
     pub shed_queue_per_thread: u32,
     /// Queued jobs per pool thread at or below which it may recover (below `shed`).
     pub resume_queue_per_thread: u32,
+    /// How long the queue depth must stay at or over `shed_queue_per_thread` (every sample in
+    /// between over it too) before it makes the server overloaded; zero sheds on the first such
+    /// sample. A pool that is really behind keeps its queue; a burst drains in microseconds.
+    pub depth_confirm: Duration,
     /// Mean queue wait over a window at or above which the server is overloaded; zero ignores
     /// waits.
     pub wait_limit: Duration,
@@ -148,6 +158,8 @@ pub struct OverloadConfig {
 impl OverloadConfig {
     /// Default `shed_queue_per_thread`.
     pub const DEFAULT_SHED_QUEUE_PER_THREAD: u32 = 4;
+    /// Default `depth_confirm`.
+    pub const DEFAULT_DEPTH_CONFIRM: Duration = Duration::from_millis(100);
     /// Default `wait_limit`.
     pub const DEFAULT_WAIT_LIMIT: Duration = Duration::from_millis(50);
     /// Default `window`.
@@ -164,6 +176,7 @@ impl Default for OverloadConfig {
         Self {
             shed_queue_per_thread: Self::DEFAULT_SHED_QUEUE_PER_THREAD,
             resume_queue_per_thread: Self::DEFAULT_SHED_QUEUE_PER_THREAD / 2,
+            depth_confirm: Self::DEFAULT_DEPTH_CONFIRM,
             wait_limit: Self::DEFAULT_WAIT_LIMIT,
             window: Self::DEFAULT_WINDOW,
         }
@@ -220,6 +233,9 @@ impl AdmissionSettings {
                  {ENV_OVERLOAD_QUEUE_PER_THREAD} ({})",
                 overload.shed_queue_per_thread
             )));
+        }
+        if let Some(d) = duration_var(env, ENV_OVERLOAD_QUEUE_CONFIRM)? {
+            overload.depth_confirm = d;
         }
         if let Some(d) = duration_var(env, ENV_OVERLOAD_QUEUE_WAIT)? {
             overload.wait_limit = d;
@@ -582,6 +598,8 @@ struct GaugeState {
     /// ... and below half the limit (so a recovery needs clear headroom, not a borderline).
     wait_calm: bool,
     mean_wait: Duration,
+    /// Since when every sample had the queue over its limit; `None` after one that did not.
+    depth_over_since: Option<Instant>,
     last_depth: usize,
     last_threads: usize,
     entered: u64,
@@ -601,6 +619,7 @@ impl Gauge {
                 wait_hot: false,
                 wait_calm: true,
                 mean_wait: Duration::ZERO,
+                depth_over_since: None,
                 last_depth: 0,
                 last_threads: 0,
                 entered: 0,
@@ -669,7 +688,13 @@ impl Gauge {
 
         let shed = u64::from(config.shed_queue_per_thread).saturating_mul(1000);
         let resume = u64::from(config.resume_queue_per_thread).saturating_mul(1000);
-        let depth_hot = config.shed_queue_per_thread > 0 && per_thread_milli >= shed;
+        let depth_over = config.shed_queue_per_thread > 0 && per_thread_milli >= shed;
+        if !depth_over || stale {
+            st.depth_over_since = None;
+        }
+        let depth_hot = depth_over
+            && now.saturating_duration_since(*st.depth_over_since.get_or_insert(now))
+                >= config.depth_confirm;
         let depth_calm = config.shed_queue_per_thread == 0 || per_thread_milli <= resume;
         let hot = depth_hot || new_saturation || st.wait_hot;
         let calm = depth_calm && !new_saturation && st.wait_calm;
@@ -797,6 +822,8 @@ mod tests {
         OverloadConfig {
             shed_queue_per_thread: 4,
             resume_queue_per_thread: 1,
+            // These tests judge single samples; the confirmation has a test of its own.
+            depth_confirm: Duration::ZERO,
             wait_limit: Duration::from_millis(50),
             window: Duration::from_secs(2),
         }
@@ -818,6 +845,7 @@ mod tests {
             (ENV_OVERLOAD_RESUME_QUEUE_PER_THREAD, "3"),
             (ENV_OVERLOAD_QUEUE_WAIT, "20ms"),
             (ENV_OVERLOAD_WINDOW, "5s"),
+            (ENV_OVERLOAD_QUEUE_CONFIRM, "250ms"),
             (ENV_PROVIDER_LIMITS, "Deepgram=50, openai = 100,"),
         ]))
         .unwrap();
@@ -826,6 +854,7 @@ mod tests {
         assert_eq!(o.resume_queue_per_thread, 3);
         assert_eq!(o.wait_limit, Duration::from_millis(20));
         assert_eq!(o.window, Duration::from_secs(5));
+        assert_eq!(o.depth_confirm, Duration::from_millis(250));
         assert_eq!(s.provider_limits.get("deepgram"), Some(&50));
         assert_eq!(s.provider_limits.get("openai"), Some(&100));
 
@@ -906,6 +935,39 @@ mod tests {
         // The window of calm samples is over.
         assert!(!p.overloaded(at(t0, 2_200)));
         assert_eq!(p.snapshot(at(t0, 2_200)).pressure.unwrap().entered, 1);
+    }
+
+    #[tokio::test]
+    async fn a_queue_counts_only_once_it_stayed_over_the_limit_for_the_confirmation_time() {
+        let script = Script::pool(2);
+        let p = policy(
+            &script,
+            OverloadConfig {
+                depth_confirm: Duration::from_millis(100),
+                ..config()
+            },
+        );
+        let t0 = now();
+        // A burst of call starts: 24 jobs queued on 2 threads, drained by the next sample.
+        script.depth(24);
+        assert!(!p.overloaded(at(t0, 0)));
+        script.depth(0);
+        assert!(!p.overloaded(at(t0, 5)));
+        // Over again: the confirmation starts over, and a sample within it does not shed ...
+        script.depth(10);
+        assert!(!p.overloaded(at(t0, 150)));
+        assert!(!p.overloaded(at(t0, 200)));
+        // ... while one that finds the queue still over the limit after it does.
+        assert!(p.overloaded(at(t0, 250)));
+        assert_eq!(p.snapshot(at(t0, 250)).pressure.unwrap().entered, 1);
+        // A stale first sample does not confirm a later one.
+        script.depth(0);
+        let later = at(t0, 600_000);
+        assert!(!p.overloaded(later));
+        script.depth(10);
+        assert!(!p.overloaded(at(later, 3_000)));
+        assert!(!p.overloaded(at(later, 600_000)));
+        assert!(p.overloaded(at(later, 600_100)));
     }
 
     #[tokio::test]

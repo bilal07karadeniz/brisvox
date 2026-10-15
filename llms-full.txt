@@ -1442,6 +1442,7 @@ exit status 1 and a message naming the variable.
 | `BRISVOX_MAX_SESSIONS` | `256` | Sessions live or reserved at once (1 to 100000); more are refused, never queued. |
 | `BRISVOX_OVERLOAD_QUEUE_PER_THREAD` | `4` | Jobs queued per inference-pool thread at or above which new calls are refused (overloaded). `0` ignores the queue depth. |
 | `BRISVOX_OVERLOAD_RESUME_QUEUE_PER_THREAD` | half of the above | Queued jobs per thread at or below which the server may recover (must be below the above). |
+| `BRISVOX_OVERLOAD_QUEUE_CONFIRM` | `100ms` | How long the queue must stay at or over `BRISVOX_OVERLOAD_QUEUE_PER_THREAD` (in every sample) before it counts. A burst of call starts queues one job per call for microseconds; a pool that is really behind keeps its queue. `0` sheds on the first such sample. |
 | `BRISVOX_OVERLOAD_QUEUE_WAIT` | `50ms` | Mean time pool jobs waited in the queue over a window, at or above which new calls are refused. `0` ignores waits. With both at `0` pressure shedding is off. |
 | `BRISVOX_OVERLOAD_WINDOW` | `2s` | The window of the wait average, and the calm time needed to recover. |
 | `BRISVOX_PROVIDER_LIMITS` | none | `name=n,...`: concurrent calls per provider, e.g. `deepgram=50,openai=100,cartesia=50`. Names are the agent file's `provider` values (`deepgram`, `assemblyai`, `gladia`, `sherpa_onnx`, `openai_realtime_stt`, `openai`, `anthropic`, `gemini`, `openai_compatible`, `cartesia`, `elevenlabs`, `deepgram_aura`, `openai_speech`). |
@@ -1709,7 +1710,11 @@ counted by reason and is answered cleanly by the transport that met it.
   attempt and each `/readyz` probe: queued jobs per pool thread, jobs refused or timed out, and
   the mean time jobs waited in the queue over `BRISVOX_OVERLOAD_WINDOW` (a job queues only while
   the cores are busy, so the wait is the CPU signal; it is judged only with at least 8 jobs in
-  the window). It turns **overloaded** on the first sample over a limit, and recovers only after
+  the window). It turns **overloaded** on the first sample over the wait limit or with new
+  refused or timed-out jobs, and on a queue that has stayed over its limit for
+  `BRISVOX_OVERLOAD_QUEUE_CONFIRM` (a burst of call starts makes a short queue that drains in
+  microseconds: on a 2-thread pool, 50 calls dialing within a second refused dozens of them
+  with the pool almost idle until the confirmation was added). It recovers only after
   one full window of samples at or below the resume limit (hysteresis: a pool hovering at the
   limit does not flap). Sampling is lazy (no background task): an orchestrator polling
   `/readyz` also advances the recovery.

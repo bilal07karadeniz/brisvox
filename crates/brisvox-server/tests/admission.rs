@@ -51,6 +51,7 @@ fn overload() -> OverloadConfig {
     OverloadConfig {
         shed_queue_per_thread: 4,
         resume_queue_per_thread: 1,
+        depth_confirm: Duration::ZERO,
         wait_limit: Duration::ZERO,
         window: Duration::from_secs(2),
     }
