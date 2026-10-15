@@ -55,6 +55,14 @@ pub const VERSION: &str = env!("CARGO_PKG_VERSION");
 mod tests {
     #[test]
     fn version_matches_workspace() {
-        assert_eq!(super::VERSION, "0.1.0");
+        // The workspace's `[workspace.package]` version, read from the root manifest: a release
+        // bump needs no edit here.
+        let manifest = include_str!("../../../Cargo.toml");
+        let workspace = manifest
+            .split("[workspace.package]")
+            .nth(1)
+            .and_then(|rest| rest.lines().find(|l| l.trim_start().starts_with("version")))
+            .and_then(|line| line.split('"').nth(1));
+        assert_eq!(Some(super::VERSION), workspace);
     }
 }

@@ -173,6 +173,13 @@ def check_sdks(version: str) -> None:
                 fail(f"{d}/package.json: `files` must list {lic}")
 
 
+def check_sdk_constants(version: str) -> None:
+    ts = read("sdk/typescript/src/index.ts")
+    m = re.search(r'^export const VERSION = "([^"]+)";', ts, re.M)
+    if not m or m.group(1) != version:
+        fail(f"sdk/typescript/src/index.ts: VERSION {m.group(1) if m else None} != {version}")
+
+
 def check_umbrellas(version: str) -> None:
     """The packages named plain `brisvox` on PyPI and npm re-export the SDKs and pin them exactly."""
     py = read("sdk/python-umbrella/pyproject.toml")
@@ -277,6 +284,7 @@ def main(argv: list[str]) -> int:
         return 0
     version = check_crates(meta)
     check_sdks(version)
+    check_sdk_constants(version)
     check_umbrellas(version)
     check_changelog(version)
     check_embedded_module()

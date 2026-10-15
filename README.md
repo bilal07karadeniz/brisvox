@@ -185,7 +185,7 @@ None of this is an independent benchmark: no third-party density comparison of t
 2.39 or newer.
 
 ```sh
-v=v0.1.0; t=x86_64-unknown-linux-gnu        # pick the release and your platform
+v=v0.1.1; t=x86_64-unknown-linux-gnu        # pick the release and your platform
 curl -fLO https://github.com/bilal07karadeniz/brisvox/releases/download/$v/brisvox-server-$v-$t.tar.gz
 curl -fLO https://github.com/bilal07karadeniz/brisvox/releases/download/$v/SHA256SUMS
 sha256sum --ignore-missing -c SHA256SUMS && tar xzf brisvox-server-$v-$t.tar.gz
