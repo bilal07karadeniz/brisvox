@@ -91,13 +91,16 @@ COPY --from=models /out/smart-turn-v3.2-cpu.onnx /opt/brisvox/models/smart-turn-
 # The notices that go with the two models (Smart Turn here, Silero inside the binary).
 COPY deploy/models-notice.txt /opt/brisvox/models/NOTICE
 COPY --chmod=0555 deploy/healthcheck.sh /usr/local/bin/brisvox-healthcheck
-# Reference definitions to start from (docs/CONFIG.md). A real deployment mounts its own file
-# over BRISVOX_AGENT_FILE (deploy/compose.yaml).
+# Reference definitions to start from (docs/CONFIG.md). A real deployment mounts its own file at
+# /etc/brisvox/agent.toml (deploy/compose.yaml), sets BRISVOX_AGENT_FILE, or passes the text in
+# BRISVOX_AGENT_DEFINITION (a platform that cannot mount a file).
 COPY deploy/agents/ /etc/brisvox/agents/
 
 # Defaults only: the listeners are chosen per deployment (docs/OPERATIONS.md). No call listener
 # is enabled here on purpose: the generic websocket listener is unauthenticated.
-ENV BRISVOX_AGENT_FILE=/etc/brisvox/agent.toml \
+# BRISVOX_DEFAULT_AGENT_FILE, not BRISVOX_AGENT_FILE: it applies only when neither
+# BRISVOX_AGENT_FILE nor BRISVOX_AGENT_DEFINITION is set, so an inline definition alone works.
+ENV BRISVOX_DEFAULT_AGENT_FILE=/etc/brisvox/agent.toml \
     BRISVOX_MODELS_DIR=/opt/brisvox/models \
     BRISVOX_HEALTH_ADDR=0.0.0.0:8081 \
     BRISVOX_LOG_FORMAT=json \

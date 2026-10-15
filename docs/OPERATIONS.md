@@ -83,6 +83,7 @@ exit status 1 and a message naming the variable.
 | `BRISVOX_ABORT_WAIT` | `1s` | After aborting, how long the task cleanup gets. |
 | `BRISVOX_LOG_FORMAT` | `text` | `text` or `json` (`docs/TRACING.md`). |
 | `RUST_LOG` | `info` | Log filter. |
+| `BRISVOX_DEFAULT_AGENT_FILE` | unset (the container image: `/etc/brisvox/agent.toml`) | The agent definition file used when neither `BRISVOX_AGENT_FILE` nor `BRISVOX_AGENT_DEFINITION` is set: a file mounted at the image's path works as is, and an inline definition alone works too. |
 | `BRISVOX_AGENT_FILE` | unset | The agent definition every call runs, as a file path. Required when any listener is on, unless `BRISVOX_AGENT_DEFINITION` is set. |
 | `BRISVOX_AGENT_DEFINITION` | unset | The agent definition as text (TOML), for a host that takes variables but no file mount. Same loader, same size limit (1 MiB) and same messages as the file; errors name the source `$BRISVOX_AGENT_DEFINITION`. Setting it together with `BRISVOX_AGENT_FILE` is a startup error. Secrets stay out of it: it names the variables that hold them (`api_key_env`). |
 | `BRISVOX_AGENT_FORMAT` | `toml` | The syntax of `BRISVOX_AGENT_DEFINITION`: `toml` or `yaml` (needs the `yaml` cargo feature). Never guessed from the text. Setting it without `BRISVOX_AGENT_DEFINITION` is an error (a file's format follows its extension). |

@@ -90,8 +90,8 @@ BRISVOX_ABORT_WAIT + 7 s` (43 s by default): `docker stop -t 45`, compose
 the drain timeout and the grace period together.
 
 **Configuration** is environment variables (docs/OPERATIONS.md) and one agent file mounted at
-`BRISVOX_AGENT_FILE` (default `/etc/brisvox/agent.toml`; the image does not contain one at
-that path, mount yours, or point the variable at a reference file such as
+`/etc/brisvox/agent.toml` (the image's `BRISVOX_DEFAULT_AGENT_FILE`; the image does not contain
+one at that path: mount yours, or set `BRISVOX_AGENT_FILE` to a reference file such as
 `/etc/brisvox/agents/web.toml`). A host that cannot mount a file (a one-port PaaS such as Railway)
 passes it in a variable or bakes it in with a one-line Dockerfile layer: see "The agent definition"
 in "Platforms with one HTTPS port and no UDP (PaaS)" below. The image enables no call listener: choose one with
@@ -503,7 +503,7 @@ default path. The options, simplest first:
   COPY agent.toml /etc/brisvox/agent.toml
   ```
 
-  With `BRISVOX_AGENT_FILE=/etc/brisvox/agent.toml` (the image's default). The build is seconds
+  That is the image's default path (`BRISVOX_DEFAULT_AGENT_FILE`): nothing to set. The build is seconds
   instead of minutes and does not depend on the platform's builder limits.
 - *A platform volume* also works for a file, but check who owns it (the image runs as uid 10001) and
   whether a volume makes a redeploy interrupt the service. Prefer baking the file in.
@@ -728,9 +728,10 @@ tools service binds `::` or `0.0.0.0`.
 What differs per platform, from the platform's own documentation. Only platforms the project has
 researched are listed.
 
-**Railway.** Facts read from docs.railway.com on 2026-10-14 (what is only a forum report is marked as such); **this recipe has
-not been deployed to Railway by the project**, and the points marked *unverified* are the ones to
-test first. Railway offers HTTP/HTTPS with WebSockets on a public domain, a TCP proxy, a private
+**Railway.** Facts read from docs.railway.com on 2026-10-14 (what is only a forum report is marked as such), then
+**deployed on 2026-10-15** with the published image `ghcr.io/bilal07karadeniz/brisvox-server:v0.1.0`
+(region europe-west4, 4 vCPU / 4 GB limits; the CPU was an AMD EPYC 9655P with AVX-512 VNNI):
+what that run checked is marked *verified*. Railway offers HTTP/HTTPS with WebSockets on a public domain, a TCP proxy, a private
 network between the services of a project, and no inbound UDP from the internet (its docs list none;
 staff and community threads say so; re-checked 2026-10-13).
 
@@ -746,22 +747,34 @@ staff and community threads say so; re-checked 2026-10-13).
   its documentation does not state the default value (reports say 8080: *unverified*) and says to
   set `PORT` yourself when you use a domain target port. Set `PORT=8080` and the domain's target
   port to 8080. Railway's own references use double braces (`${{...}}`); a single-brace `${PORT}`
-  reaches the server as written (*not verified on Railway*; `0.0.0.0:8080` written out works too).
+  reaches the server as written and the server fills it in (*verified*: `BRISVOX_WEBRTC_ADDR=[::]:${PORT}`
+  with `PORT=8080` listened on `[::]:8080`).
 - *Health check.* Railway probes the service's `PORT`, only at deploy time, from the host
-  `healthcheck.railway.app`; set the path to `/demo`. Not run against Railway's probe: *unverified*.
+  `healthcheck.railway.app`; set the path to `/demo` (*verified*: a deployment with the `/demo` health
+  check, 60 s timeout, went live).
 - *Client addresses.* Railway documents `X-Real-IP` as the client-address header and overwrites a
   client-sent one; it does not list `X-Forwarded-For`, publishes **no address range for its
   proxies** and says the `100.x` peer addresses seen in practice are not a contract (staff answer,
   2026-10). So option 1 above is the safe default; for option 2 use
   `BRISVOX_CLIENT_IP_HEADER=x-real-ip` and, for example,
   `BRISVOX_TRUSTED_PROXIES=100.64.0.0/10` (the CGNAT block the reported `100.x` edge peers fall in;
-  *unverified as a contract*: re-check after Railway changes). Requests over `*.railway.internal` do
+  not a contract: re-check after Railway changes). *Verified* with these two settings and
+  `BRISVOX_WEBRTC_MAX_CALLS_PER_IP=1`: with one call open, a second call from the same client
+  sending a forged `X-Real-IP` was refused (`429`), so a client cannot pick its own address. Requests over `*.railway.internal` do
   not pass the edge, and the edge peers seen so far were `100.x` addresses, so your project's own
   services may fall in the same block.
 - *WebSockets.* Railway's WebSocket connections are not subject to its HTTP duration and idle limits
   (HTTP/1.1 only); the domain accepts 10,000 concurrent connections.
 - *Drain.* By default Railway gives the old deployment **0 seconds** between `SIGTERM` and
-  `SIGKILL`. Set `RAILWAY_DEPLOYMENT_DRAINING_SECONDS=60` (at least 45).
+  `SIGKILL`. Set `RAILWAY_DEPLOYMENT_DRAINING_SECONDS=60` (at least 45). *Verified*: a call open
+  during a redeploy kept running, then ended cleanly with `stop` (`reason: shutdown`) and close code
+  1001, 47 s after the redeploy started (image pull plus the 30 s drain).
+- *The agent definition in a variable.* `BRISVOX_AGENT_DEFINITION` alone works from 0.1.1. The
+  0.1.0 image set `BRISVOX_AGENT_FILE` itself, so the server refused to start with both set; with
+  that image, also set `BRISVOX_AGENT_FILE` to an empty value (Railway accepts one; *verified*).
+- *No UDP.* The signaling listener wants an address for WebRTC media: bind it to loopback
+  (`BRISVOX_WEBRTC_UDP_ADDR=127.0.0.1:40000`) and let browsers use the WebSocket fallback (`/ws`),
+  or use the TURN relay (above).
 - *Private network.* The hostname is `<service-name>.railway.internal` (in a variable:
   `RAILWAY_PRIVATE_DOMAIN`). A reference to another service's variable is `${{tools.X}}`:
   `BRISVOX_AGENT_URL=ws://${{tools.RAILWAY_PRIVATE_DOMAIN}}:8765` and

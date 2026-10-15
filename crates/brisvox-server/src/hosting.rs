@@ -110,6 +110,11 @@ use crate::{Error, Result};
 
 /// Environment variable: the agent definition every hosted call runs (`docs/CONFIG.md`).
 pub const ENV_AGENT_FILE: &str = "BRISVOX_AGENT_FILE";
+/// Environment variable: the agent definition file used when neither [`ENV_AGENT_FILE`] nor
+/// [`ENV_AGENT_DEFINITION`] is set. The container image sets it to `/etc/brisvox/agent.toml`, so a
+/// file mounted there works without more, and `BRISVOX_AGENT_DEFINITION` alone works too (a
+/// platform that cannot mount a file).
+pub const ENV_DEFAULT_AGENT_FILE: &str = "BRISVOX_DEFAULT_AGENT_FILE";
 /// Environment variable: an agent definition file for the calls of the generic websocket
 /// listener only (`BRISVOX_WS_ADDR`); the other listeners run [`ENV_AGENT_FILE`]'s agent.
 pub const ENV_WS_AGENT_FILE: &str = "BRISVOX_WS_AGENT_FILE";
@@ -1130,6 +1135,11 @@ impl HostSettings {
                 "{ENV_AGENT_FILE} and {ENV_AGENT_DEFINITION} are both set: use one (a file path, or the definition's text)"
             )));
         }
+        // The image's default path applies only when neither is set.
+        let agent_file = match (agent_file, &agent_inline) {
+            (None, None) => var(env, ENV_DEFAULT_AGENT_FILE)?.map(PathBuf::from),
+            (file, _) => file,
+        };
         let session_secrets = session_secrets(env)?;
         let insecure_listeners = flag_var(env, ENV_INSECURE_LISTENERS)?.unwrap_or(false);
         let ws_token = var(env, ENV_WS_TOKEN)?.map(Secret::new);
@@ -1977,6 +1987,20 @@ mod tests {
         let off = HostSettings::from_env(&env(&[(ENV_WS_ADDR, "off")])).unwrap();
         assert!(!off.any_listener());
         assert!(!HostSettings::none().any_listener());
+    }
+
+    #[test]
+    fn the_default_agent_file_applies_only_without_a_file_or_a_definition() {
+        let default = (ENV_DEFAULT_AGENT_FILE, "/etc/brisvox/agent.toml");
+        let s = HostSettings::from_env(&env(&[default])).unwrap();
+        assert_eq!(s.agent_file, Some(PathBuf::from("/etc/brisvox/agent.toml")));
+        // An inline definition on a platform that cannot mount a file: no conflict.
+        let s = HostSettings::from_env(&env(&[default, (ENV_AGENT_DEFINITION, INLINE)])).unwrap();
+        assert!(s.agent_file.is_none() && s.agent_inline.is_some());
+        // An explicit file wins over the default.
+        let s =
+            HostSettings::from_env(&env(&[default, (ENV_AGENT_FILE, "agents/x.toml")])).unwrap();
+        assert_eq!(s.agent_file, Some(PathBuf::from("agents/x.toml")));
     }
 
     #[test]

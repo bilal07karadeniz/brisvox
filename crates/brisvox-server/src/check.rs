@@ -169,8 +169,9 @@ pub fn check_file(
 
 /// Validates the agent definition the environment names, as the server would start with it:
 /// `BRISVOX_AGENT_DEFINITION` (with `BRISVOX_AGENT_FORMAT`; source name
-/// `$BRISVOX_AGENT_DEFINITION`) or the file `BRISVOX_AGENT_FILE`. Setting both, or neither, is an
-/// error, as at startup.
+/// `$BRISVOX_AGENT_DEFINITION`) or the file `BRISVOX_AGENT_FILE`, else the file
+/// `BRISVOX_DEFAULT_AGENT_FILE` (the container image's default path). Setting both, or none, is
+/// an error, as at startup.
 pub fn check_environment(
     env: &dyn Env,
     options: CheckOptions,
@@ -206,10 +207,19 @@ pub fn check_environment(
                 app,
             )
         }
-        (None, None) => failed_report(
-            ENV_AGENT_DEFINITION.to_owned(),
-            format!("neither {ENV_AGENT_DEFINITION} nor {ENV_AGENT_FILE} is set: nothing to check"),
-        ),
+        (None, None) => match var(env, crate::hosting::ENV_DEFAULT_AGENT_FILE) {
+            Ok(Some(path)) => check_file(Path::new(&path), env, options, app),
+            Ok(None) => failed_report(
+                ENV_AGENT_DEFINITION.to_owned(),
+                format!(
+                    "neither {ENV_AGENT_DEFINITION} nor {ENV_AGENT_FILE} is set: nothing to check"
+                ),
+            ),
+            Err(e) => failed_report(
+                crate::hosting::ENV_DEFAULT_AGENT_FILE.to_owned(),
+                e.to_string(),
+            ),
+        },
     }
 }
 

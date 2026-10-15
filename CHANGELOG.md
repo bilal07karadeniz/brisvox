@@ -8,6 +8,39 @@ named plain `brisvox` on crates.io, PyPI and npm, are released together under on
 
 ## [Unreleased]
 
+### Added
+
+- **Learned admission ceiling** (`BRISVOX_OVERLOAD_CEILING`, on by default). Pool pressure shows
+  only when callers speak, so a fast ramp used to be admitted far past capacity (on 4 vCPU, about
+  730 calls held for a capacity of about 250, every call at 3.7 s p50). The server now learns how
+  many calls it serves well from the pressure signals and refuses new calls (503) above that,
+  without touching running calls. Measured on Railway with 900 callers dialing: 120 to 400 calls
+  held at 0.9 to 1.5 s p95, none failed.
+- **Cautious start**: a fresh server admits 16 calls and doubles per calm window until the pool is
+  first under pressure, so a rush right after a restart cannot overshoot.
+- **A second agent per server** (`BRISVOX_WS_AGENT_FILE`): the generic websocket listener runs its
+  own agent, sharing the process's pools and admission control.
+- `BRISVOX_DEFAULT_AGENT_FILE`: the container image's default agent path, used only when neither
+  `BRISVOX_AGENT_FILE` nor `BRISVOX_AGENT_DEFINITION` is set.
+
+### Changed
+
+- `BRISVOX_MAX_SESSIONS` defaults to 256 per core (at least 256) instead of 256.
+- Pool pressure also watches the Smart Turn executor (its queue waits): a late end-of-turn verdict
+  delays the reply as much as a late VAD window. `/readyz` reports `overloaded` at the learned
+  ceiling and when the Smart Turn executor is behind, so a load balancer sends calls elsewhere.
+
+### Fixed
+
+- An admitted call could stay silent on a saturated pool: the output resampler is now built off
+  the pool when the pool is full or late.
+- The container image set `BRISVOX_AGENT_FILE`, so `BRISVOX_AGENT_DEFINITION` alone (the way to
+  pass an agent on a platform that cannot mount a file) failed at startup.
+- The release workflow's npm publish step (`./pkg/*.tgz`): 0.1.0 reached GitHub, GHCR and PyPI
+  only; crates.io and npm start at 0.1.1.
+- The listening test (`bench/railway`) runs the real call in the same brisvox process as the
+  synthetic calls, and its load generator dials and speaks like real callers (no lockstep).
+
 ## [0.1.0] - 2026-10-15
 
 First public release.
