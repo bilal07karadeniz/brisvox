@@ -1,6 +1,6 @@
 {
   "name": "brisvox",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Brisvox for JavaScript and TypeScript: npm i brisvox. The agent SDK (@brisvox/agent) for Node and the browser client (@brisvox/web) of the brisvox real-time voice engine, under the short name.",
   "keywords": [
     "voice",
@@ -51,8 +51,8 @@
     "test": "node scripts/smoke.mjs"
   },
   "dependencies": {
-    "@brisvox/agent": "0.1.0",
-    "@brisvox/web": "0.1.0"
+    "@brisvox/agent": "0.1.1",
+    "@brisvox/web": "0.1.1"
   },
   "publishConfig": {
     "access": "public",

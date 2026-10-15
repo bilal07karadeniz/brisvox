@@ -8,6 +8,8 @@ named plain `brisvox` on crates.io, PyPI and npm, are released together under on
 
 ## [Unreleased]
 
+## [0.1.1] - 2026-10-15
+
 ### Added
 
 - **Usage and cost per call**: the engine counts the provider billing units of every call (LLM
@@ -107,5 +109,6 @@ First public release.
   and Windows (x86_64) with checksums, and a multi-architecture image at
   `ghcr.io/bilal07karadeniz/brisvox-server`.
 
-[Unreleased]: https://github.com/bilal07karadeniz/brisvox/compare/v0.1.0...HEAD
+[Unreleased]: https://github.com/bilal07karadeniz/brisvox/compare/v0.1.1...HEAD
+[0.1.1]: https://github.com/bilal07karadeniz/brisvox/compare/v0.1.0...v0.1.1
 [0.1.0]: https://github.com/bilal07karadeniz/brisvox/releases/tag/v0.1.0

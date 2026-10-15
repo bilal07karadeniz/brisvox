@@ -331,7 +331,12 @@ for your language and budget is a live test, not a table: the agent files in
   before you deploy it. `brisvox_server::app::run_with_tools(Arc::new(MyTools))` is a whole `main`
   for a server with your own Rust tools ([guide](docs/TOOLS.md), [example](examples/rust-tools)).
 - **Operations.** Health and readiness endpoints, Prometheus metrics, OpenTelemetry traces
-  (feature `otlp`), admission control, graceful drain, a container image and compose file.
+  (feature `otlp`), admission control that learns the machine's capacity (refuses new calls
+  instead of degrading running ones), graceful drain, a container image and compose file.
+- **Usage and cost.** Every call reports what providers bill by: LLM tokens (input, cached,
+  output), STT audio seconds and TTS characters, with duration, turns and latencies, as a
+  `session.usage` event, in the transcript, in the log and as Prometheus totals per provider and
+  model ([docs](docs/OPERATIONS.md#usage-and-cost)).
 - **Examples.** [Phone receptionist](examples/phone-receptionist), [web
   assistant](examples/web-assistant), [booking agent](examples/booking-agent) (Python SDK tools),
   [Rust tools](examples/rust-tools), plus single-file agent definitions in

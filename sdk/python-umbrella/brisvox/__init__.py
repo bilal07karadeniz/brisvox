@@ -22,6 +22,6 @@ import brisvox_agent as _sdk
 from brisvox_agent import *  # noqa: F403  (the whole public API of the SDK)
 
 # The version of this package, which is the version of the SDK it depends on exactly.
-__version__ = "0.1.0"
+__version__ = "0.1.1"
 
 __all__ = [*_sdk.__all__, "__version__"]

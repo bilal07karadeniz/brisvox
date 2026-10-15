@@ -61,7 +61,7 @@ Things to know before writing anything:
 ## Configuration
 
 - [Agent definitions (configuration)](docs/CONFIG.md): Every agent-file key: agent, stt, llm, tts, turn, interruption, tools, s2s, TOML and YAML
-- [Operating brisvox-server](docs/OPERATIONS.md): Every server environment variable, listeners, health, metrics, limits, shutdown
+- [Operating brisvox-server](docs/OPERATIONS.md): Every server environment variable, listeners, health, metrics, usage and cost (LLM tokens, STT seconds, TTS characters), overload and admission, limits, shutdown
 - [Providers](docs/PROVIDERS.md): Which STT/LLM/TTS/S2S providers exist, their config names and Cargo features
 
 ## Tools
@@ -71,7 +71,7 @@ Things to know before writing anything:
 - [brisvox-agent (Python SDK)](sdk/python/README.md): Python SDK: declare tools, run the agent server, events
 - [@brisvox/agent (TypeScript SDK)](sdk/typescript/README.md): TypeScript SDK: declare tools, run the agent server, events
 - [Rust tools in your own server binary](examples/rust-tools/README.md): Rust tools inside your own binary (brisvox_server::app::run_with_tools)
-- [Brisvox agent protocol, version 1](docs/AGENT_PROTOCOL.md): The wire protocol between the server and an SDK agent (for a new SDK)
+- [Brisvox agent protocol, version 1](docs/AGENT_PROTOCOL.md): The wire protocol between the server and an SDK agent: events incl. per-turn metrics and the per-call usage summary (session.usage)
 
 ## Connecting callers
 
@@ -88,7 +88,7 @@ Things to know before writing anything:
 
 - [Deploying brisvox-server in a container](docs/DEPLOY.md): Containers, one-port HTTPS hosts without UDP (Railway as an example), TURN, TLS, scaling
 - [Security: threat model and secure deployment](docs/SECURITY.md): Threat model and the secure deployment checklist (tokens, TLS, limits)
-- [Recording and privacy](docs/PRIVACY.md): Recording, encryption at rest, retention, redaction
+- [Recording and privacy](docs/PRIVACY.md): Recording (transcripts with a per-call summary line), encryption at rest, retention, redaction
 
 ## Providers
 
