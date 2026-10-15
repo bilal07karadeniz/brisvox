@@ -501,8 +501,28 @@ impl Server {
     where
         R: SessionRunner<Request = AcceptedCall>,
     {
+        Self::start_hosting_routed(settings, policy, host, clock, runner, None).await
+    }
+
+    /// [`start_hosting_with_admission`](Self::start_hosting_with_admission), with the generic
+    /// websocket listener's calls run by `websocket_runner` when given
+    /// ([`HostSettings::websocket_agent_file`]). One manager admits the calls of both.
+    ///
+    /// # Errors
+    /// As [`start_hosting`](Self::start_hosting).
+    pub async fn start_hosting_routed<R>(
+        settings: ServerSettings,
+        policy: AdmissionPolicy,
+        host: &HostSettings,
+        clock: SharedClock,
+        runner: &std::sync::Arc<R>,
+        websocket_runner: Option<&std::sync::Arc<R>>,
+    ) -> Result<Self>
+    where
+        R: SessionRunner<Request = AcceptedCall>,
+    {
         let mut server = Self::start_with_admission(settings, policy, clock.clone()).await?;
-        match Listeners::bind(host, &server.manager, runner, clock).await {
+        match Listeners::bind_routed(host, &server.manager, runner, websocket_runner, clock).await {
             Ok(listeners) => {
                 server.listeners = Some(listeners);
                 Ok(server)

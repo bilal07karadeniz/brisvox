@@ -17,33 +17,43 @@ listen for the point where replies get slow, choppy or lost.
 | service | what runs | public |
 |---|---|---|
 | `fakes` | `brisvox-fake-providers` (Deepgram live STT, OpenAI-compatible chat, Deepgram Aura over TLS; `bench/fake_providers`) | no |
-| `brisvox` | two `brisvox-server` processes and `brisvox-bench container-stats` | the real process |
+| `brisvox` | one `brisvox-server` serving two agents, and `brisvox-bench container-stats` | the WebRTC listener's `/ws` |
 | `pipecat` | two Pipecat bots (`bench/pipecat_baseline/bot.py`) and `brisvox-bench container-stats` | the real process |
 | `loadgen` | `brisvox-bench hold`: the synthetic callers and the control page | the page |
 
 ## What each container runs
 
-- **load process**: serves the synthetic calls on the private network. Its agent is
-  `bench/fake_providers/agent.fakes.toml` pointed at the fakes: the real provider client code of
-  each system (brisvox's Rust adapters; Pipecat's Deepgram and OpenAI services), real TLS, real
-  wire formats, the real Silero VAD and Smart Turn models, no API cost. It starts with an empty
-  environment plus the few variables it needs, so it never sees a provider key: if its agent were
-  pointed at a real provider by mistake, the provider would refuse the fake key.
-  Checked on 2026-10-15 with the brisvox image, real-looking keys in the container's environment
-  and the fakes unreachable: the load process's environment held 0 provider key variables, and a
-  synthetic call got only failed provider connections (`stt connect failed ... disconnected`,
-  then the circuit breaker opened); nothing went to a real provider.
-  Pipecat runs it with 4 uvicorn workers (one event loop per vCPU, as in the capacity benchmark);
-  brisvox runs one process.
-- **real process**: serves your call on the public port with the live comparison agent
-  (`bench/pipecat_baseline/agent_live_en_aura.toml`: Deepgram nova-3, an OpenRouter model with
-  reasoning off and a pinned upstream, Deepgram Aura `aura-2-thalia-en`). It accepts only calls
-  that present `CALL_TOKEN`.
-- **container-stats** (`:9100`, private): the container's CPU (cores used over the last 2 s) and
-  memory from cgroup v2, for the page.
+**brisvox: one process, two agents.** The owner's call and the synthetic calls share one
+inference pool, one Smart Turn executor and one admission control, so the real call hears what a
+real caller would at that load:
 
-Both real processes speak the brisvox WebSocket protocol (`docs/WEBSOCKET_PROTOCOL.md`; the
-Pipecat baseline implements it), so one browser module (`sdk/web/brisvox-call.js`, transport
+- the **public port** is the WebRTC signaling listener; the browser's call uses its WebSocket
+  fallback (`/ws`; the PaaS forwards no UDP, so the media socket stays on loopback) and runs the
+  live comparison agent (`bench/pipecat_baseline/agent_live_en_aura.toml`: Deepgram nova-3, an
+  OpenRouter model with reasoning off and a pinned upstream, Deepgram Aura
+  `aura-2-thalia-en`). It accepts only `CALL_TOKEN`, from the control page's origin
+  (`BRISVOX_WEBRTC_CORS_ORIGIN`);
+- the **private port 9000** is the generic websocket listener; it runs its own agent
+  (`BRISVOX_WS_AGENT_FILE`, `docs/OPERATIONS.md`): `bench/fake_providers/agent.fakes.toml`
+  pointed at the fakes. The synthetic calls go through each system's real provider client code
+  (TLS, wire formats, the real Silero VAD and Smart Turn models) at no API cost. Its key variable
+  is `FAKE_PROVIDERS_API_KEY`, which no real provider accepts, and the load generator holds only
+  `LOAD_TOKEN`, which that listener alone accepts.
+
+**Pipecat: two processes.** Pipecat runs one agent per process, so the container runs a load
+process (4 uvicorn workers, one event loop per vCPU as in the capacity benchmark, started with an
+empty environment so it never sees a key) and a real process (one worker, `CALL_TOKEN`). Both
+share the container's CPU and memory, not their event loops.
+
+An earlier brisvox layout used two processes too; with the fakes unreachable, its load process
+held 0 provider key variables and a synthetic call got only failed provider connections
+(`stt connect failed ... disconnected`, then the circuit breaker opened).
+
+- **container-stats** (`:9100`, private): the container's CPU (cores used over the last 2 s),
+  memory from cgroup v2, and the CPU model and VNNI flags, for the page.
+
+Both real paths speak the brisvox WebSocket protocol (`docs/WEBSOCKET_PROTOCOL.md`; the Pipecat
+baseline implements it), so one browser module (`sdk/web/brisvox-call.js`, transport
 `websocket`) calls either one the same way.
 
 ## The control page
@@ -66,11 +76,11 @@ address bar). Per system:
 ## Build and deploy
 
 Linux binaries (x86_64, glibc of Debian trixie): `brisvox-server` with
-`all-providers,smart-turn-ort`, `brisvox-bench`, `brisvox-fake-providers`; models from
+`all-providers,smart-turn-ort,webrtc`, `brisvox-bench`, `brisvox-fake-providers`; models from
 `scripts/models/fetch_models.py`. Then lay out one build context per service and deploy each:
 
 ```sh
-cargo build --release -p brisvox-server --features all-providers,smart-turn-ort \
+cargo build --release -p brisvox-server --features all-providers,smart-turn-ort,webrtc \
   -p brisvox-bench -p brisvox-fake-providers
 BIN=target/release OUT=/tmp/railway-stage bench/railway/stage.sh
 for s in fakes brisvox pipecat loadgen; do
@@ -83,7 +93,7 @@ Service settings on Railway:
 | service | variables | other |
 |---|---|---|
 | `fakes` | `PORT=8080` | no domain |
-| `brisvox`, `pipecat` | `DEEPGRAM_API_KEY`, `OPENAI_COMPATIBLE_API_KEY`, `CALL_TOKEN`, `PORT=8080`; brisvox also `LOAD_TOKEN` | limits 4 vCPU / 4 GB; domain on 8080 |
+| `brisvox`, `pipecat` | `DEEPGRAM_API_KEY`, `OPENAI_COMPATIBLE_API_KEY`, `CALL_TOKEN`, `PORT=8080`; brisvox also `LOAD_TOKEN` and `LOADGEN_PUBLIC=${{loadgen.RAILWAY_PUBLIC_DOMAIN}}` | limits 4 vCPU / 4 GB; domain on 8080 |
 | `loadgen` | `LOAD_TOKEN`, `CALL_TOKEN`, `HOLD_ACCESS_KEY`, `PORT=8080`, `BRISVOX_PUBLIC=${{brisvox.RAILWAY_PUBLIC_DOMAIN}}`, `PIPECAT_PUBLIC=${{pipecat.RAILWAY_PUBLIC_DOMAIN}}` | domain on 8080 |
 
 The services find each other as `<name>.railway.internal` (private network; every listener binds

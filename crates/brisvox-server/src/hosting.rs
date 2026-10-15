@@ -110,6 +110,9 @@ use crate::{Error, Result};
 
 /// Environment variable: the agent definition every hosted call runs (`docs/CONFIG.md`).
 pub const ENV_AGENT_FILE: &str = "BRISVOX_AGENT_FILE";
+/// Environment variable: an agent definition file for the calls of the generic websocket
+/// listener only (`BRISVOX_WS_ADDR`); the other listeners run [`ENV_AGENT_FILE`]'s agent.
+pub const ENV_WS_AGENT_FILE: &str = "BRISVOX_WS_AGENT_FILE";
 /// Environment variable: the agent definition as text (TOML; YAML with [`ENV_AGENT_FORMAT`]),
 /// for hosts that take variables but no file mount. The same loader, limits and messages as the
 /// file (source name `$BRISVOX_AGENT_DEFINITION`); secrets still come from the variables the
@@ -541,6 +544,11 @@ pub struct HostSettings {
     /// The agent definition as text (`BRISVOX_AGENT_DEFINITION`); never together with
     /// [`Self::agent_file`].
     pub agent_inline: Option<InlineAgent>,
+    /// The agent of the generic websocket listener's calls (`BRISVOX_WS_AGENT_FILE`), when it
+    /// differs from the main one: one process then serves two agents on one inference pool,
+    /// one Smart Turn executor and one admission control. The websocket agent gets no
+    /// application or telephony tools (those are bound to the main agent).
+    pub websocket_agent_file: Option<PathBuf>,
     /// The generic websocket listener (default [`DEFAULT_WS_ADDR`] when no other listener is
     /// on, off otherwise; see the [module docs](self)).
     pub websocket: Option<SocketAddr>,
@@ -582,6 +590,7 @@ impl Default for HostSettings {
             server: ServerConfig::default(),
             agent_file: None,
             agent_inline: None,
+            websocket_agent_file: None,
             websocket: DEFAULT_WS_ADDR.parse().ok(),
             twilio: None,
             telnyx: None,
@@ -1070,6 +1079,20 @@ impl HostSettings {
         }
     }
 
+    /// Reads and validates the websocket listener's own agent definition
+    /// ([`Self::websocket_agent_file`]); `None` when there is none. Blocking file IO.
+    ///
+    /// # Errors
+    /// [`ConfigError`](crate::config::ConfigError) as [`config::load_file`].
+    pub fn load_websocket_agent(
+        &self,
+        env: &dyn Env,
+    ) -> Option<std::result::Result<AgentConfig, crate::config::ConfigError>> {
+        self.websocket_agent_file
+            .as_ref()
+            .map(|path| config::load_file(path, env))
+    }
+
     /// An agent definition is configured: a file or the inline text.
     pub fn has_agent(&self) -> bool {
         self.agent_file.is_some() || self.agent_inline.is_some()
@@ -1241,11 +1264,18 @@ impl HostSettings {
             Self::default().websocket
         };
         let websocket = listen_addr(env, ENV_WS_ADDR, default_ws)?;
+        let websocket_agent_file = var(env, ENV_WS_AGENT_FILE)?.map(PathBuf::from);
+        if websocket_agent_file.is_some() && websocket.is_none() {
+            return Err(Error::Config(format!(
+                "{ENV_WS_AGENT_FILE} is set but the generic websocket listener is off: set {ENV_WS_ADDR}"
+            )));
+        }
         let server = listener_tunables(env)?;
         let settings = Self {
             server,
             agent_file,
             agent_inline,
+            websocket_agent_file,
             websocket,
             twilio,
             telnyx,
@@ -1632,6 +1662,25 @@ impl Listeners {
     where
         R: SessionRunner<Request = AcceptedCall>,
     {
+        Self::bind_routed(settings, manager, runner, None, clock).await
+    }
+
+    /// [`bind`](Self::bind), with the generic websocket listener's calls run by
+    /// `websocket_runner` when given (its own agent, [`HostSettings::websocket_agent_file`]);
+    /// every other listener runs `runner`. Both admit through the same `manager`.
+    ///
+    /// # Errors
+    /// As [`bind`](Self::bind).
+    pub async fn bind_routed<R>(
+        settings: &HostSettings,
+        manager: &SessionManager,
+        runner: &Arc<R>,
+        websocket_runner: Option<&Arc<R>>,
+        clock: SharedClock,
+    ) -> Result<Self>
+    where
+        R: SessionRunner<Request = AcceptedCall>,
+    {
         settings.check_exposure()?;
         settings.warn_about_weak_auth();
         let listeners = Self {
@@ -1640,7 +1689,15 @@ impl Listeners {
             addrs: ListenerAddrs::default(),
             clock,
         };
-        match listeners.bind_all(settings, manager, runner).await {
+        match listeners
+            .bind_all(
+                settings,
+                manager,
+                runner,
+                websocket_runner.unwrap_or(runner),
+            )
+            .await
+        {
             Ok(addrs) => Ok(Self { addrs, ..listeners }),
             Err(e) => {
                 listeners.stop(LISTENER_STOP_TIMEOUT).await;
@@ -1654,6 +1711,7 @@ impl Listeners {
         settings: &HostSettings,
         manager: &SessionManager,
         runner: &Arc<R>,
+        websocket_runner: &Arc<R>,
     ) -> Result<ListenerAddrs>
     where
         R: SessionRunner<Request = AcceptedCall>,
@@ -1687,7 +1745,7 @@ impl Listeners {
             )
             .map_err(|e| transport_error(WebSocketServer::KIND, &e))?;
             addrs.websocket = Some(server.local_addr());
-            self.spawn(server, manager, runner);
+            self.spawn(server, manager, websocket_runner);
         }
         if let Some(l) = &settings.twilio {
             let listener = bind_tcp(TwilioServer::KIND, l.addr).await?;
@@ -1919,6 +1977,28 @@ mod tests {
         let off = HostSettings::from_env(&env(&[(ENV_WS_ADDR, "off")])).unwrap();
         assert!(!off.any_listener());
         assert!(!HostSettings::none().any_listener());
+    }
+
+    #[test]
+    fn the_websocket_agent_needs_the_websocket_listener() {
+        let s = HostSettings::from_env(&env(&[
+            (ENV_AGENT_FILE, "agents/demo.toml"),
+            (ENV_WS_AGENT_FILE, "agents/load.toml"),
+        ]))
+        .unwrap();
+        assert_eq!(
+            s.websocket_agent_file,
+            Some(PathBuf::from("agents/load.toml"))
+        );
+        let err = HostSettings::from_env(&env(&[
+            (ENV_AGENT_FILE, "agents/demo.toml"),
+            (ENV_WS_AGENT_FILE, "agents/load.toml"),
+            (ENV_WS_ADDR, "off"),
+            (ENV_RTVI_ADDR, "127.0.0.1:0"),
+        ]))
+        .unwrap_err();
+        assert!(err.to_string().contains(ENV_WS_AGENT_FILE), "{err}");
+        assert!(HostSettings::default().websocket_agent_file.is_none());
     }
 
     const INLINE: &str = "[agent]\nname = \"x\"\n";

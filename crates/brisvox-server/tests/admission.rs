@@ -382,11 +382,14 @@ async fn a_hot_pool_teaches_a_ceiling_that_holds_and_then_grows_by_calm_windows(
             ..overload()
         },
     );
-    let mut calls: Vec<_> = (0..20).map(|_| mgr.start(hold).unwrap()).collect();
+    // The cautious start admits 16, then doubles after a calm window.
+    let mut calls: Vec<_> = (0..16).map(|_| mgr.start(hold).unwrap()).collect();
+    tokio::time::advance(Duration::from_millis(2_100)).await;
+    calls.extend((0..4).map(|_| mgr.start(hold).unwrap()));
     assert_eq!(
         mgr.admission_ceiling(),
-        None,
-        "no ceiling before the pool was hot"
+        Some(32),
+        "cautious start, not learned yet"
     );
 
     // Hot with 20 held: refused, and the cap is 18.
@@ -443,6 +446,54 @@ async fn a_hot_pool_teaches_a_ceiling_that_holds_and_then_grows_by_calm_windows(
     let slot = mgr.try_admit().expect("1 held, cap 4");
     assert_eq!(mgr.admission_ceiling(), Some(4));
     drop(slot);
+    mgr.cancel_all();
+    for call in calls {
+        call.ended().await;
+    }
+}
+
+/// The cautious start: a fresh server admits 16 calls, then doubles its cap for every calm
+/// window spent at it; the first hot sample ends it and the ceiling is learned from there.
+#[tokio::test(start_paused = true)]
+async fn a_fresh_server_starts_cautiously_and_doubles_per_calm_window() {
+    let clock = sim();
+    let pool = Pool::shared();
+    let mgr = manager_with_overload(
+        1_000,
+        Arc::clone(&clock),
+        Some(&pool),
+        &[],
+        OverloadConfig {
+            learn_ceiling: true,
+            ..overload()
+        },
+    );
+    let mut calls: Vec<_> = Vec::new();
+    let admit_all = |calls: &mut Vec<_>| {
+        while let Ok(slot) = mgr.try_admit() {
+            calls.push(slot.spawn(hold));
+        }
+    };
+    // A rush of dials: 16 get in, the rest are refused as overloaded.
+    admit_all(&mut calls);
+    assert_eq!(calls.len(), 16);
+    assert_eq!(mgr.admission_ceiling(), Some(16));
+    // Not doubled before a whole window has passed.
+    tokio::time::advance(Duration::from_millis(1_900)).await;
+    admit_all(&mut calls);
+    assert_eq!(calls.len(), 16);
+    // 32, then 64, a window apart.
+    tokio::time::advance(Duration::from_millis(200)).await;
+    admit_all(&mut calls);
+    assert_eq!(calls.len(), 32);
+    tokio::time::advance(Duration::from_millis(2_100)).await;
+    admit_all(&mut calls);
+    assert_eq!(calls.len(), 64);
+    // The pool turns hot at 64: learned at 57 (90%), and it stays the learned rule from now on.
+    pool.depth(8);
+    assert_eq!(mgr.try_admit().unwrap_err(), AdmissionError::Overloaded);
+    assert_eq!(mgr.admission_ceiling(), Some(57));
+    assert_eq!(mgr.active(), 64, "running calls are never touched");
     mgr.cancel_all();
     for call in calls {
         call.ended().await;

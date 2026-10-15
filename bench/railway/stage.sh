@@ -4,7 +4,7 @@
 #
 #   BIN=target/release OUT=/tmp/railway-stage bench/railway/stage.sh
 #
-# BIN must hold brisvox-server (features all-providers,smart-turn-ort), brisvox-bench and
+# BIN must hold brisvox-server (features all-providers,smart-turn-ort,webrtc), brisvox-bench and
 # brisvox-fake-providers built for x86_64 Linux (glibc of Debian trixie or older); models/ must
 # hold silero_vad.onnx and smart-turn-v3.2-cpu.onnx (scripts/models/fetch_models.py).
 set -euo pipefail

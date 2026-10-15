@@ -373,6 +373,23 @@ fn serve(tools: Option<Arc<dyn AppTools>>) -> ExitCode {
         Ok(model) => model.flatten(),
         Err(e) => return ExitCode::from(failed(&e)),
     };
+    // The generic websocket listener's own agent, if `BRISVOX_WS_AGENT_FILE` names one: its
+    // Smart Turn model is the main agent's when that has one, else its own.
+    let websocket_agent = match host.load_websocket_agent(&ProcessEnv).transpose() {
+        Ok(agent) => agent,
+        Err(e) => return ExitCode::from(failed(&e)),
+    };
+    let websocket_smart_turn = match websocket_agent.as_ref() {
+        None => None,
+        Some(ws) => match smart_turn.clone() {
+            Some(model) => load_smart_turn(&ProcessEnv, ws).map(|own| own.map(|_| model)),
+            None => load_smart_turn(&ProcessEnv, ws),
+        }
+        .unwrap_or_else(|e| {
+            tracing::error!(error = %e, "the websocket agent's Smart Turn model");
+            None
+        }),
+    };
     let runtime = match tokio::runtime::Builder::new_multi_thread()
         .enable_all()
         .thread_name("brisvox-server")
@@ -405,6 +422,8 @@ fn serve(tools: Option<Arc<dyn AppTools>>) -> ExitCode {
             Some(agent) => {
                 let parts = Parts {
                     agent,
+                    websocket_agent,
+                    websocket_smart_turn,
                     vad,
                     smart_turn,
                     runner: runner_config,
@@ -470,6 +489,9 @@ fn serve(tools: Option<Arc<dyn AppTools>>) -> ExitCode {
 /// What the calls run, loaded before the runtime.
 struct Parts {
     agent: AgentConfig,
+    /// The generic websocket listener's own agent (`BRISVOX_WS_AGENT_FILE`).
+    websocket_agent: Option<AgentConfig>,
+    websocket_smart_turn: Option<Arc<dyn TurnModel>>,
     vad: Vad,
     smart_turn: Option<Arc<dyn TurnModel>>,
     runner: RunnerConfig,
@@ -492,6 +514,8 @@ async fn start_hosting(
 ) -> crate::Result<(Server, Vec<InferencePool>, Option<Sweeper>)> {
     let Parts {
         agent,
+        websocket_agent,
+        websocket_smart_turn,
         vad,
         smart_turn,
         runner,
@@ -610,6 +634,46 @@ async fn start_hosting(
             "calls may link to a named agent process"
         );
     }
+    // The generic websocket listener's own agent: its own providers and agent links, the same
+    // inference pool, Smart Turn executor, observability and recording (one admission control
+    // for both). No application or telephony tools: those are bound to the main agent.
+    let websocket_runner = match websocket_agent {
+        None => None,
+        Some(ws_agent) => {
+            let ws_providers = ConfiguredProviders::from_agent_with(
+                &ws_agent,
+                clock,
+                providers_shutdown,
+                resilience,
+            )?;
+            let ws_links = crate::AgentLinks::resolve(&ws_agent, |name| {
+                config::Env::var(&ProcessEnv, name).ok()
+            })?;
+            tracing::info!(
+                agent = ws_agent.name(),
+                providers = ?ws_providers,
+                smart_turn = websocket_smart_turn.is_some(),
+                "the generic websocket listener runs its own agent (BRISVOX_WS_AGENT_FILE)"
+            );
+            let mut ws = EngineRunner::with_tools(
+                ws_agent,
+                ws_providers,
+                Offload::Pool(pool.handle()),
+                vad.clone(),
+                runner,
+                crate::ToolSetup::none(),
+                clock,
+            )?;
+            if let Some(model) = websocket_smart_turn {
+                ws = ws.with_smart_turn(model);
+                if let Some(turn_pool) = &turn_pool {
+                    ws = ws.with_smart_turn_offload(Offload::Pool(turn_pool.handle()));
+                }
+            }
+            let ws = ws.with_observability(Arc::clone(&obs));
+            Some((ws, ws_links))
+        }
+    };
     let mut runner = EngineRunner::with_tools(
         agent,
         providers,
@@ -628,13 +692,16 @@ async fn start_hosting(
     let runner = runner.with_observability(obs);
     // Phone numbers the server redacts (recording or logs) are not given to an agent process
     // that asked for the caller identity either.
-    let runner = runner.with_redact_caller_numbers(crate::caller_identity::phone_numbers_redacted(
+    let redact_numbers = crate::caller_identity::phone_numbers_redacted(
         recording.as_ref(),
         &crate::telemetry::log_redactor(&ProcessEnv)?,
-    ));
+    );
+    let runner = runner.with_redact_caller_numbers(redact_numbers);
+    let websocket_runner =
+        websocket_runner.map(|(ws, links)| (ws.with_redact_caller_numbers(redact_numbers), links));
     // Recording and retention.
     let mut sweeper = None;
-    let runner = match recording {
+    let recording = match recording {
         Some(settings) => {
             let recording = Recording::new(settings, clock.clone())?;
             recording.prepare().await?;
@@ -658,9 +725,16 @@ async fn start_hosting(
             }
             // The sweeper stops with the providers' token, once the server has drained.
             sweeper = recording.spawn_sweeper(providers_shutdown);
-            runner.with_recording(recording)
+            Some(recording)
         }
-        None => runner,
+        None => None,
+    };
+    let (runner, websocket_runner) = match recording {
+        Some(recording) => (
+            runner.with_recording(Arc::clone(&recording)),
+            websocket_runner.map(|(ws, links)| (ws.with_recording(recording), links)),
+        ),
+        None => (runner, websocket_runner),
     };
     // The out-of-process agent: `BRISVOX_AGENT_URL` and friends.
     let runner = Arc::new(if links.is_empty() {
@@ -668,13 +742,26 @@ async fn start_hosting(
     } else {
         runner.with_agent_links(links)
     });
+    let websocket_runner = websocket_runner.map(|(ws, links)| {
+        Arc::new(if links.is_empty() {
+            ws
+        } else {
+            ws.with_agent_links(links)
+        })
+    });
     // The WebRTC listener's Opus codec runs on the inference pool, not on tokio workers.
     #[cfg(feature = "webrtc")]
     let host = &host.clone().with_codec_pool(pool.handle());
     #[allow(unused_mut)] // only the `call-control` build attaches the callback listener
-    let mut server =
-        Server::start_hosting_with_admission(settings, policy, host, clock.clone(), &runner)
-            .await?;
+    let mut server = Server::start_hosting_routed(
+        settings,
+        policy,
+        host,
+        clock.clone(),
+        &runner,
+        websocket_runner.as_ref(),
+    )
+    .await?;
     #[cfg(feature = "call-control")]
     if let Some((settings, hub)) = callbacks {
         let listener = crate::callbacks::CallbackServer::bind(settings, hub, clock.clone()).await?;

@@ -25,8 +25,11 @@
 //!    pool turns hot it caps the calls it holds at 90% of what it held then; when the pool is
 //!    calm again the calls held at that moment are what it serves well, so the cap is not above
 //!    them (but one hot spell at most halves it); and it raises the cap by 10% (at least one
-//!    call) for every calm window spent at the cap. Calls above the cap are refused as
-//!    overloaded. Like TCP's congestion window, the cap settles near what the machine serves,
+//!    call) for every calm window spent at the cap. Before the pool was first seen hot it
+//!    starts cautiously: at most 16 calls, doubling for every calm window spent at the cap (16,
+//!    32, 64, ... every 2 s by default), so the first rush of dials on a fresh server cannot
+//!    overshoot before the pool has had time to show its load. Calls above the cap are refused
+//!    as overloaded. Like TCP's congestion window, the cap settles near what the machine serves,
 //!    and calls that are already running are never touched.
 //!
 //!    The server also watches the Smart Turn executor ([`AdmissionPolicy::with_secondary_probe`])

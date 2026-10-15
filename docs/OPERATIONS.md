@@ -87,6 +87,7 @@ exit status 1 and a message naming the variable.
 | `BRISVOX_AGENT_DEFINITION` | unset | The agent definition as text (TOML), for a host that takes variables but no file mount. Same loader, same size limit (1 MiB) and same messages as the file; errors name the source `$BRISVOX_AGENT_DEFINITION`. Setting it together with `BRISVOX_AGENT_FILE` is a startup error. Secrets stay out of it: it names the variables that hold them (`api_key_env`). |
 | `BRISVOX_AGENT_FORMAT` | `toml` | The syntax of `BRISVOX_AGENT_DEFINITION`: `toml` or `yaml` (needs the `yaml` cargo feature). Never guessed from the text. Setting it without `BRISVOX_AGENT_DEFINITION` is an error (a file's format follows its extension). |
 | `BRISVOX_WS_ADDR` | `127.0.0.1:8080` when no other listener is set, otherwise off | Generic websocket listener (`docs/WEBSOCKET_PROTOCOL.md`, any path); `off` disables it. On a non-loopback address it needs `BRISVOX_WS_TOKEN` or `BRISVOX_SESSION_SECRET`: see "Authentication" below. |
+| `BRISVOX_WS_AGENT_FILE` | unset | An agent definition file for the calls of the generic websocket listener only; the other listeners run `BRISVOX_AGENT_FILE`'s agent. One process then serves two agents on one inference pool, one Smart Turn executor and one admission control (each with its own providers and agent links; the websocket agent gets no application or telephony tools). Needs `BRISVOX_WS_ADDR`. Example: a load test's synthetic calls on fake providers next to real calls on real ones (`bench/railway`). |
 | `BRISVOX_WS_TOKEN` | unset | Static token of the generic websocket listener (development): `Authorization: Bearer`, the subprotocol `brisvox-token.<token>` or `?token=`. |
 | `BRISVOX_TWILIO_ADDR` | off | Twilio Media Streams listener (path `/twilio/stream`). |
 | `TWILIO_AUTH_TOKEN` | unset | The account's Auth Token; required with the Twilio listener (every stream's `X-Twilio-Signature` is checked). |
@@ -351,7 +352,7 @@ counted by reason and is answered cleanly by the transport that met it.
   hot, and every call degraded (V2V p50 3.7 s). With `BRISVOX_OVERLOAD_CEILING` (default) the
   pool turning hot caps the held calls at 90% of the calls held then, the pool turning calm
   caps them at the calls held at that moment (what it served well), and the cap grows by 10%
-  per calm window spent at it, so it settles near what the machine serves. Running calls are never ended to get under it.
+  per calm window spent at it, so it settles near what the machine serves. Running calls are never ended to get under it. Until the pool was first seen hot it starts cautiously: at most 16 calls, doubling per calm window spent at the cap (16, 32, 64, ... every 2 s), so a rush of dials on a fresh server (a restart, a new instance behind a least-connections balancer) cannot overshoot before the pool shows its load. For a hard limit from the first second, set `BRISVOX_MAX_SESSIONS` to your measured capacity.
 - **Provider budgets.** With `BRISVOX_PROVIDER_LIMITS`, every call holds one permit of each
   limited provider its agent uses (the STT, LLM and TTS named in the agent file) for its whole
   life; permits are all-or-none and come back on every end path (hang-up, error, panic,

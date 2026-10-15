@@ -838,7 +838,12 @@ struct Registry {
     ceiling: Option<(usize, Instant)>,
     /// The pool's verdict at the previous admission attempt (for the ceiling's transitions).
     ceiling_hot: bool,
+    /// The pool was seen hot at least once: the ceiling is learned, the cautious start is over.
+    ceiling_learned: bool,
 }
+
+/// Calls a fresh server admits before its cautious start first doubles (see `update_ceiling`).
+const SLOW_START_CALLS: usize = 16;
 
 /// The learned ceiling (see `admission.rs`). When the pool turns hot, cap the held calls at 90%
 /// of what is held then; when it is calm again, the calls held at that moment are what it
@@ -853,7 +858,8 @@ fn update_ceiling(reg: &mut Registry, overloaded: bool, now: Instant, window: Du
     if overloaded {
         if !was_hot {
             let cap = (held.saturating_mul(9) / 10).max(1);
-            if reg.ceiling.is_none() {
+            if !reg.ceiling_learned {
+                reg.ceiling_learned = true;
                 tracing::warn!(
                     target: "brisvox::server",
                     held,
@@ -864,6 +870,22 @@ fn update_ceiling(reg: &mut Registry, overloaded: bool, now: Instant, window: Du
             if reg.ceiling.is_none_or(|(old, _)| cap < old) {
                 reg.ceiling = Some((cap, now));
             }
+        }
+        return;
+    }
+    // Cautious start: until the pool was first seen hot, the held calls may at most double per
+    // calm window, from SLOW_START_CALLS. A call loads the pool only when its caller speaks, so
+    // a rush of dials on a fresh server would otherwise be admitted far past capacity before
+    // the first hot sample (on 4 vCPU: 300-350 calls for a capacity of about 250).
+    if !reg.ceiling_learned {
+        match reg.ceiling {
+            None => reg.ceiling = Some((held.max(SLOW_START_CALLS), now)),
+            Some((cap, since)) if held >= cap && now.saturating_duration_since(since) >= window => {
+                let doubled = cap.saturating_mul(2);
+                tracing::debug!(target: "brisvox::server", cap = doubled, "cautious start: doubled");
+                reg.ceiling = Some((doubled, now));
+            }
+            Some(_) => {}
         }
         return;
     }
@@ -904,6 +926,7 @@ impl Default for Registry {
             ended: EndCounts::default(),
             ceiling: None,
             ceiling_hot: false,
+            ceiling_learned: false,
         }
     }
 }
