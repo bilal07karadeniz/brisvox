@@ -26,6 +26,7 @@
 //! (or the `BRISVOX_BENCH_URL` environment variable) any server.
 
 mod capacity_cli;
+mod hold;
 
 use std::process::ExitCode;
 use std::time::Duration;
@@ -732,6 +733,8 @@ fn run() -> Result<bool, BenchError> {
         Some("speculation") => speculation_cmd(args, &command),
         Some("capacity") => capacity_cli::capacity_cmd(args, &command),
         Some("engine-server") => capacity_cli::engine_server_cmd(args),
+        Some("hold") => hold::hold_cmd(args),
+        Some("container-stats") => hold::container_stats_cmd(args),
         _ => Err(BenchError::Config(USAGE.into())),
     }
 }
