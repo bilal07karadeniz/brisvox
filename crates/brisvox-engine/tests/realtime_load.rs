@@ -207,6 +207,13 @@ async fn one_call(
     let mut config = EngineConfig::DEFAULT;
     // Every response's finish is "large": it must run on the pool.
     config.llm.inline_finish_bytes = 1;
+    // The production VAD budget (250 ms per batch) is set for release code. A debug build runs
+    // the model several times slower, and a shared 4-vCPU runner (Windows) then misses it with a
+    // few batches at the start; the budget scales with the build, the assertion stays at zero
+    // timeouts. The release run (`--release ... -- --ignored`) keeps the production budget.
+    if cfg!(debug_assertions) {
+        config.timeouts.vad_job = Duration::from_secs(1);
+    }
     let call = open_loopback(&clock, 65_536).await.unwrap();
     let offload = Offload::Pool(pool);
     let vad = VadSetup::new(
