@@ -18,7 +18,7 @@ include = ["src/**", "README.md", "LICENSE-MIT", "LICENSE-APACHE"]
 
 [features]
 # Shared TLS (rustls + ring, webpki roots) for the network adapters.
-net = ["dep:rustls", "dep:webpki-roots"]
+net = ["dep:rustls", "dep:webpki-roots", "dep:tracing"]
 # Shared WebSocket dialing (`net::connect_ws`, `net::dial`: address racing) for the
 # WebSocket adapters.
 ws = ["net", "dep:futures", "dep:tokio-tungstenite"]

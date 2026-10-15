@@ -1,0 +1,36 @@
+[package]
+name = "brisvox-fake-providers"
+description = "Protocol-faithful fake Deepgram (STT, Aura TTS) and OpenAI-compatible chat servers for load tests"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish = false
+
+[[bin]]
+name = "brisvox-fake-providers"
+path = "src/main.rs"
+
+[features]
+# Process-wide mimalloc, like brisvox-server (the fakes must not be the bottleneck of a load test).
+default = ["mimalloc"]
+mimalloc = ["dep:mimalloc"]
+
+[dependencies]
+bytes = { workspace = true }
+futures = { workspace = true }
+http-body-util = "0.1.5"
+hyper = { version = "1.12.0", default-features = false, features = ["server", "http1", "http2"] }
+hyper-util = { version = "0.1.21", default-features = false, features = ["tokio", "server-auto", "http1", "http2"] }
+mimalloc = { version = "0.1.52", optional = true }
+rcgen = { version = "0.14.10", default-features = false, features = ["crypto", "pem", "ring"] }
+rustls = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+sysinfo = { workspace = true }
+tokio = { workspace = true, features = ["io-util", "macros", "net", "rt", "rt-multi-thread", "signal", "sync", "time"] }
+tokio-rustls = { workspace = true }
+tokio-tungstenite = { workspace = true }
+
+[lints]
+workspace = true

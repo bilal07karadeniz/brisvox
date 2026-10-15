@@ -30,14 +30,46 @@ use crate::error::{Error, Result};
 
 static CONFIG: OnceLock<Arc<rustls::ClientConfig>> = OnceLock::new();
 
+/// Environment variable naming a PEM file of extra CA certificates that [`tls_config`] trusts
+/// besides the compiled-in webpki roots. **For tests and benchmarks only**: it lets the adapters
+/// talk TLS to fake providers (`bench/fake_providers`) signed by a throwaway CA, with full
+/// certificate and host name verification. It is read once, with the config; an unreadable or
+/// invalid file makes the first TLS connection fail loudly instead of silently trusting less.
+pub const EXTRA_CA_ENV: &str = "BRISVOX_EXTRA_CA_FILE";
+
 /// The process-wide TLS client config (built on first use; cheap afterwards).
+///
+/// Trusts the webpki roots and, when [`EXTRA_CA_ENV`] is set, the certificates of that PEM file.
 ///
 /// # Errors
 /// [`Error::Protocol`] if rustls rejects the protocol versions of the `ring` provider (not
-/// expected: covered by a test).
+/// expected: covered by a test), or if [`EXTRA_CA_ENV`] names a file that cannot be read or holds
+/// no valid certificate.
 pub fn tls_config() -> Result<Arc<rustls::ClientConfig>> {
     if let Some(config) = CONFIG.get() {
         return Ok(Arc::clone(config));
+    }
+    let config = build_config(
+        std::env::var_os(EXTRA_CA_ENV)
+            .filter(|p| !p.is_empty())
+            .as_deref(),
+    )?;
+    Ok(Arc::clone(CONFIG.get_or_init(|| config)))
+}
+
+/// The config for `extra_ca` (the value of [`EXTRA_CA_ENV`]) or, without it, for the webpki roots.
+fn build_config(extra_ca: Option<&std::ffi::OsStr>) -> Result<Arc<rustls::ClientConfig>> {
+    if let Some(path) = extra_ca {
+        // One small read of a test file, once per process, with the config.
+        let pem = std::fs::read(path).map_err(|e| Error::Protocol {
+            provider: "tls",
+            detail: format!("{EXTRA_CA_ENV}: cannot read the file: {e}"),
+        })?;
+        tracing::warn!(
+            file = %std::path::Path::new(path).display(),
+            "{EXTRA_CA_ENV} is set: provider connections also trust this CA (meant for tests and benchmarks)"
+        );
+        return tls_config_with_ca_pem(&pem);
     }
     let roots = rustls::RootCertStore::from_iter(webpki_roots::TLS_SERVER_ROOTS.iter().cloned());
     let config = rustls::ClientConfig::builder_with_provider(Arc::new(
@@ -50,7 +82,7 @@ pub fn tls_config() -> Result<Arc<rustls::ClientConfig>> {
     })?
     .with_root_certificates(roots)
     .with_no_client_auth();
-    Ok(Arc::clone(CONFIG.get_or_init(|| Arc::new(config))))
+    Ok(Arc::new(config))
 }
 
 /// Most certificates a private CA bundle may hold ([`tls_config_with_ca_pem`]).
@@ -118,6 +150,14 @@ mod tests {
     }
 
     const TEST_CA_PEM: &str = include_str!("net/testdata/ca.pem");
+
+    #[test]
+    fn the_extra_ca_file_is_read_and_a_missing_one_fails_loudly() {
+        let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src/net/testdata/ca.pem");
+        assert!(build_config(Some(path.as_os_str())).is_ok());
+        assert!(build_config(Some(std::ffi::OsStr::new("no/such/ca.pem"))).is_err());
+        assert!(build_config(None).is_ok());
+    }
 
     #[test]
     fn a_ca_bundle_needs_a_certificate() {

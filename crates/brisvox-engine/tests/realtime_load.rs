@@ -284,6 +284,18 @@ async fn run_load() -> Gaps {
         placement: Arc::clone(&placement),
         analyses: AtomicU64::new(0),
     });
+    // A server warms its pool before calls arrive. Without it the first call's warm-up races 20
+    // cold call starts, and on a slow 4-vCPU runner a first VAD job can miss its 250 ms budget.
+    // The key is the calls' own, so their warm-up finds the pool warm and skips it.
+    let offload = Offload::Pool(pool.handle());
+    let claim = offload.claim_warm("vad:silero-tract-bundled").unwrap();
+    let warm_model = Arc::clone(&vad_model);
+    let report = offload
+        .warm(claim, Duration::from_secs(30), POOL_THREADS, move || {
+            warm_model.stream()?.warm()
+        })
+        .await;
+    assert_eq!(report.ok, POOL_THREADS, "{report:?}");
     let probe = GapProbe::start(&clock);
     let calls: Vec<_> = (0..SESSIONS)
         .map(|_| {

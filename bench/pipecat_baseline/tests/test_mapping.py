@@ -247,6 +247,40 @@ class OpenAiCompatible(unittest.TestCase):
             m.map_agent(bench_agent(), llm_model="x/y")
 
 
+class FakeProvidersAgent(unittest.TestCase):
+    """bench/fake_providers/agent.fakes.toml: the same file runs on brisvox and on the baseline."""
+
+    PATH = REPO / "bench" / "fake_providers" / "agent.fakes.toml"
+
+    def test_the_three_urls_map_onto_pipecats_services(self):
+        s = m.load(self.PATH)
+        self.assertEqual(s.stt.base_url, "wss://127.0.0.1:8443")
+        self.assertEqual(s.tts.provider, "deepgram_aura")
+        self.assertEqual(s.tts.base_url, "wss://127.0.0.1:8443")  # /v1/speak is Pipecat's own path
+        self.assertEqual((s.llm.provider, s.llm.base_url), ("openai_compatible", "https://127.0.0.1:8443/v1"))
+        # the fakes never see a real key: one variable name for all three, not the real ones
+        self.assertEqual(s.api_key_envs(), ("FAKE_PROVIDERS_API_KEY",) * 3)
+
+    def test_the_other_agents_keep_the_providers_own_hosts(self):
+        s = m.load(HERE / "agent_live_en_aura.toml")
+        self.assertIsNone(s.stt.base_url)
+        self.assertIsNone(s.tts.base_url)
+
+    def test_urls_are_validated(self):
+        doc = tomllib.loads(self.PATH.read_text(encoding="utf-8"))
+        doc["stt"]["deepgram"]["base_url"] = "https://example.invalid"
+        with self.assertRaises(m.MappingError):
+            m.map_agent(doc)
+        doc["stt"]["deepgram"]["base_url"] = "wss://example.invalid/v1/listen"
+        with self.assertRaises(m.MappingError):
+            m.map_agent(doc)
+        doc["stt"]["deepgram"]["base_url"] = "wss://example.invalid:8443/"
+        self.assertEqual(m.map_agent(doc).stt.base_url, "wss://example.invalid:8443")
+        doc["tts"]["deepgram_aura"]["url"] = "wss://example.invalid/v2/speak"
+        with self.assertRaises(m.MappingError):
+            m.map_agent(doc)
+
+
 class BrisvoxDefaults(unittest.TestCase):
     """The constants of agent_mapping.py are brisvox's; a changed default must fail here."""
 

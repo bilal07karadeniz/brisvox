@@ -1,0 +1,68 @@
+# Agent for the realistic-mock load tests: brisvox's REAL provider adapters (Deepgram live STT,
+# an OpenAI-compatible LLM, Deepgram Aura TTS) talking TLS to bench/fake_providers instead of to
+# the internet. BOTH systems run this file: brisvox-server as BRISVOX_AGENT_FILE, the Pipecat
+# baseline as `bot.py --agent` (agent_mapping.py maps the three base URLs onto Pipecat's
+# DeepgramSTTService, OpenAILLMService and DeepgramTTSService).
+#
+# Same settings as bench/pipecat_baseline/agent_live_en_aura.toml (the live comparison agent)
+# except where the providers live:
+#   - the three URLs below point at the fake server. 127.0.0.1:8443 is the local default; for a
+#     container or another host replace it (`sed 's/127.0.0.1:8443/fakes:8443/' agent.fakes.toml`),
+#     the name must be one of the server certificate's names (--san);
+#   - the key variable is FAKE_PROVIDERS_API_KEY for all three providers. The fakes accept any
+#     key. It is a different name from the real keys (DEEPGRAM_API_KEY, OPENAI_COMPATIBLE_API_KEY)
+#     on purpose: a process started for synthetic calls never needs, and never gets, a real key;
+#     if this file is ever pointed at a real host by mistake, the real provider answers 401 and
+#     nothing is spent;
+#   - no OpenRouter routing fields (the fake is not OpenRouter).
+#
+# TLS: the fake server's certificate is signed by a throwaway CA (GET /ca.pem on its plain port,
+# or --ca-dir). brisvox trusts it through BRISVOX_EXTRA_CA_FILE, Pipecat through SSL_CERT_FILE
+# (bench/fake_providers/README.md).
+
+[agent]
+name = "bench-fakes-en"
+language = "en"
+system_prompt = """
+You are the voice assistant of Example Shop. Answer in exactly one short spoken sentence.
+Never read out URLs or long numbers digit by digit unless asked.
+"""
+
+[turn]
+policy = "adaptive"          # Smart Turn v3.2 decides; fallback_silence_ms ends an undecided pause
+fallback_silence_ms = 3000
+
+[interruption]
+preset = "recommended"
+backchannels = ["en"]
+
+[speculation]
+enabled = false              # apples to apples
+
+[stt]
+provider = "deepgram"
+api_key_env = "FAKE_PROVIDERS_API_KEY"
+
+[stt.deepgram]
+model = "nova-3"
+endpointing_ms = 300
+base_url = "wss://127.0.0.1:8443"
+
+[llm]
+provider = "openai_compatible"
+api_key_env = "FAKE_PROVIDERS_API_KEY"
+
+[llm.openai_compatible]
+base_url = "https://127.0.0.1:8443/v1"
+model = "fake-model"
+max_tokens = 120
+reasoning_effort = "none"
+
+[tts]
+provider = "deepgram_aura"
+api_key_env = "FAKE_PROVIDERS_API_KEY"
+voice = "aura-2-thalia-en"
+sample_rate = 24000
+
+[tts.deepgram_aura]
+url = "wss://127.0.0.1:8443/v1/speak"

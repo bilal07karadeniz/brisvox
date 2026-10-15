@@ -1,6 +1,6 @@
 [workspace]
 resolver = "3"
-members = ["crates/*", "examples/rust-tools"]
+members = ["crates/*", "examples/rust-tools", "bench/fake_providers"]
 
 [workspace.package]
 version = "0.1.0"

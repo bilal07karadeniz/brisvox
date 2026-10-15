@@ -82,6 +82,19 @@ class Services(unittest.TestCase):
         self.assertEqual((tts._encoding, tts._init_sample_rate), ("linear16", 24000))
         self.assertIsNone(tts._settings.speed)
 
+    def test_the_fakes_agent_points_the_three_services_at_the_fake_server(self):
+        settings = agent_mapping.load(REPO / "bench" / "fake_providers" / "agent.fakes.toml")
+        keys = {"FAKE_PROVIDERS_API_KEY": "dummy"}
+        with mock.patch.dict(os.environ, keys):
+            stt, llm, tts = bot.build_services(bot.BotConfig(settings=settings))
+            bot.check_keys(settings)
+        self.assertEqual(str(llm._client.base_url).rstrip("/"), "https://127.0.0.1:8443/v1")
+        self.assertEqual(tts._base_url, "wss://127.0.0.1:8443")
+        env = stt._client._client_wrapper.get_environment()
+        self.assertEqual(env.production, "wss://127.0.0.1:8443")
+        # no real key variable is needed (or read) for the synthetic calls
+        self.assertEqual(settings.api_key_envs(), ("FAKE_PROVIDERS_API_KEY",) * 3)
+
     def test_the_compatible_agent_builds_pipecats_chat_completions_service(self):
         settings = agent_mapping.load(HERE / "agent_live_en.toml")
         keys = {**DUMMY_KEYS, "OPENAI_COMPATIBLE_API_KEY": "dummy"}

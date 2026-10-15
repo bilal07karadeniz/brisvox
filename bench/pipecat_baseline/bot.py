@@ -303,6 +303,8 @@ def build_services(config: BotConfig):
     s = config.settings
     stt = DeepgramSTTService(
         api_key=_key(s.stt.api_key_env),
+        # "" is the SDK's own host; a Deepgram-compatible server otherwise (bench/fake_providers)
+        base_url=s.stt.base_url or "",
         settings=DeepgramSTTService.Settings(
             model=s.stt.model,
             language=_language(s.stt.language),
@@ -335,6 +337,7 @@ def build_services(config: BotConfig):
         # Websocket /v1/speak, linear16 at the agent's rate: what brisvox's Aura adapter opens.
         tts = DeepgramTTSService(
             api_key=_key(s.tts.api_key_env),
+            **({"base_url": s.tts.base_url} if s.tts.base_url else {}),
             sample_rate=s.tts.sample_rate,
             encoding="linear16",
             settings=DeepgramTTSService.Settings(**aura_settings),

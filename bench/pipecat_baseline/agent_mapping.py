@@ -90,6 +90,9 @@ class SttSettings:
     interim_results: bool
     keyterms: tuple[str, ...]
     api_key_env: str
+    # `stt.deepgram.base_url` (`wss://host[:port]`, no path): a Deepgram-compatible server such as
+    # `bench/fake_providers`; None: Deepgram's own host
+    base_url: str | None = None
 
 
 @dataclass(frozen=True)
@@ -124,6 +127,9 @@ class TtsSettings:
     api_key_env: str
     provider: str = "cartesia"
     speed: float | None = None  # deepgram_aura only
+    # `tts.deepgram_aura.url` (`wss://host[:port]/v1/speak`) reduced to `wss://host[:port]`, the
+    # base URL of Pipecat's DeepgramTTSService; None: Deepgram's own host
+    base_url: str | None = None
 
 
 @dataclass(frozen=True)
@@ -161,6 +167,15 @@ def _table(doc: dict, key: str) -> dict:
 
 def _primary(tag: str) -> str:
     return tag.split("-")[0].lower()
+
+
+def _ws_origin(url: str, what: str) -> str:
+    """``wss://host[:port]`` of a websocket URL without a path (the form the Deepgram services take)."""
+    url = url.rstrip("/")
+    scheme, sep, rest = url.partition("://")
+    if scheme not in ("ws", "wss") or not sep or not rest or "/" in rest or "?" in rest:
+        raise MappingError(f"`{what}` must be ws:// or wss:// with host[:port] only, got {url!r}")
+    return url
 
 
 def map_agent(
@@ -296,8 +311,12 @@ def map_agent(
         raise MappingError("the baseline supports `stt.provider = \"deepgram\"` only")
     dg = _table(stt_doc, "deepgram")
     endpointing = dg.get("endpointing_ms", BRISVOX_DEEPGRAM_ENDPOINTING_MS)
-    if dg.get("region") not in (None, "global") or dg.get("base_url"):
-        raise MappingError("`stt.deepgram.region`/`base_url` are not supported by the baseline")
+    if dg.get("region") not in (None, "global"):
+        raise MappingError("`stt.deepgram.region` is not supported by the baseline")
+    stt_base_url = dg.get("base_url") or None
+    if stt_base_url is not None:
+        stt_base_url = _ws_origin(stt_base_url, "stt.deepgram.base_url")
+        notes.append(f"stt.deepgram.base_url: the Deepgram client connects to {stt_base_url}")
     stt = SttSettings(
         model=dg.get("model", BRISVOX_DEEPGRAM_MODEL),
         language=stt_doc.get("language", language),
@@ -308,6 +327,7 @@ def map_agent(
         interim_results=BRISVOX_DEEPGRAM_INTERIM_RESULTS,
         keyterms=tuple(dg.get("keyterms", ())),
         api_key_env=_key_env(stt_doc, "stt"),
+        base_url=stt_base_url,
     )
 
     llm_doc = _table(doc, "llm")
@@ -392,8 +412,14 @@ def map_agent(
     tts_doc = _table(doc, "tts")
     if tts_doc.get("provider") == "deepgram_aura":
         da = _table(tts_doc, "deepgram_aura")
+        tts_base_url = None
         if da.get("url"):
-            raise MappingError("`tts.deepgram_aura.url` is not supported by the baseline")
+            url = str(da["url"])
+            suffix = "/v1/speak"
+            if not url.rstrip("/").endswith(suffix):
+                raise MappingError(f"`tts.deepgram_aura.url` must end with {suffix} for the baseline")
+            tts_base_url = _ws_origin(url.rstrip("/")[: -len(suffix)], "tts.deepgram_aura.url")
+            notes.append(f"tts.deepgram_aura.url: Pipecat's DeepgramTTSService connects to {tts_base_url}")
         voice = tts_doc.get("voice")
         if not isinstance(voice, str) or not voice:
             raise MappingError("`tts.voice` is required (the Aura model string, e.g. aura-2-thalia-en)")
@@ -417,6 +443,7 @@ def map_agent(
                 api_key_env=_key_env(tts_doc, "tts"),
                 provider="deepgram_aura",
                 speed=da.get("speed"),
+                base_url=tts_base_url,
             ),
             notes=tuple(notes),
         )

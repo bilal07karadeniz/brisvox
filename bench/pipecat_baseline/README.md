@@ -15,6 +15,7 @@ Pipecat (`agent_mapping.py`, table below).
 | `mock_providers.py` | key-free mock STT, LLM and TTS with the `brisvox_sim` latencies and shapes, for `bot.py --mock-providers` and the capacity benchmark (below) |
 | `stage_probe.py` | a diagnostic wrapper around `bot.py`: logs the Pipecat stage timestamps (VAD stop, Smart Turn, STT final, end of turn, LLM first text, TTS first audio, first audio frame at the websocket) to `$PCTRACE_FILE`; patches Pipecat 1.12 internals, never used by the capacity runs |
 | `agent_live_en.toml`, `agent_live_tr.toml` | the agents of the live comparison on real providers: OpenRouter as the OpenAI-compatible LLM, a one-sentence prompt (the English one also pins the OpenRouter upstream with `openrouter_order`/`openrouter_allow_fallbacks`: the bot sends `extra_body={"provider": {...}}`, brisvox the same object in the request body); `tts.voice` is a placeholder, the run copy carries the id of `CARTESIA_VOICE_ID` |
+| `../fake_providers/agent.fakes.toml` | the same kind of agent pointed at the fake providers (`bench/fake_providers/README.md`): both systems run it with their real provider clients, no keys, no network |
 | `agent.toml` | the benchmark agent both systems run (`examples/agents/support-en.toml` without tools, speculation off) |
 | `requirements.txt` / `requirements.lock.txt` | direct pins / the whole dependency tree, universal (`uv pip compile --universal`) |
 | `tests/` | offline tests (no keys): protocol, mapping (checked against the Rust defaults), whole calls over a websocket |
@@ -155,6 +156,7 @@ Source of the brisvox values: `agent.toml`, else the brisvox default (the Rust c
 | `agent.tools` | none | none | brisvox-server refuses tools today; the bot refuses an agent with tools |
 | `stt.provider` / `[stt.deepgram].model` | deepgram / `nova-3` | `DeepgramSTTService`, `Settings(model="nova-3")` | Pipecat's default would be `nova-3-general` |
 | `[stt.deepgram].endpointing_ms` | 300 | `endpointing=300` | `0` (off) maps to `endpointing=False` |
+| `[stt.deepgram].base_url` | unset (Deepgram's host) | `DeepgramSTTService(base_url=...)` | `wss://host[:port]` without a path; only to run against a Deepgram-compatible server such as `bench/fake_providers`; `region` stays unsupported |
 | `[stt.deepgram].keyterms` | `["Example Shop"]` | `keyterm=["Example Shop"]` | |
 | `[stt.deepgram].smart_format` | true (default) | `smart_format=True` | Pipecat default False |
 | Deepgram `punctuate` (not configurable) | false | `punctuate=False` | Pipecat default True |
@@ -168,6 +170,7 @@ Source of the brisvox values: `agent.toml`, else the brisvox default (the Rust c
 | `[llm.openai].max_output_tokens` | 400 | `max_completion_tokens=400` (sent as `max_output_tokens`) | |
 | `[llm.openai].service_tier` | unset | `service_tier=None` | |
 | `llm.context_window_tokens`, `max_tool_rounds` | defaults | not mapped | irrelevant for the short benchmark calls |
+| `[tts.deepgram_aura].url` | unset (Deepgram's host) | `DeepgramTTSService(base_url=...)` | `wss://host[:port]/v1/speak` reduced to `wss://host[:port]` (Pipecat appends `/v1/speak` itself); for `bench/fake_providers` |
 | `tts.provider` / `[tts.cartesia].model` | cartesia / `sonic-3.6` (brisvox default) | `CartesiaTTSService`, `Settings(model="sonic-3.6")` | websocket API on both sides |
 | `tts.voice` | the voice id | `Settings(voice=...)` | identical id |
 | `tts.sample_rate` | 24000 | `sample_rate=24000` | both resample to the call's rate |
