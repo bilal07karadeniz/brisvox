@@ -550,9 +550,32 @@ def FakeResponder(fake: FakeConfig):  # noqa: N802 (a class built lazily, after 
     return _fake_responder_class()(fake)
 
 
+# Optional shared token (the listening test's public real-call process, bench/railway): when set,
+# a call must present it like a brisvox client does, as the subprotocol `brisvox-token.<token>` (a
+# browser) or `?token=`; otherwise the upgrade is refused (HTTP 403). Unset: open, as before.
+ACCESS_TOKEN_ENV = "BOT_ACCESS_TOKEN"
+
+
+def _token_ok(websocket: WebSocket) -> bool:
+    expected = os.environ.get(ACCESS_TOKEN_ENV, "")
+    if not expected:
+        return True
+    presented = websocket.query_params.get("token", "")
+    for proto in websocket.scope.get("subprotocols", []):
+        if proto.startswith("brisvox-token."):
+            presented = proto[len("brisvox-token.") :]
+    import hmac
+
+    return hmac.compare_digest(presented.encode(), expected.encode())
+
+
 async def run_call(websocket: WebSocket, config: BotConfig) -> None:
     """One call: the handshake, then the pipeline until the call ends."""
-    await websocket.accept()
+    if not _token_ok(websocket):
+        await websocket.close(code=1008)
+        return
+    offered = websocket.scope.get("subprotocols", [])
+    await websocket.accept(subprotocol="brisvox" if "brisvox" in offered else None)
     try:
         first = await asyncio.wait_for(_receive_first(websocket), START_TIMEOUT_SECS)
         start = parse_start(first, fallback_call_id=uuid.uuid4().hex)

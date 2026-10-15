@@ -1,0 +1,218 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Listening test</title>
+<style>
+  :root { --bg:#f6f7f9; --card:#fff; --text:#16181d; --muted:#5d6470; --line:#dde1e7; --accent:#2f6fec; --bad:#c23b31; --good:#1f8a4c; --warn:#b7791f; }
+  @media (prefers-color-scheme: dark) { :root { --bg:#111317; --card:#1a1d23; --text:#e8eaee; --muted:#9aa2ae; --line:#2b3039; --accent:#6b9bff; --bad:#ff7b70; --good:#5fd38f; --warn:#f0b357; } }
+  * { box-sizing: border-box; }
+  body { margin:0; background:var(--bg); color:var(--text); font:15px/1.45 system-ui, -apple-system, "Segoe UI", sans-serif; }
+  main { max-width:1100px; margin:0 auto; padding:20px 16px 40px; }
+  h1 { font-size:20px; margin:0 0 4px; }
+  p.lead { color:var(--muted); margin:0 0 18px; }
+  .grid { display:grid; grid-template-columns:repeat(auto-fit, minmax(320px, 1fr)); gap:16px; }
+  .card { background:var(--card); border:1px solid var(--line); border-radius:10px; padding:16px; }
+  .card h2 { margin:0 0 10px; font-size:18px; display:flex; justify-content:space-between; align-items:baseline; }
+  .card h2 small { font-weight:400; color:var(--muted); font-size:13px; }
+  .section { border-top:1px solid var(--line); padding-top:10px; margin-top:12px; }
+  .section h3 { margin:0 0 8px; font-size:13px; text-transform:uppercase; letter-spacing:.04em; color:var(--muted); }
+  .row { display:flex; flex-wrap:wrap; gap:6px; align-items:center; }
+  button { font:inherit; border:1px solid var(--line); background:transparent; color:var(--text); border-radius:7px; padding:5px 11px; cursor:pointer; }
+  button:hover { border-color:var(--accent); }
+  button.primary { background:var(--accent); border-color:var(--accent); color:#fff; padding:8px 14px; }
+  button.primary.hang { background:var(--bad); border-color:var(--bad); }
+  button.on { border-color:var(--accent); color:var(--accent); font-weight:600; }
+  input[type=number], input[type=password] { font:inherit; width:90px; padding:5px 8px; border:1px solid var(--line); border-radius:7px; background:transparent; color:var(--text); }
+  .stats { display:grid; grid-template-columns:repeat(3, 1fr); gap:8px; }
+  .stat { border:1px solid var(--line); border-radius:8px; padding:6px 8px; }
+  .stat b { display:block; font-size:18px; font-variant-numeric:tabular-nums; }
+  .stat span { font-size:12px; color:var(--muted); }
+  .bar { height:6px; background:var(--line); border-radius:3px; overflow:hidden; margin-top:4px; }
+  .bar i { display:block; height:100%; background:var(--accent); width:0; transition:width .4s; }
+  .bad { color:var(--bad); } .good { color:var(--good); } .warn { color:var(--warn); }
+  .muted { color:var(--muted); font-size:13px; }
+  .err { color:var(--bad); font-size:12px; word-break:break-word; margin-top:6px; }
+  .meters { display:grid; grid-template-columns:40px 1fr; gap:4px 8px; align-items:center; font-size:12px; color:var(--muted); margin-top:8px; }
+  #keybox { display:none; margin-bottom:16px; }
+</style>
+</head>
+<body>
+<main>
+  <h1>Listening test: brisvox vs Pipecat</h1>
+  <p class="lead">Each server runs in its own container with 4 vCPU and 4 GB. Synthetic callers load
+    the container through fake providers (no API cost). Your call in the same container uses the real
+    providers (Deepgram STT, OpenRouter LLM, Deepgram Aura voice). Raise the load and listen for the point
+    where answers get slow or choppy.</p>
+  <div id="keybox" class="card">
+    <div class="row">Access key: <input id="key" type="password" style="width:260px"> <button id="keysave">Open</button></div>
+  </div>
+  <div id="targets" class="grid"></div>
+  <p class="muted" style="margin-top:18px">Synthetic numbers cover the last 30 s. V2V is the time from the
+    end of the caller's speech to the first audible reply, measured by the load generator. "Your last
+    replies" is measured in this browser from the microphone and speaker levels (approximate, includes the
+    network to the server).</p>
+</main>
+<script type="module">
+import { BrisvoxCall } from "/brisvox-call.js";
+
+const PRESETS = { brisvox: [0, 50, 100, 150, 200, 250, 300], pipecat: [0, 5, 10, 15, 20, 25] };
+const params = new URLSearchParams(location.search);
+let key = params.get("key") || "";
+try { key = key || sessionStorage.getItem("holdKey") || ""; } catch {}
+if (params.get("key")) { try { sessionStorage.setItem("holdKey", key); } catch {} history.replaceState(null, "", location.pathname); }
+
+const api = (path, init = {}) => fetch(path, { ...init, headers: { "X-Hold-Key": key } });
+const $ = (sel, el = document) => el.querySelector(sel);
+const fmtMs = (v) => (v === null || v === undefined ? "–" : `${v} ms`);
+const cards = {};
+
+async function boot() {
+  const res = await api("/api/config");
+  if (res.status === 403) {
+    $("#keybox").style.display = "block";
+    $("#keysave").onclick = () => { key = $("#key").value.trim(); try { sessionStorage.setItem("holdKey", key); } catch {} location.reload(); };
+    return;
+  }
+  const config = await res.json();
+  for (const t of config.targets) cards[t.name] = makeCard(t);
+  poll();
+  setInterval(poll, 2000);
+}
+
+function makeCard(t) {
+  const el = document.createElement("section");
+  el.className = "card";
+  const presets = PRESETS[t.name] || [0, 10, 50, 100];
+  el.innerHTML = `
+    <h2>${t.label} <small class="srv">container: –</small></h2>
+    <div class="stats">
+      <div class="stat"><span>CPU (cores)</span><b class="cpu">–</b><div class="bar"><i class="cpubar"></i></div></div>
+      <div class="stat"><span>Memory</span><b class="mem">–</b><div class="bar"><i class="membar"></i></div></div>
+      <div class="stat"><span>Synthetic calls</span><b class="calls">0</b></div>
+    </div>
+    <div class="section"><h3>Synthetic load</h3>
+      <div class="row presets">${presets.map((n) => `<button data-n="${n}">${n}</button>`).join("")}
+        <input type="number" min="0" max="2000" class="custom" placeholder="N"> <button class="setn">Set</button></div>
+    </div>
+    <div class="section"><h3>Synthetic callers, last 30 s</h3>
+      <div class="stats">
+        <div class="stat"><span>V2V p50</span><b class="p50">–</b></div>
+        <div class="stat"><span>V2V p95</span><b class="p95">–</b></div>
+        <div class="stat"><span>V2V max</span><b class="pmax">–</b></div>
+        <div class="stat"><span>Answered turns</span><b class="ans">0</b></div>
+        <div class="stat"><span>Missed turns</span><b class="miss">0</b></div>
+        <div class="stat"><span>Failed calls</span><b class="fail">0</b></div>
+        <div class="stat"><span>Refused dials (server full)</span><b class="refused">0</b></div>
+      </div>
+      <div class="err lasterr"></div>
+    </div>
+    <div class="section"><h3>Your call (real providers)</h3>
+      <div class="row"><button class="primary callbtn">Call ${t.label}</button> <span class="callstate muted">idle</span></div>
+      <div class="meters"><span>mic</span><div class="bar"><i class="micbar"></i></div><span>bot</span><div class="bar"><i class="botbar"></i></div></div>
+      <div class="muted" style="margin-top:8px">Your last replies: <span class="lat">–</span></div>
+    </div>`;
+  $("#targets").appendChild(el);
+  el.querySelectorAll(".presets button[data-n]").forEach((b) => (b.onclick = () => setLoad(t.name, Number(b.dataset.n))));
+  $(".setn", el).onclick = () => { const n = Number($(".custom", el).value); if (Number.isInteger(n) && n >= 0) setLoad(t.name, n); };
+  setupCall(t, el);
+  return el;
+}
+
+async function setLoad(name, n) {
+  const res = await api(`/api/load?target=${encodeURIComponent(name)}&n=${n}`, { method: "POST" });
+  if (!res.ok) alertInCard(name, `could not set the load (${res.status})`);
+  poll();
+}
+function alertInCard(name, text) { const el = cards[name]; if (el) $(".lasterr", el).textContent = text; }
+
+async function poll() {
+  let s;
+  try { s = await (await api("/api/stats")).json(); } catch { return; }
+  for (const t of s.targets) {
+    const el = cards[t.name];
+    if (!el) continue;
+    $(".calls", el).textContent = `${t.in_call} / ${t.desired}`;
+    el.querySelectorAll(".presets button[data-n]").forEach((b) => b.classList.toggle("on", Number(b.dataset.n) === t.desired));
+    $(".p50", el).textContent = fmtMs(t.v2v_p50_ms);
+    $(".p95", el).textContent = fmtMs(t.v2v_p95_ms);
+    $(".pmax", el).textContent = fmtMs(t.v2v_max_ms);
+    const p95 = $(".p95", el);
+    p95.className = "p95 " + (t.v2v_p95_ms === null ? "" : t.v2v_p95_ms > 2500 ? "bad" : t.v2v_p95_ms > 1500 ? "warn" : "good");
+    $(".ans", el).textContent = t.turns_answered;
+    $(".miss", el).textContent = t.turns_missed;
+    $(".miss", el).className = "miss " + (t.turns_missed > 0 ? "bad" : "");
+    $(".fail", el).textContent = t.calls_failed;
+    $(".fail", el).className = "fail " + (t.calls_failed > 0 ? "bad" : "");
+    $(".refused", el).textContent = t.calls_refused;
+    $(".refused", el).className = "refused " + (t.calls_refused > 0 ? "warn" : "");
+    $(".lasterr", el).textContent = t.last_error ? `last error: ${t.last_error}` : "";
+    const srv = t.server || {};
+    if (srv.error) { $(".srv", el).textContent = `container stats: ${srv.error}`; continue; }
+    const limit = srv.cpu_limit || 4;
+    if (typeof srv.cpu_cores === "number") {
+      $(".cpu", el).textContent = `${srv.cpu_cores.toFixed(2)} / ${limit.toFixed(0)}`;
+      $(".cpubar", el).style.width = `${Math.min(100, (100 * srv.cpu_cores) / limit)}%`;
+    }
+    if (typeof srv.memory_bytes === "number") {
+      const mb = srv.memory_bytes / 1048576;
+      const lim = srv.memory_limit ? srv.memory_limit / 1048576 : 4096;
+      $(".mem", el).textContent = `${mb.toFixed(0)} MB`;
+      $(".membar", el).style.width = `${Math.min(100, (100 * mb) / lim)}%`;
+    }
+    $(".srv", el).textContent = `container: ${srv.processes ?? "?"} processes (${srv.source ?? "?"})`;
+  }
+}
+
+function setupCall(t, el) {
+  const btn = $(".callbtn", el), state = $(".callstate", el);
+  let call = null, timer = null;
+  const lat = [];
+  btn.onclick = async () => {
+    if (call) { await call.hangup(); return; }
+    lat.length = 0; $(".lat", el).textContent = "–";
+    call = new BrisvoxCall({
+      serverUrl: t.call_url,
+      token: t.call_token || undefined,
+      transport: "websocket",
+      onEvent(event) {
+        if (event.type === "state") {
+          state.textContent = event.state;
+          if (event.state === "connected") { btn.textContent = "Hang up"; btn.classList.add("hang"); startMeter(); }
+          if (event.state === "ended" || event.state === "failed") {
+            call = null; btn.textContent = `Call ${t.label}`; btn.classList.remove("hang"); clearInterval(timer);
+          }
+        }
+        if (event.type === "error") state.textContent = `failed: ${event.message}`;
+      },
+    });
+    try { await call.start(); } catch {}
+  };
+  // Reply latency from the levels: the end of your speech (mic quiet for 300 ms after speech) to the
+  // first bot audio after it.
+  function startMeter() {
+    let speaking = false, lastLoud = 0, waiting = false, endAt = 0;
+    clearInterval(timer);
+    timer = setInterval(() => {
+      if (!call) return;
+      const { mic, bot } = call.getLevels();
+      $(".micbar", el).style.width = `${Math.min(100, mic * 300)}%`;
+      $(".botbar", el).style.width = `${Math.min(100, bot * 300)}%`;
+      const now = performance.now();
+      if (mic > 0.03 && bot < 0.02) { speaking = true; lastLoud = now; waiting = false; }
+      if (speaking && now - lastLoud > 300) { speaking = false; waiting = true; endAt = lastLoud; }
+      if (waiting && bot > 0.02) {
+        waiting = false;
+        lat.unshift(Math.round(now - endAt));
+        lat.length = Math.min(lat.length, 6);
+        $(".lat", el).textContent = lat.map((v) => `${v} ms`).join(", ");
+      }
+    }, 20);
+  }
+}
+
+boot();
+</script>
+</body>
+</html>
