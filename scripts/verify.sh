@@ -187,8 +187,12 @@ echo "== release"
 # the workflows parse with every third-party action pinned to a commit SHA.
 "$PY" scripts/check_release.py
 echo "== tests"
+# CI (GitHub Actions sets CI=true) uses the nextest `ci` profile: the real-time capacity tests are
+# retried twice there (.config/nextest.toml); locally they are strict.
+NEXTEST_PROFILE=default
+if [ "${CI:-}" = "true" ]; then NEXTEST_PROFILE=ci; fi
 if command -v cargo-nextest >/dev/null 2>&1; then
-  cargo nextest run --workspace --all-features
+  cargo nextest run --profile "$NEXTEST_PROFILE" --workspace --all-features
   cargo test --workspace --doc --all-features
 else
   cargo test --workspace --all-features
@@ -199,7 +203,7 @@ echo "== server without optional features"
 # recording tests that cover them (the variable without the feature is a startup error).
 cargo clippy -p brisvox-server --all-targets -- -D warnings
 if command -v cargo-nextest >/dev/null 2>&1; then
-  cargo nextest run -p brisvox-server -E 'test(/privacy|recording/) | binary(cli)'
+  cargo nextest run --profile "$NEXTEST_PROFILE" -p brisvox-server -E 'test(/privacy|recording/) | binary(cli)'
 else
   cargo test -p brisvox-server privacy
   cargo test -p brisvox-server recording

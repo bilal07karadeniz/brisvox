@@ -14,3 +14,28 @@ fail-fast = false
 [[profile.default.overrides]]
 filter = 'test(a_hundred_chaotic_calls_stay_isolated_and_leave_nothing_behind)'
 slow-timeout = { period = "120s", terminate-after = 3 }
+
+# --- real-time capacity tests (T-132.1) --------------------------------------------------------
+# A few tests run calls in real time on the system clock and assert how the machine copes: no
+# VAD job past its 250 ms budget, a worker never stalled for long, a verdict ready before the stop
+# arrives. They hold on a quiet development machine and are capacity measurements, not
+# correctness: on a shared 4-vCPU CI runner an OS time slice (or a neighbouring job) can make one
+# job miss its budget although the engine did exactly the right thing (it rebuilds the VAD
+# stream and goes on). Their assertions stay strict. Two measures keep them honest and green:
+#   1. they run ALONE (`threads-required = "num-test-threads"` reserves every test slot, so no
+#      other test competes for the CPUs while they measure), here for every profile;
+#   2. the `ci` profile retries each of them twice (a real regression fails all three attempts;
+#      a runner hiccup does not). Retried passes are reported as FLAKY in the log.
+# (hot_path_cost and the normalizer's cost tests are wall-clock budgets of µs-scale work.)
+# Add a test to the filterset only after showing that its assertion is about capacity and that it
+# fails here only under CPU contention (docs/TESTING.md, "Lessons").
+[[profile.default.overrides]]
+filter = 'test(twenty_real_time_calls_keep_heavy_work_on_the_pool) | test(early_analysis_cuts_the_stop_to_verdict_latency_in_the_real_pipeline) | binary(hot_path_cost) | test(cost_grows_linearly_with_the_input) | test(a_typical_chunk_costs_microseconds_not_milliseconds)'
+threads-required = "num-test-threads"
+
+[profile.ci]
+inherits = "default"
+
+[[profile.ci.overrides]]
+filter = 'test(twenty_real_time_calls_keep_heavy_work_on_the_pool) | test(early_analysis_cuts_the_stop_to_verdict_latency_in_the_real_pipeline) | binary(hot_path_cost) | test(cost_grows_linearly_with_the_input) | test(a_typical_chunk_costs_microseconds_not_milliseconds)'
+retries = 2

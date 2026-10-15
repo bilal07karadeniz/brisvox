@@ -33,7 +33,7 @@ use brisvox_transport::{
 use bytes::Bytes;
 use futures::{SinkExt, StreamExt};
 use serde_json::{Value, json};
-use tokio::net::TcpStream;
+use tokio::net::{TcpSocket, TcpStream};
 use tokio_tungstenite::tungstenite::Error as WsError;
 use tokio_tungstenite::tungstenite::Message;
 use tokio_tungstenite::tungstenite::client::IntoClientRequest;
@@ -385,6 +385,26 @@ impl Rig {
         Browser::new(self.try_connect(PATH, None).await.expect("connect failed"))
     }
 
+    /// A browser whose socket has a tiny receive buffer: once it stops reading, the connection
+    /// is full after a few kilobytes on every machine. The default buffers are autotuned by the
+    /// kernel (megabytes on Linux, far less on Windows), grow and drain while the test runs, and
+    /// made the number of messages that fit behind a client that does not read depend on the
+    /// machine and on its load.
+    async fn small_buffer_browser(&self) -> Browser {
+        let socket = TcpSocket::new_v4().unwrap();
+        socket.set_recv_buffer_size(4096).unwrap();
+        let stream = socket.connect(self.server.local_addr()).await.unwrap();
+        let request = self.url(PATH).into_client_request().unwrap();
+        let (ws, _) = tokio::time::timeout(
+            WAIT,
+            tokio_tungstenite::client_async(request, MaybeTlsStream::Plain(stream)),
+        )
+        .await
+        .expect("upgrade timed out")
+        .expect("upgrade failed");
+        Browser::new(ws)
+    }
+
     /// The next call, with its RTVI channels and an engine-side session already opened.
     async fn accept(&mut self) -> Engine {
         let cancel = CancellationToken::new();
@@ -417,7 +437,17 @@ impl Rig {
     /// Connects, completes the handshake and accepts the call. The `Started` event and the
     /// `bot-ready` answer have been read.
     async fn pair(&mut self) -> (Browser, Engine) {
-        let mut browser = self.browser().await;
+        let browser = self.browser().await;
+        self.finish_pair(browser).await
+    }
+
+    /// [`pair`](Self::pair) with a [`small_buffer_browser`](Self::small_buffer_browser).
+    async fn pair_small_buffer(&mut self) -> (Browser, Engine) {
+        let browser = self.small_buffer_browser().await;
+        self.finish_pair(browser).await
+    }
+
+    async fn finish_pair(&mut self, mut browser: Browser) -> (Browser, Engine) {
         let id = browser.client_ready().await;
         let mut engine = self.accept().await;
         let started = next_event(&mut engine.session, |e| {
@@ -2052,7 +2082,7 @@ async fn a_client_that_stops_reading_ends_the_call_after_the_write_timeout() {
         ..fast_server()
     };
     let mut rig = Rig::start(server, fast_rtvi()).await;
-    let (browser, mut engine) = rig.pair().await; // `browser` never reads from here on
+    let (browser, mut engine) = rig.pair_small_buffer().await; // `browser` never reads from here on
     let error = flood(&engine.sender).await;
     assert!(
         matches!(
@@ -2075,7 +2105,7 @@ async fn a_full_event_queue_makes_the_sender_time_out() {
         ..fast_server()
     };
     let mut rig = Rig::start(server, fast_rtvi()).await;
-    let (browser, engine) = rig.pair().await;
+    let (browser, engine) = rig.pair_small_buffer().await;
     let error = flood(&engine.sender).await;
     assert!(
         matches!(
@@ -2151,13 +2181,45 @@ async fn replies_beyond_the_reply_queue_are_dropped_while_the_writer_is_blocked(
         ..fast_server()
     };
     let mut rig = Rig::start(server, fast_rtvi()).await;
-    let (mut browser, engine) = rig.pair().await;
+    let (mut browser, engine) = rig.pair_small_buffer().await;
     // Block the writer behind a client that is not reading yet.
     flood(&engine.sender).await;
+    // The flood only proves the sender's queue is full, not that the writer is stuck in the
+    // socket: on a loaded machine the writer can still be working through that queue, and a
+    // reply it then takes is one more than the 16 slots (it is in the writer's hands, blocked
+    // in the write). Replies are only sent once the writer has made no progress for 300 ms.
+    let mut quiet = 0;
+    let mut written = rig.server.stats().messages_out;
+    for _ in 0..100 {
+        if quiet >= 3 {
+            break;
+        }
+        pause(Duration::from_millis(100)).await;
+        let now = rig.server.stats().messages_out;
+        quiet = if now == written { quiet + 1 } else { 0 };
+        written = now;
+    }
+    assert!(quiet >= 3, "the writer never settled behind the flood");
+    let read_before = rig.server.stats().messages_in;
     for _ in 0..100 {
         browser.rtvi("send-text", json!({})).await; // bad data: one error-response each
     }
-    pause(Duration::from_millis(200)).await;
+    // A request the inbox takes (no reply) is counted once the reader reaches it; the reader
+    // handles messages in order, so by then every reply was queued or dropped before the client
+    // starts reading.
+    browser
+        .rtvi("client-message", json!({"t": "sentinel"}))
+        .await;
+    for _ in 0..100 {
+        if rig.server.stats().messages_in > read_before {
+            break;
+        }
+        pause(Duration::from_millis(50)).await;
+    }
+    assert!(
+        rig.server.stats().messages_in > read_before,
+        "the server did not read the 100 requests"
+    );
     let mut replies = 0;
     while let Some(incoming) = recv_within(&mut browser, Duration::from_millis(500)).await {
         if let Incoming::Rtvi(value) = incoming

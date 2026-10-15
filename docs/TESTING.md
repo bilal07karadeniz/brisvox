@@ -112,6 +112,28 @@ here). CI images (`ubuntu-latest`, `windows-latest`) ship cmake and a C compiler
   sends must let the runtime run); the scheduler's lazily allocated defer list (one allocation the
   first time a task yields: warm it before counting); work started "together" that is only
   ordered by thread start-up (wait for the first job to run before filling the queue behind it).
+- Tests that fail only on a busy runner (T-132.1; reproduce with `docker run --cpuset-cpus=0,1` plus
+  busy loops, and `--stress-count`): (1) "a client that does not read" tests with real sockets set
+  a tiny `SO_RCVBUF` on the client they own (`TcpSocket::set_recv_buffer_size` before `connect`,
+  see `websocket.rs`, `rtvi.rs`): the kernel's autotuned buffers grow and drain while the test
+  runs, which let one more reply through (17 for 16 slots) only under load; where the client is
+  the adapter under test (providers) the script is sized from the machine's buffer maxima
+  (`brisvox_sim::platform::loopback_buffer_bytes`) instead. A test that blocks a writer waits
+  until the writer made no progress, not until a queue happened to fill. (2) Real-time CAPACITY
+  tests (`realtime_load`, `early_analysis_realtime`'s latency test) assert how the machine copes,
+  not what the engine does: they keep their strict assertions, run alone (nextest
+  `threads-required = "num-test-threads"`) and are retried twice in the `ci` profile
+  (`.config/nextest.toml`, `scripts/verify.sh` uses it when `CI=true`); a retried pass shows as
+  FLAKY in the log. Correctness assertions are never retried: add a test to that filterset only
+  after showing that it fails on a loaded machine and that the engine's behaviour was right.
+  (3) Statistics of a model on synthetic inputs (the early-analysis cut sweep) belong to the
+  platform's kernels like the goldens do: strict where the reference runs, the safe direction
+  pinned everywhere.
+  (4) A raw-protocol test peer behaves like the real peer or the test is racy: the SIP `Carrier`
+  of `hosting.rs` acknowledged the 200 once, and `rsipstack` can miss an ACK that arrives within
+  100 us of its 200 (13 of 600 runs under CPU load, then a 10 s wait); a real UAC re-ACKs every
+  retransmitted 200, so the carrier repeats its ACK. And a test that reads a mock's record right
+  after the adapter's stream ended must wait for the last message (`eventually`).
 
 ## Session simulation
 - `brisvox_sim::scenario`: a `Scenario` (`speak(text, duration)`, `silence(duration)`) is the

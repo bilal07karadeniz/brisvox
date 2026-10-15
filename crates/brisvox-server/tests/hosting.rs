@@ -867,7 +867,7 @@ mod sip {
 
     /// A carrier placing one call: raw SIP text over UDP, an RTP socket that only receives.
     pub struct Carrier {
-        sip: UdpSocket,
+        sip: std::sync::Arc<UdpSocket>,
         rtp: UdpSocket,
         server: SocketAddr,
         call_id: String,
@@ -901,7 +901,7 @@ mod sip {
 
     impl Carrier {
         pub async fn new(server: SocketAddr) -> Self {
-            let sip = UdpSocket::bind("127.0.0.1:0").await.unwrap();
+            let sip = std::sync::Arc::new(UdpSocket::bind("127.0.0.1:0").await.unwrap());
             let rtp = UdpSocket::bind("127.0.0.1:0").await.unwrap();
             let port = sip.local_addr().unwrap().port();
             Self {
@@ -999,7 +999,21 @@ mod sip {
             self.to_tag = reply.to_tag();
             let ack = self.request("ACK", self.cseq, None);
             self.send(&ack).await;
-            if reply.status != 200 {
+            if reply.status == 200 {
+                // A UAC acknowledges every retransmission of the 200 (RFC 3261, 13.2.2.4); this
+                // carrier does not read the socket between the calls of a test, so it repeats
+                // the ACK on the stack's retransmission cadence. A stack can miss an ACK that
+                // arrives within microseconds of its 200 (rsipstack: before the server
+                // transaction entered its Accepted state; seen 13 in 600 under CPU load), and
+                // the call would then wait for an ACK that no honest carrier fails to repeat.
+                let (sip, server) = (std::sync::Arc::clone(&self.sip), self.server);
+                tokio::spawn(async move {
+                    for wait in [600, 1000] {
+                        pause(Duration::from_millis(wait)).await;
+                        let _ = sip.send_to(ack.as_bytes(), server).await;
+                    }
+                });
+            } else {
                 self.to_tag = saved;
             }
             reply

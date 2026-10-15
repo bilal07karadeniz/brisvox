@@ -338,9 +338,29 @@ fn the_verdict_is_stable_under_the_silence_between_the_hint_and_the_stop() {
         grid.agree * 100 >= grid.pairs * 95,
         "real utterance ends: {grid:?}"
     );
+    // The abrupt cuts (the end of a thin slice of speech, then zeros) sit on the model's decision
+    // edge, and WHERE the edge is depends on the ONNX Runtime kernels: the int8 model is chaotic
+    // in the last bit (docs/providers/smart-turn.md, "Platform dependence"). The 80% measured
+    // above belongs to the reference platform (23 pairs: 20 agree, 87%, on Linux with VNNI; 90%
+    // on Windows). Without that platform's kernels the same cuts gave 17 of 23 (74%, six
+    // borderline pairs of which five flip, all of them "incomplete early, complete at the
+    // stop"), identical on a GitHub runner and on an emulated Haswell, Skylake-X and EPYC. There
+    // the bound is looser and the direction is pinned instead: an early verdict never says
+    // "complete" where the verdict at the stop says "incomplete" (the one flip that would end a
+    // turn too soon), on every platform.
+    assert_eq!(
+        sweep.early_only_complete, 0,
+        "an early verdict completed a turn the stop verdict did not: {sweep:?}"
+    );
+    assert_eq!(grid.early_only_complete, 0, "{grid:?}");
+    let least_agreement = if brisvox_sim::platform::smart_turn_goldens_apply_here() {
+        80
+    } else {
+        60
+    };
     assert!(
-        sweep.agree * 100 >= sweep.pairs * 80,
-        "cuts with zeros appended: {sweep:?}"
+        sweep.agree * 100 >= sweep.pairs * least_agreement,
+        "cuts with zeros appended: {sweep:?} (at least {least_agreement}% must agree)"
     );
 }
 

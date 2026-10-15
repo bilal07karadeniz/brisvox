@@ -1151,10 +1151,24 @@ async fn cancel_purges_events_the_adapter_still_holds_for_a_slow_consumer() {
 #[tokio::test]
 async fn a_consumer_that_does_not_read_holds_the_server_back_after_a_bounded_amount() {
     const FRAME: usize = 8000;
-    const WORDS: usize = 16;
-    // 16 words of 2 MB each (62.5 s at 16 kHz PCM16): 32 MB, far above any socket buffers.
+    // What the sockets alone absorb of data nobody reads depends on the operating system and
+    // the machine: under 1000 frames on Windows loopback (a quarter of the script), and on Linux
+    // up to the kernel's autotuned buffer maxima (1044 frames seen on a development machine,
+    // `loopback_buffer_bytes` is ~10 MiB there; a GitHub runner's maxima add up to ~37 MiB, so
+    // 4700 frames). The adapter's own queue and channel add 128 frames. The client's receive
+    // buffer belongs to the adapter's socket, so the test cannot make it small (the tests that
+    // own both ends do: websocket.rs, rtvi.rs). Instead the script is always more than twice the
+    // bound, so an adapter that drained the socket into an unbounded queue (everything sent)
+    // still fails it on every machine.
+    let bound = if cfg!(target_os = "linux") {
+        brisvox_sim::platform::loopback_buffer_bytes() / FRAME + 192
+    } else {
+        1000
+    };
+    // Words of 2 MB each (62.5 s at 16 kHz PCM16), at least 16 (32 MB).
     let word_bytes = 2_000_000_usize;
-    let total_frames = WORDS * word_bytes / FRAME;
+    let words_count = (2 * bound * FRAME).div_ceil(word_bytes).max(15) + 1;
+    let total_frames = words_count * word_bytes / FRAME;
     let mock = Mock::start();
     mock.configure(|c| {
         c.interval = Duration::ZERO;
@@ -1162,7 +1176,7 @@ async fn a_consumer_that_does_not_read_holds_the_server_back_after_a_bounded_amo
         c.word_secs = 62.5;
     });
     let mut session = open(&mock).await;
-    let words = ["w"; WORDS].join(" ");
+    let words = vec!["w"; words_count].join(" ");
     session.input.send(text(1, &words)).await.unwrap();
     session.input.send(flush(1)).await.unwrap();
     // Nobody reads. The server is blocked as soon as the adapter's queue (64), the channel
@@ -1180,15 +1194,6 @@ async fn a_consumer_that_does_not_read_holds_the_server_back_after_a_bounded_amo
     let plateau = mock.frames_sent();
     tokio::time::sleep(ms(300)).await;
     assert_eq!(mock.frames_sent(), plateau, "the server is still sending");
-    // What the sockets absorb depends on the operating system: under 1000 frames on Windows
-    // loopback (a quarter of the script), up to the kernel's autotuned buffer maximum on Linux
-    // (1044 frames seen; `loopback_buffer_bytes` is ~10 MiB there). The adapter's own queue and
-    // channel add 128 frames. The script (4000 frames) stays well above twice the bound.
-    let bound = if cfg!(target_os = "linux") {
-        brisvox_sim::platform::loopback_buffer_bytes() / FRAME + 192
-    } else {
-        total_frames / 4
-    };
     assert!(
         plateau < bound && bound * 2 < total_frames,
         "{plateau} of {total_frames} frames were sent to a consumer that reads nothing (bound \
@@ -1196,7 +1201,7 @@ async fn a_consumer_that_does_not_read_holds_the_server_back_after_a_bounded_amo
     );
     // Nothing is lost once the consumer reads again.
     let utterance = until_flushed_within(&mut session.events, 1, 10_000).await;
-    assert_eq!(utterance.audio.len(), WORDS * word_bytes);
+    assert_eq!(utterance.audio.len(), words_count * word_bytes);
 }
 
 #[tokio::test]
@@ -1980,6 +1985,11 @@ async fn dropping_the_input_without_a_flush_flushes_silently_and_ends_the_stream
         }
     }
     assert_eq!(runs(&audio), [('a', WORD), ('b', WORD), ('g', WORD)]);
+    // The stream ends before the mock has necessarily read the Close that follows it.
+    eventually("the Close message", || {
+        mock.received_types().last().map(String::as_str) == Some("Close")
+    })
+    .await;
     assert_eq!(
         mock.received_types(),
         ["Speak", "Flush", "Speak", "Flush", "Close"]
