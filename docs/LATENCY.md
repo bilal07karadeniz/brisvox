@@ -1954,6 +1954,27 @@ brisvox-bench v2v --url ws://127.0.0.1:8100/call --fixtures en_two_utterances --
 PCTRACE_FILE=/tmp/pc.txt python bench/pipecat_baseline/stage_probe.py --mock-providers --mock-models real --port 8102 [--vad-stop-ms 128]
 ```
 
+## Capacity on Railway with the real provider path (measured 2026-10-15)
+
+The capacity benchmarks above use in-process mock providers. On Railway (4 vCPU / 4 GB per
+server container) the synthetic calls of the listening test (`bench/railway/README.md`) go
+through each system's real provider clients, TLS and wire formats against the fake providers
+(`bench/fake_providers`), with Silero and Smart Turn. One run per step; full table and caveats:
+`bench/results/railway-listening-2026-10-15.md`.
+
+| | brisvox | Pipecat 1.12 (4 workers) |
+|---|---|---|
+| V2V p95 at the fakes' floor (~860 ms) + 15 ms | up to 150 calls | never (1.4 s at 5 calls) |
+| V2V p95 under 1.5 s | up to 250 calls | up to 5 calls (1.7 s at 10) |
+| first sign of trouble | 300 calls: CPU used up, new dials refused (503), late turns end on the fallback silence | 10 calls: memory at the limit; 15 calls: workers restarted, calls dropped |
+| container memory at that point | 0.5 GB | 3.7 GB |
+
+The real provider path costs brisvox more CPU per call than the mocks (about 200 to 250 calls
+before the tail grows, against 325 with the mocks and the models, "Capacity with the models"); its
+memory stays near the mock numbers. This run also found the pool-pressure guard refusing calls
+during bursts of dials on an idle pool; the queue depth now has to stay over its limit for 100 ms
+(`BRISVOX_OVERLOAD_QUEUE_CONFIRM`, `docs/OPERATIONS.md`).
+
 ## Model CPU per call: Smart Turn threading and the Silero backend (measured 2026-10-13)
 
 **Result in one line: the defaults did not change.** Turning ONNX Runtime's intra-op spinning off

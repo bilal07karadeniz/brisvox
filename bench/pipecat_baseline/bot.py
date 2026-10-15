@@ -31,6 +31,7 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import hmac
 import json
 import math
 import os
@@ -564,8 +565,6 @@ def _token_ok(websocket: WebSocket) -> bool:
     for proto in websocket.scope.get("subprotocols", []):
         if proto.startswith("brisvox-token."):
             presented = proto[len("brisvox-token.") :]
-    import hmac
-
     return hmac.compare_digest(presented.encode(), expected.encode())
 
 

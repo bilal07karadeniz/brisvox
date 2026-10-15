@@ -274,3 +274,22 @@ class Calls(unittest.IsolatedAsyncioTestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class AccessTokenTest(unittest.TestCase):
+    """``BOT_ACCESS_TOKEN``: unset leaves the bot open; set, a call needs the token."""
+
+    class _Ws:
+        def __init__(self, query=None, subprotocols=()):
+            self.query_params = query or {}
+            self.scope = {"subprotocols": list(subprotocols)}
+
+    def test_the_token_travels_as_subprotocol_or_query(self):
+        with mock.patch.dict(os.environ, {bot.ACCESS_TOKEN_ENV: ""}):
+            self.assertTrue(bot._token_ok(self._Ws()))
+        with mock.patch.dict(os.environ, {bot.ACCESS_TOKEN_ENV: "s3cret"}):
+            self.assertFalse(bot._token_ok(self._Ws()))
+            self.assertFalse(bot._token_ok(self._Ws({"token": "wrong"})))
+            self.assertFalse(bot._token_ok(self._Ws(subprotocols=["brisvox", "brisvox-token.s3cre"])))
+            self.assertTrue(bot._token_ok(self._Ws({"token": "s3cret"})))
+            self.assertTrue(bot._token_ok(self._Ws(subprotocols=["brisvox", "brisvox-token.s3cret"])))

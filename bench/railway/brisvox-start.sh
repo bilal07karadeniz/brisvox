@@ -5,6 +5,7 @@
 #         (a clean environment: it never sees a real key);
 #   real: the owner's call from the browser, public $PORT, real providers.
 set -eu
+: "${CALL_TOKEN:?CALL_TOKEN must be set}" "${LOAD_TOKEN:?LOAD_TOKEN must be set}"
 
 FAKES=${FAKES_HOST:-fakes.railway.internal}
 until curl -fsS "http://$FAKES:8080/ca.pem" -o /tmp/fakes-ca.pem; do

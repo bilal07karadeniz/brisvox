@@ -209,8 +209,14 @@ async fn poll_server(hold: Arc<Hold>, target: Arc<Target>) {
     loop {
         let body =
             match tokio::time::timeout(Duration::from_secs(3), http_get(&target.stats_url)).await {
-                Ok(Ok(body)) if body.trim_start().starts_with('{') => body,
-                Ok(Ok(_)) => "{\"error\":\"not JSON\"}".to_owned(),
+                // Only a JSON object goes into /api/stats: a garbled body would break the page.
+                Ok(Ok(body))
+                    if serde_json::from_str::<serde_json::Value>(&body)
+                        .is_ok_and(|v| v.is_object()) =>
+                {
+                    body
+                }
+                Ok(Ok(_)) => "{\"error\":\"not a JSON object\"}".to_owned(),
                 Ok(Err(e)) => format!("{{\"error\":{}}}", json_str(&e.to_string())),
                 Err(_) => "{\"error\":\"timeout\"}".to_owned(),
             };
@@ -256,7 +262,7 @@ impl Hold {
                     .header_key
                     .as_deref()
                     .or_else(|| req.query.get("key").map(String::as_str));
-                if key != Some(self.access_key.as_str()) {
+                if !key.is_some_and(|k| same_key(k, &self.access_key)) {
                     return Response::new(403, "application/json", "{\"error\":\"access key\"}");
                 }
                 match (req.method.as_str(), path) {
@@ -456,7 +462,7 @@ async fn slot(
                 }
             }
             // A refused dial is retried after 2 s, like a caller who redials.
-            Err(e) if e.to_string().contains("503") => {
+            Err(e) if e.to_string().contains("HTTP error: 503") => {
                 new.push(EventKind::CallRefused);
                 Duration::from_secs(2)
             }
@@ -557,6 +563,9 @@ fn read_cgroup() -> Cgroup {
 async fn sample_container(clock: SharedClock, latest: Arc<Mutex<String>>) {
     let mut history: VecDeque<(Instant, Duration)> = VecDeque::new();
     let mut probe = TreeProbe::new(1, Scope::Tree);
+    let cpu = tokio::task::spawn_blocking(cpu_info)
+        .await
+        .unwrap_or_else(|_| "\"cpu_model\":\"\",\"cpu_flags\":[]".to_owned());
     loop {
         let (cg, reading, probe_back) = match tokio::task::spawn_blocking(move || {
             let reading = probe.read();
@@ -592,7 +601,7 @@ async fn sample_container(clock: SharedClock, latest: Arc<Mutex<String>>) {
         let opt = |v: Option<u64>| v.map_or_else(|| "null".to_owned(), |v| v.to_string());
         let json = format!(
             "{{\"cpu_cores\":{cores:.3},\"cpu_limit\":{},\"memory_bytes\":{},\"memory_limit\":{},\
-             \"pss_bytes\":{},\"rss_bytes\":{},\"processes\":{},\"source\":{}}}",
+             \"pss_bytes\":{},\"rss_bytes\":{},\"processes\":{},\"source\":{},{cpu}}}",
             cg.cpu_limit
                 .map_or_else(|| "null".to_owned(), |v| format!("{v:.2}")),
             opt(cg.memory.or_else(|| reading.and_then(|r| r.pss_bytes))),
@@ -646,6 +655,8 @@ where
     let permits = Arc::new(Semaphore::new(MAX_CONNECTIONS));
     loop {
         let Ok((stream, _)) = listener.accept().await else {
+            // Out of file descriptors or similar: do not spin.
+            tokio::task::yield_now().await;
             continue;
         };
         let Ok(permit) = Arc::clone(&permits).acquire_owned().await else {
@@ -673,30 +684,7 @@ where
         }
         head.extend_from_slice(buf.get(..n).unwrap_or_default());
     }
-    let text = String::from_utf8_lossy(&head);
-    let mut lines = text.split("\r\n");
-    let mut first = lines.next().unwrap_or_default().split(' ');
-    let method = first.next().unwrap_or_default().to_owned();
-    let target = first.next().unwrap_or_default();
-    let (path, query) = target.split_once('?').unwrap_or((target, ""));
-    let header_key = lines.find_map(|l| {
-        let (name, value) = l.split_once(':')?;
-        name.trim()
-            .eq_ignore_ascii_case("x-hold-key")
-            .then(|| value.trim().to_owned())
-    });
-    let query = query
-        .split('&')
-        .filter_map(|kv| kv.split_once('='))
-        .map(|(k, v)| (k.to_owned(), v.to_owned()))
-        .collect();
-    let response = handler(Request {
-        method,
-        path: path.to_owned(),
-        query,
-        header_key,
-    })
-    .await;
+    let response = handler(parse_head(&head)).await;
     let reason = match response.status {
         200 => "OK",
         400 => "Bad Request",
@@ -716,6 +704,69 @@ where
     stream.shutdown().await
 }
 
+/// The request line and the access-key header of a request head. Query values are taken as
+/// they are (no percent-decoding: keys and tokens are URL-safe).
+fn parse_head(head: &[u8]) -> Request {
+    let text = String::from_utf8_lossy(head);
+    let mut lines = text.split("\r\n");
+    let mut first = lines.next().unwrap_or_default().split(' ');
+    let method = first.next().unwrap_or_default().to_owned();
+    let target = first.next().unwrap_or_default();
+    let (path, query) = target.split_once('?').unwrap_or((target, ""));
+    let header_key = lines.find_map(|l| {
+        let (name, value) = l.split_once(':')?;
+        name.trim()
+            .eq_ignore_ascii_case("x-hold-key")
+            .then(|| value.trim().to_owned())
+    });
+    let query = query
+        .split('&')
+        .filter_map(|kv| kv.split_once('='))
+        .map(|(k, v)| (k.to_owned(), v.to_owned()))
+        .collect();
+    Request {
+        method,
+        path: path.to_owned(),
+        query,
+        header_key,
+    }
+}
+
+/// Compares two keys in time that depends on their lengths only.
+fn same_key(a: &str, b: &str) -> bool {
+    a.len() == b.len()
+        && a.bytes()
+            .zip(b.bytes())
+            .fold(0u8, |acc, (x, y)| acc | (x ^ y))
+            == 0
+}
+
+/// The CPU model and the vector extensions that matter for the int8 models (Linux; empty
+/// elsewhere).
+fn cpu_info() -> String {
+    let text = std::fs::read_to_string("/proc/cpuinfo").unwrap_or_default();
+    let model = text
+        .lines()
+        .find_map(|l| l.strip_prefix("model name"))
+        .and_then(|l| l.split_once(':'))
+        .map_or("", |(_, v)| v.trim());
+    let flags: Vec<&str> = text
+        .lines()
+        .find_map(|l| l.strip_prefix("flags"))
+        .and_then(|l| l.split_once(':'))
+        .map(|(_, v)| {
+            v.split_whitespace()
+                .filter(|f| ["avx2", "avx512f", "avx512_vnni", "avx_vnni", "amx_int8"].contains(f))
+                .collect()
+        })
+        .unwrap_or_default();
+    format!(
+        "\"cpu_model\":{},\"cpu_flags\":{}",
+        json_str(model),
+        serde_json::to_string(&flags).unwrap_or_else(|_| "[]".to_owned())
+    )
+}
+
 /// `s` as a JSON string literal.
 fn json_str(s: &str) -> String {
     serde_json::to_string(s).unwrap_or_else(|_| "\"\"".to_owned())
@@ -724,6 +775,116 @@ fn json_str(s: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn hold(key: &str) -> Hold {
+        let mut client = ClientConfig::new("ws://127.0.0.1:9/");
+        client.connect_timeout = Duration::from_millis(50);
+        Hold {
+            clock: SystemClock::shared(),
+            fixture: Arc::new(Fixture {
+                name: "empty".to_owned(),
+                sample_rate: brisvox_core::frame::SampleRate::Hz16000,
+                pcm: bytes::Bytes::new(),
+                segments: Vec::new(),
+            }),
+            targets: vec![Arc::new(Target {
+                name: "a".to_owned(),
+                label: "A".to_owned(),
+                client,
+                stats_url: String::new(),
+                call_url: "https://a.example".to_owned(),
+                call_token: "ct".to_owned(),
+                slots: Mutex::new(Vec::new()),
+                in_call: AtomicUsize::new(0),
+                events: Mutex::new(VecDeque::new()),
+                server: Mutex::new("null".to_owned()),
+            })],
+            access_key: key.to_owned(),
+            cancel: CancellationToken::new(),
+        }
+    }
+
+    fn get(h: &Hold, head: &str) -> (u16, String) {
+        let r = h.handle(parse_head(head.as_bytes()));
+        (r.status, String::from_utf8_lossy(&r.body).into_owned())
+    }
+
+    #[test]
+    fn the_head_parser_reads_method_path_query_and_key() {
+        let r = parse_head(
+            b"POST /api/load?target=a&n=3&bad HTTP/1.1\r\nHost: x\r\nX-Hold-Key:  k1 \r\n\r\n",
+        );
+        assert_eq!((r.method.as_str(), r.path.as_str()), ("POST", "/api/load"));
+        assert_eq!(r.query.get("target").map(String::as_str), Some("a"));
+        assert_eq!(r.query.get("n").map(String::as_str), Some("3"));
+        assert!(!r.query.contains_key("bad"));
+        assert_eq!(r.header_key.as_deref(), Some("k1"));
+        let r = parse_head(b"garbage");
+        assert_eq!((r.method.as_str(), r.path.as_str()), ("garbage", ""));
+    }
+
+    #[tokio::test]
+    async fn the_api_needs_the_key_and_checks_its_arguments() {
+        let h = hold("secret");
+        assert_eq!(get(&h, "GET / HTTP/1.1\r\n\r\n").0, 200);
+        assert_eq!(get(&h, "GET /api/stats HTTP/1.1\r\n\r\n").0, 403);
+        assert_eq!(get(&h, "GET /api/stats?key=secreT HTTP/1.1\r\n\r\n").0, 403);
+        assert_eq!(
+            get(&h, "GET /api/stats?key=secret2 HTTP/1.1\r\n\r\n").0,
+            403
+        );
+        let (status, body) = get(&h, "GET /api/config?key=secret HTTP/1.1\r\n\r\n");
+        assert_eq!(status, 200);
+        assert!(body.contains("\"call_token\":\"ct\""), "{body}");
+        let ok = "X-Hold-Key: secret\r\n\r\n";
+        for bad in ["n=2001", "n=-1", "n=x", "target=zz&n=1"] {
+            let head = format!("POST /api/load?target=a&{bad} HTTP/1.1\r\n{ok}");
+            assert_eq!(get(&h, &head).0, 400, "{bad}");
+        }
+        assert_eq!(
+            get(&h, &format!("GET /api/load?target=a&n=1 HTTP/1.1\r\n{ok}")).0,
+            404
+        );
+        h.cancel.cancel();
+    }
+
+    #[tokio::test]
+    async fn set_load_adds_and_cancels_slots_and_cancelled_calls_are_not_failures() {
+        let h = hold("k");
+        let set = |n: usize| {
+            get(
+                &h,
+                &format!("POST /api/load?target=a&n={n} HTTP/1.1\r\nX-Hold-Key: k\r\n\r\n"),
+            )
+            .0
+        };
+        assert_eq!(set(5), 200);
+        let tokens: Vec<CancellationToken> = h.targets[0].slots.lock().unwrap().clone();
+        assert_eq!(tokens.len(), 5);
+        assert_eq!(set(2), 200);
+        assert_eq!(h.targets[0].slots.lock().unwrap().len(), 2);
+        assert!(tokens[2..].iter().all(CancellationToken::is_cancelled));
+        assert!(tokens[..2].iter().all(|t| !t.is_cancelled()));
+        assert_eq!(set(0), 200);
+        assert!(tokens.iter().all(CancellationToken::is_cancelled));
+        // Give the cancelled slots a moment: none of them may record a failure.
+        tokio::task::yield_now().await;
+        SystemClock::shared()
+            .sleep(Duration::from_millis(100))
+            .await;
+        let stats = get(&h, "GET /api/stats HTTP/1.1\r\nX-Hold-Key: k\r\n\r\n").1;
+        assert!(stats.contains("\"desired\":0"), "{stats}");
+        assert!(stats.contains("\"calls_failed\":0"), "{stats}");
+        h.cancel.cancel();
+    }
+
+    #[test]
+    fn keys_compare_in_full() {
+        assert!(same_key("abc", "abc"));
+        assert!(!same_key("abc", "abd"));
+        assert!(!same_key("abc", "ab"));
+        assert!(!same_key("", "a"));
+    }
 
     #[test]
     fn percentiles_use_the_nearest_rank() {

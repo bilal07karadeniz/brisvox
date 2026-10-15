@@ -29,6 +29,10 @@ listen for the point where replies get slow, choppy or lost.
   wire formats, the real Silero VAD and Smart Turn models, no API cost. It starts with an empty
   environment plus the few variables it needs, so it never sees a provider key: if its agent were
   pointed at a real provider by mistake, the provider would refuse the fake key.
+  Checked on 2026-10-15 with the brisvox image, real-looking keys in the container's environment
+  and the fakes unreachable: the load process's environment held 0 provider key variables, and a
+  synthetic call got only failed provider connections (`stt connect failed ... disconnected`,
+  then the circuit breaker opened); nothing went to a real provider.
   Pipecat runs it with 4 uvicorn workers (one event loop per vCPU, as in the capacity benchmark);
   brisvox runs one process.
 - **real process**: serves your call on the public port with the live comparison agent

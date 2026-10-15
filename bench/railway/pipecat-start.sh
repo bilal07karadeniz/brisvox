@@ -8,6 +8,8 @@
 #         0.0.0.0: Python binds "::" as IPv6 only, and the platform's public proxy connects over
 #         IPv4 (the private network is IPv6, so the load process binds "::").
 set -eu
+# Fail closed: an empty token would leave the real process (it holds the keys) open.
+: "${CALL_TOKEN:?CALL_TOKEN must be set}"
 
 FAKES=${FAKES_HOST:-fakes.railway.internal}
 until curl -fsS "http://$FAKES:8080/ca.pem" -o /tmp/fakes-ca.pem; do

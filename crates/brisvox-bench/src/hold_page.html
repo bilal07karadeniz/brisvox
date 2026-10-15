@@ -86,7 +86,7 @@ function makeCard(t) {
   el.className = "card";
   const presets = PRESETS[t.name] || [0, 10, 50, 100];
   el.innerHTML = `
-    <h2>${t.label} <small class="srv">container: –</small></h2>
+    <h2><span class="lbl"></span> <small class="srv">container: –</small></h2>
     <div class="stats">
       <div class="stat"><span>CPU (cores)</span><b class="cpu">–</b><div class="bar"><i class="cpubar"></i></div></div>
       <div class="stat"><span>Memory</span><b class="mem">–</b><div class="bar"><i class="membar"></i></div></div>
@@ -109,10 +109,12 @@ function makeCard(t) {
       <div class="err lasterr"></div>
     </div>
     <div class="section"><h3>Your call (real providers)</h3>
-      <div class="row"><button class="primary callbtn">Call ${t.label}</button> <span class="callstate muted">idle</span></div>
+      <div class="row"><button class="primary callbtn"></button> <span class="callstate muted">idle</span></div>
       <div class="meters"><span>mic</span><div class="bar"><i class="micbar"></i></div><span>bot</span><div class="bar"><i class="botbar"></i></div></div>
       <div class="muted" style="margin-top:8px">Your last replies: <span class="lat">–</span></div>
     </div>`;
+  $(".lbl", el).textContent = t.label;
+  $(".callbtn", el).textContent = `Call ${t.label}`;
   $("#targets").appendChild(el);
   el.querySelectorAll(".presets button[data-n]").forEach((b) => (b.onclick = () => setLoad(t.name, Number(b.dataset.n))));
   $(".setn", el).onclick = () => { const n = Number($(".custom", el).value); if (Number.isInteger(n) && n >= 0) setLoad(t.name, n); };
@@ -161,7 +163,8 @@ async function poll() {
       $(".mem", el).textContent = `${mb.toFixed(0)} MB`;
       $(".membar", el).style.width = `${Math.min(100, (100 * mb) / lim)}%`;
     }
-    $(".srv", el).textContent = `container: ${srv.processes ?? "?"} processes (${srv.source ?? "?"})`;
+    const flags = (srv.cpu_flags || []).filter((f) => f.includes("vnni") || f.includes("amx")).join(" ") || "no VNNI";
+    $(".srv", el).textContent = `${srv.cpu_model || "cpu ?"} (${flags})`;
   }
 }
 

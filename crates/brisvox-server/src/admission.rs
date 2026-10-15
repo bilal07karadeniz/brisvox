@@ -147,6 +147,10 @@ pub struct OverloadConfig {
     /// How long the queue depth must stay at or over `shed_queue_per_thread` (every sample in
     /// between over it too) before it makes the server overloaded; zero sheds on the first such
     /// sample. A pool that is really behind keeps its queue; a burst drains in microseconds.
+    /// Samples are taken at admission attempts and `/readyz` probes, so "every sample" means
+    /// every one taken; a gap of a whole `window` restarts the confirmation. On a server that
+    /// admits rarely and is not probed the depth therefore rarely confirms, and the wait mean and
+    /// the refused/timed-out jobs (both judged at once) are what find a pool that is behind.
     pub depth_confirm: Duration,
     /// Mean queue wait over a window at or above which the server is overloaded; zero ignores
     /// waits.
