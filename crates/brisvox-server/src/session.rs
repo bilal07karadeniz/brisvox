@@ -555,7 +555,8 @@ impl SessionManager {
     /// counted.
     pub fn try_admit(&self) -> Result<SessionSlot, AdmissionError> {
         // Sampled before the registry lock: the pool is read, the registry is not touched.
-        let overloaded = self.inner.policy.overloaded(self.inner.clock.now());
+        let now = self.inner.clock.now();
+        let overloaded = self.inner.policy.overloaded(now);
         let mut reg = self.inner.lock();
         if reg.phase != Phase::Open {
             reg.rejected_shutting_down = reg.rejected_shutting_down.saturating_add(1);
@@ -567,7 +568,11 @@ impl SessionManager {
                 max: self.inner.max_sessions,
             });
         }
-        if overloaded {
+        if let Some(window) = self.inner.policy.ceiling_window() {
+            update_ceiling(&mut reg, overloaded, now, window);
+        }
+        let over_ceiling = reg.ceiling.is_some_and(|(cap, _)| reg.outstanding() >= cap);
+        if overloaded || over_ceiling {
             reg.rejected_overloaded = reg.rejected_overloaded.saturating_add(1);
             return Err(AdmissionError::Overloaded);
         }
@@ -685,6 +690,11 @@ impl SessionManager {
         ids
     }
 
+    /// The learned ceiling of held calls (`OverloadConfig::learn_ceiling`), if one was learned.
+    pub fn admission_ceiling(&self) -> Option<usize> {
+        self.inner.lock().ceiling.map(|(cap, _)| cap)
+    }
+
     /// A consistent snapshot of the counters.
     pub fn stats(&self) -> SessionStats {
         let reg = self.inner.lock();
@@ -799,6 +809,52 @@ struct Registry {
     rejected_overloaded: u64,
     rejected_provider_budget: u64,
     ended: EndCounts,
+    /// The learned ceiling of held calls (`OverloadConfig::learn_ceiling`) and when it last
+    /// changed; `None` until the pool was first seen hot.
+    ceiling: Option<(usize, Instant)>,
+    /// The pool's verdict at the previous admission attempt (for the ceiling's transitions).
+    ceiling_hot: bool,
+}
+
+/// The learned ceiling (see `admission.rs`). When the pool turns hot, cap the held calls at 90%
+/// of what is held then; when it is calm again, the calls held at that moment are what it
+/// serves well, so the cap is not above them, but one hot spell at most halves it (calls that
+/// all ended during the spell must not collapse it); on a calm sample at the cap, raise it by 10% (at
+/// least one call) once per `window`. The cap is never lowered during a hot spell: calls that
+/// end while the pool drains say nothing about what it can serve.
+fn update_ceiling(reg: &mut Registry, overloaded: bool, now: Instant, window: Duration) {
+    let held = reg.outstanding();
+    let was_hot = reg.ceiling_hot;
+    reg.ceiling_hot = overloaded;
+    if overloaded {
+        if !was_hot {
+            let cap = (held.saturating_mul(9) / 10).max(1);
+            if reg.ceiling.is_none() {
+                tracing::warn!(
+                    target: "brisvox::server",
+                    held,
+                    cap,
+                    "pool under pressure: holding at most {cap} calls from now on (learned ceiling)"
+                );
+            }
+            if reg.ceiling.is_none_or(|(old, _)| cap < old) {
+                reg.ceiling = Some((cap, now));
+            }
+        }
+        return;
+    }
+    let Some((cap, since)) = reg.ceiling else {
+        return;
+    };
+    if was_hot {
+        let served = held.max(1);
+        tracing::debug!(target: "brisvox::server", held, "learned ceiling: the pool recovered");
+        reg.ceiling = Some((served.clamp((cap / 2).max(1), cap), now));
+    } else if held >= cap && now.saturating_duration_since(since) >= window {
+        let raised = cap.saturating_add((cap / 10).max(1));
+        tracing::debug!(target: "brisvox::server", cap = raised, "learned ceiling raised");
+        reg.ceiling = Some((raised, now));
+    }
 }
 
 impl Registry {
@@ -822,6 +878,8 @@ impl Default for Registry {
             rejected_overloaded: 0,
             rejected_provider_budget: 0,
             ended: EndCounts::default(),
+            ceiling: None,
+            ceiling_hot: false,
         }
     }
 }

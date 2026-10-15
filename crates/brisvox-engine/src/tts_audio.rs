@@ -41,6 +41,12 @@ use bytes::{BufMut, Bytes, BytesMut};
 
 use crate::error::Result;
 
+/// Resamplers built off the pool at once, process-wide ([`OutputFramer::build_resampler_on`]).
+static RESAMPLER_FALLBACK: tokio::sync::Semaphore = tokio::sync::Semaphore::const_new(2);
+/// Longest wait for a fallback build, permit included.
+pub(crate) const RESAMPLER_FALLBACK_TIMEOUT: std::time::Duration =
+    std::time::Duration::from_secs(2);
+
 /// Converts and frames one stream of TTS audio. See the [module docs](self).
 pub struct OutputFramer {
     frame_bytes: usize,
@@ -93,6 +99,40 @@ impl OutputFramer {
             return Ok(None);
         }
         Ok(Some(StreamResampler::new(from, to)?))
+    }
+
+    /// Builds the resampler for `from` -> `to` on `offload` (10 us to 1.6 ms, too much for a
+    /// runtime worker). A saturated pool must not cost an admitted call its voice: when the
+    /// pool is full or late the resampler is built on a blocking thread instead, two at a time
+    /// process-wide, within [`RESAMPLER_FALLBACK_TIMEOUT`]. The error is a description for logs.
+    pub(crate) async fn build_resampler_on(
+        offload: &crate::offload::Offload,
+        timeout: std::time::Duration,
+        from: SampleRate,
+        to: SampleRate,
+    ) -> std::result::Result<Option<StreamResampler>, String> {
+        let built = offload
+            .run(timeout, move || Self::build_resampler(from, to))
+            .await
+            .map(|done| done.value);
+        let built = match built {
+            Err(error) if crate::offload::is_busy(&error) => {
+                tracing::debug!(target: "brisvox::engine", %error, "resampler: pool busy, building it off the pool");
+                tokio::time::timeout(RESAMPLER_FALLBACK_TIMEOUT, async move {
+                    let _permit = RESAMPLER_FALLBACK.acquire().await.ok()?;
+                    tokio::task::spawn_blocking(move || Self::build_resampler(from, to))
+                        .await
+                        .ok()
+                })
+                .await
+                .ok()
+                .flatten()
+                .ok_or_else(|| format!("{error}; the fallback build did not finish either"))
+            }
+            Err(error) => Err(error.to_string()),
+            Ok(value) => Ok(value),
+        };
+        built.and_then(|value| value.map_err(|e| e.to_string()))
     }
 
     /// A framer around an already built resampler (see [`Self::build_resampler`]). A zero

@@ -1319,6 +1319,7 @@ fn pool_policy(pool: &Arc<ScriptedPool>, limits: &[(&str, usize)]) -> AdmissionP
             depth_confirm: Duration::ZERO,
             wait_limit: Duration::ZERO,
             window: Duration::from_millis(50),
+            learn_ceiling: false,
         }),
         provider_limits: limits
             .iter()

@@ -716,14 +716,11 @@ impl Task {
         }
         let (from, to) = (self.cfg.model_rate, self.cfg.provider_rate);
         let samples = frame_samples(self.cfg.frame, to);
-        let built = self
-            .offload
-            .run(self.cfg.offload_timeout, move || {
-                OutputFramer::build_resampler(from, to)
-            })
-            .await;
-        match built.map(|done| done.value) {
-            Ok(Ok(resampler)) => {
+        let built =
+            OutputFramer::build_resampler_on(&self.offload, self.cfg.offload_timeout, from, to)
+                .await;
+        match built {
+            Ok(resampler) => {
                 self.in_framer = Some(OutputFramer::with_resampler(to, samples, resampler));
                 true
             }
@@ -1252,14 +1249,11 @@ impl Task {
             return true;
         }
         let from = self.cfg.provider_rate;
-        let built = self
-            .offload
-            .run(self.cfg.offload_timeout, move || {
-                OutputFramer::build_resampler(from, out)
-            })
-            .await;
-        match built.map(|done| done.value) {
-            Ok(Ok(resampler)) => {
+        let built =
+            OutputFramer::build_resampler_on(&self.offload, self.cfg.offload_timeout, from, out)
+                .await;
+        match built {
+            Ok(resampler) => {
                 let samples = frame_samples(self.cfg.frame, out);
                 self.out_framer = Some(OutputFramer::with_resampler(out, samples, resampler));
                 self.out_rate = Some(out);

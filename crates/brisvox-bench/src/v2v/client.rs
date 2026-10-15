@@ -102,6 +102,9 @@ pub struct ClientConfig {
     pub late_threshold: Duration,
     /// Free-form metadata for `start`.
     pub metadata: BTreeMap<String, String>,
+    /// Counted up while a call is open (from the server's `started` until the call ends), for a
+    /// load generator that shows how many calls the server really holds.
+    pub live: Option<std::sync::Arc<std::sync::atomic::AtomicUsize>>,
 }
 
 impl ClientConfig {
@@ -118,6 +121,7 @@ impl ClientConfig {
             response_timeout: Duration::from_secs(10),
             late_threshold: Duration::from_millis(100),
             metadata: BTreeMap::new(),
+            live: None,
         }
     }
 }
@@ -375,6 +379,22 @@ fn call_error(config: &ClientConfig, what: &str, error: impl std::fmt::Display) 
     BenchError::Call(format!("{what}: {}", scrub(config, error)))
 }
 
+/// Counts one open call in [`ClientConfig::live`] until dropped.
+struct LiveGuard(std::sync::Arc<std::sync::atomic::AtomicUsize>);
+
+impl LiveGuard {
+    fn enter(live: &std::sync::Arc<std::sync::atomic::AtomicUsize>) -> Self {
+        live.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        Self(std::sync::Arc::clone(live))
+    }
+}
+
+impl Drop for LiveGuard {
+    fn drop(&mut self) {
+        self.0.fetch_sub(1, std::sync::atomic::Ordering::Relaxed);
+    }
+}
+
 /// Streams `fixture` to the server at `config.url` in real time and measures voice-to-voice
 /// latency for each of its turns (timing model: the module docs).
 ///
@@ -493,6 +513,7 @@ pub async fn run_call(
     };
 
     // The call is open: stream, and read on a task of its own.
+    let _live = config.live.as_ref().map(LiveGuard::enter);
     let begin = clock.now();
     let (mut sink, source): (Sink, Source) = ws.split();
     let reader_cancel = cancel.child_token();

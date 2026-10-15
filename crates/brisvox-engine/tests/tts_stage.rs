@@ -855,6 +855,91 @@ async fn on_a_real_pool_normalization_and_the_resampler_run_off_the_workers() {
         .unwrap();
 }
 
+/// A saturated pool (its one thread busy, its queue full) must not cost the call its voice: the
+/// output resampler is then built off the pool and the reply is heard.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn on_a_saturated_pool_the_output_resampler_is_built_off_the_pool_and_the_reply_plays() {
+    use brisvox_core::SystemClock;
+    use brisvox_inference::{InferencePool, PoolConfig};
+    let clock = SystemClock::shared();
+    let pool = InferencePool::new(
+        &PoolConfig {
+            threads: 1,
+            queue_capacity: 1,
+            name: "tts-pool-full".to_owned(),
+        },
+        clock.clone(),
+    )
+    .unwrap();
+    // Occupy the thread and the queue slot until the test lets go.
+    let (release, held) = std::sync::mpsc::channel::<()>();
+    let held = Arc::new(std::sync::Mutex::new(held));
+    let busy = Offload::Pool(pool.handle());
+    let mut blockers = Vec::new();
+    for _ in 0..2 {
+        let (busy, held) = (busy.clone(), Arc::clone(&held));
+        blockers.push(tokio::spawn(async move {
+            busy.run(Duration::from_secs(30), move || {
+                let _ = held.lock().unwrap().recv_timeout(Duration::from_secs(20));
+            })
+            .await
+        }));
+        tokio::time::sleep(50 * MS).await;
+    }
+    let tts = MockTts::new(clock.clone()).with_audio(1, 20 * MS);
+    let config = TtsStageConfig::from_engine(&EngineConfig::DEFAULT);
+    let stage = TtsStage::new(
+        Arc::new(tts.clone()),
+        config,
+        clock.clone(),
+        TimelineRecorder::new(),
+    )
+    .with_rates(CallRatesCell::new(CallRates::symmetric(SampleRate::Hz8000)))
+    .with_offload(Offload::Pool(pool.handle()));
+    let stats = stage.stats();
+    let rec = Recorded::default();
+    let running = Pipeline::new("tts-full")
+        .then(stage)
+        .then(Recorder(rec.clone()))
+        .start(Links::default(), &CancellationToken::new())
+        .await
+        .unwrap();
+    for frame in [
+        control(1, ControlKind::LlmResponseStarted),
+        text(1, "Sure, it is open."),
+        control(1, ControlKind::LlmResponseEnded),
+    ] {
+        running.input().send(frame).await.unwrap();
+    }
+    let audio = |rec: &Recorded| {
+        rec.all()
+            .iter()
+            .filter(|(f, _)| matches!(f, Frame::Data(DataFrame::Audio(a)) if a.sample_rate() == SampleRate::Hz8000))
+            .count()
+    };
+    for _ in 0..500 {
+        if audio(&rec) > 0 {
+            break;
+        }
+        tokio::time::sleep(10 * MS).await;
+    }
+    let snapshot = stats.snapshot();
+    assert!(audio(&rec) > 0, "the reply was heard: {snapshot:?}");
+    assert_eq!(
+        (snapshot.resampler_builds, snapshot.resampler_failures),
+        (1, 0),
+        "{snapshot:?}"
+    );
+    drop(running);
+    drop(release);
+    for blocker in blockers {
+        let _ = blocker.await;
+    }
+    tokio::task::spawn_blocking(move || pool.shutdown())
+        .await
+        .unwrap();
+}
+
 // -- review: idle detection counts only from unanswered input -------------------------
 
 fn short_idle(config: &mut TtsStageConfig) {

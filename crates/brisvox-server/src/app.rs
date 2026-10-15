@@ -544,8 +544,8 @@ async fn start_hosting(
             );
         }
     }
-    // The executor's queue and refusals are exported as `brisvox_smart_turn_*` (the admission
-    // control reads only the VAD's pool).
+    // The executor's queue and refusals are exported as `brisvox_smart_turn_*`; the admission
+    // control watches it too (below).
     if let Some(turn_pool) = &turn_pool {
         obs.set_smart_turn_pool(turn_pool.handle());
     }
@@ -558,7 +558,13 @@ async fn start_hosting(
         );
     }
     let probe: Arc<dyn LoadProbe> = Arc::new(pool.handle());
-    let policy = AdmissionPolicy::new(&admission, Some(probe));
+    let mut policy = AdmissionPolicy::new(&admission, Some(probe));
+    // A late Smart Turn analysis delays the end of the caller's turn: its executor is a pool
+    // the calls depend on as much as the VAD's.
+    if let Some(turn_pool) = &turn_pool {
+        let turn_probe: Arc<dyn LoadProbe> = Arc::new(turn_pool.handle());
+        policy = policy.with_secondary_probe(turn_probe);
+    }
     let providers =
         ConfiguredProviders::from_agent_with(&agent, clock, providers_shutdown, resilience)?;
     // `/metrics` reads the breakers and the process retry budget live.

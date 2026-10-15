@@ -161,7 +161,7 @@ impl Drop for ClaimState {
 }
 
 /// Whether a pool error means the pool was busy rather than the job broken.
-const fn is_busy(error: &Error) -> bool {
+pub(crate) const fn is_busy(error: &Error) -> bool {
     matches!(
         error,
         Error::PoolSaturated { .. } | Error::Core(brisvox_core::Error::Timeout { .. })

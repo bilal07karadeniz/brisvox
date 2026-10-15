@@ -54,6 +54,7 @@ fn overload() -> OverloadConfig {
         depth_confirm: Duration::ZERO,
         wait_limit: Duration::ZERO,
         window: Duration::from_secs(2),
+        learn_ceiling: false,
     }
 }
 
@@ -63,8 +64,18 @@ fn manager_with(
     pool: Option<&Arc<Pool>>,
     limits: &[(&str, usize)],
 ) -> SessionManager {
+    manager_with_overload(max, clock, pool, limits, overload())
+}
+
+fn manager_with_overload(
+    max: usize,
+    clock: SharedClock,
+    pool: Option<&Arc<Pool>>,
+    limits: &[(&str, usize)],
+    overload: OverloadConfig,
+) -> SessionManager {
     let settings = AdmissionSettings {
-        overload: Some(overload()),
+        overload: Some(overload),
         provider_limits: limits
             .iter()
             .map(|(name, limit)| ((*name).to_owned(), *limit))
@@ -351,4 +362,89 @@ fn dropping_the_runtime_gives_the_permits_back() {
         "the drop guards released the permits"
     );
     drop(handles);
+}
+
+/// The learned ceiling: the pool turns hot while 20 calls are held, so the manager holds at most
+/// 18; calls ending during the hot spell do not lower it; the pool recovers with 15 held, which
+/// becomes the cap; the cap grows by 10% (one call here) per calm window spent at it; running
+/// calls are never touched.
+#[tokio::test(start_paused = true)]
+async fn a_hot_pool_teaches_a_ceiling_that_holds_and_then_grows_by_calm_windows() {
+    let clock = sim();
+    let pool = Pool::shared();
+    let mgr = manager_with_overload(
+        100,
+        Arc::clone(&clock),
+        Some(&pool),
+        &[],
+        OverloadConfig {
+            learn_ceiling: true,
+            ..overload()
+        },
+    );
+    let mut calls: Vec<_> = (0..20).map(|_| mgr.start(hold).unwrap()).collect();
+    assert_eq!(
+        mgr.admission_ceiling(),
+        None,
+        "no ceiling before the pool was hot"
+    );
+
+    // Hot with 20 held: refused, and the cap is 18.
+    pool.depth(8);
+    assert_eq!(mgr.try_admit().unwrap_err(), AdmissionError::Overloaded);
+    assert_eq!(mgr.admission_ceiling(), Some(18));
+    assert_eq!(mgr.active(), 20, "running calls are never touched");
+
+    // Calls end while the pool stays hot: the cap stays.
+    for call in calls.drain(..5) {
+        call.cancel();
+        call.ended().await;
+    }
+    assert_eq!(mgr.try_admit().unwrap_err(), AdmissionError::Overloaded);
+    assert_eq!(mgr.admission_ceiling(), Some(18));
+
+    // Calm again with 15 held (after the pool's own calm window): that is the cap now.
+    pool.depth(0);
+    let _ = mgr.try_admit();
+    tokio::time::advance(Duration::from_millis(2_100)).await;
+    assert_eq!(mgr.try_admit().unwrap_err(), AdmissionError::Overloaded);
+    assert_eq!(mgr.admission_ceiling(), Some(15));
+    // One calm window at the cap: +1 (10% of 15, at least one).
+    tokio::time::advance(Duration::from_millis(2_000)).await;
+    let slot = mgr.try_admit().expect("the cap grew past the calls held");
+    assert_eq!(mgr.admission_ceiling(), Some(16));
+    drop(slot);
+
+    // Below the cap, calls are admitted without waiting, and it does not grow.
+    for call in calls.drain(..5) {
+        call.cancel();
+        call.ended().await;
+    }
+    let slot = mgr.try_admit().expect("under the cap");
+    drop(slot);
+    assert_eq!(
+        mgr.admission_ceiling(),
+        Some(16),
+        "no growth while under the cap"
+    );
+
+    // A second hot spell with 10 held caps at 9; nearly every call ends during it (1 left at
+    // recovery): one spell at most halves the cap, so it is 4, not 1.
+    pool.depth(8);
+    assert_eq!(mgr.try_admit().unwrap_err(), AdmissionError::Overloaded);
+    assert_eq!(mgr.admission_ceiling(), Some(9));
+    for call in calls.drain(..9) {
+        call.cancel();
+        call.ended().await;
+    }
+    pool.depth(0);
+    let _ = mgr.try_admit();
+    tokio::time::advance(Duration::from_millis(2_100)).await;
+    let slot = mgr.try_admit().expect("1 held, cap 4");
+    assert_eq!(mgr.admission_ceiling(), Some(4));
+    drop(slot);
+    mgr.cancel_all();
+    for call in calls {
+        call.ended().await;
+    }
 }

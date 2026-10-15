@@ -90,7 +90,7 @@ function makeCard(t) {
     <div class="stats">
       <div class="stat"><span>CPU (cores)</span><b class="cpu">–</b><div class="bar"><i class="cpubar"></i></div></div>
       <div class="stat"><span>Memory</span><b class="mem">–</b><div class="bar"><i class="membar"></i></div></div>
-      <div class="stat"><span>Synthetic calls</span><b class="calls">0</b></div>
+      <div class="stat"><span>Calls the server holds / asked for</span><b class="calls">0</b></div>
     </div>
     <div class="section"><h3>Synthetic load</h3>
       <div class="row presets">${presets.map((n) => `<button data-n="${n}">${n}</button>`).join("")}
@@ -135,7 +135,7 @@ async function poll() {
   for (const t of s.targets) {
     const el = cards[t.name];
     if (!el) continue;
-    $(".calls", el).textContent = `${t.in_call} / ${t.desired}`;
+    $(".calls", el).textContent = `${t.live} / ${t.desired}`;
     el.querySelectorAll(".presets button[data-n]").forEach((b) => b.classList.toggle("on", Number(b.dataset.n) === t.desired));
     $(".p50", el).textContent = fmtMs(t.v2v_p50_ms);
     $(".p95", el).textContent = fmtMs(t.v2v_p95_ms);

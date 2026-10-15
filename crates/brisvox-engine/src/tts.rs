@@ -1915,31 +1915,26 @@ impl Reader {
             return true;
         }
         let from = self.config.tts_rate;
-        let built = self
-            .offload
-            .run(self.config.offload_timeout, move || {
-                OutputFramer::build_resampler(from, out)
-            })
-            .await;
-        match built.map(|done| done.value) {
-            Ok(Ok(resampler)) => {
+        let built =
+            OutputFramer::build_resampler_on(&self.offload, self.config.offload_timeout, from, out)
+                .await;
+        match built {
+            Ok(resampler) => {
                 let samples = self.config.frame_samples(out);
                 self.framer = Some(OutputFramer::with_resampler(out, samples, resampler));
                 self.last_context = None;
                 bump(&self.counters().resampler_builds);
                 true
             }
-            failed => {
+            Err(error) => {
                 bump(&self.counters().resampler_failures);
                 tracing::warn!(
                     target: "brisvox::engine",
                     ?from,
                     to = ?out,
+                    %error,
                     "cannot build the output resampler; its audio is lost"
                 );
-                if let Err(error) = failed {
-                    tracing::debug!(target: "brisvox::engine", %error, "resampler job failed");
-                }
                 self.book.mark_lost(context);
                 false
             }

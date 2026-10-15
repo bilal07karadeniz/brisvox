@@ -65,6 +65,8 @@ struct Target {
     call_token: String,
     slots: Mutex<Vec<CancellationToken>>,
     in_call: AtomicUsize,
+    /// Calls the server started and that are still open (`ClientConfig::live`).
+    live: Arc<AtomicUsize>,
     events: Mutex<VecDeque<Event>>,
     server: Mutex<String>,
 }
@@ -89,7 +91,10 @@ enum EventKind {
 
 struct Hold {
     clock: SharedClock,
-    fixture: Arc<Fixture>,
+    /// The fixture with 0 to 7 s of silence in front: callers that are admitted in the same
+    /// second do not all speak, and end their turns, in the same instant (identical recordings
+    /// in lockstep pile their end-of-turn analyses up on the server, which real callers do not).
+    fixtures: Arc<Vec<Fixture>>,
     targets: Vec<Arc<Target>>,
     access_key: String,
     cancel: CancellationToken,
@@ -152,8 +157,10 @@ pub fn hold_cmd(mut args: impl Iterator<Item = String>) -> Result<bool, BenchErr
                 "bad --target {spec:?}\n{HOLD_USAGE}"
             )));
         };
+        let live = Arc::new(AtomicUsize::new(0));
         let mut client = ClientConfig::new(*load_url);
         client.response_timeout = Duration::from_secs(10);
+        client.live = Some(Arc::clone(&live));
         targets.push(Arc::new(Target {
             name: (*name).to_owned(),
             label: (*label).to_owned(),
@@ -167,6 +174,7 @@ pub fn hold_cmd(mut args: impl Iterator<Item = String>) -> Result<bool, BenchErr
             },
             slots: Mutex::new(Vec::new()),
             in_call: AtomicUsize::new(0),
+            live,
             events: Mutex::new(VecDeque::new()),
             server: Mutex::new("null".to_owned()),
         }));
@@ -176,12 +184,17 @@ pub fn hold_cmd(mut args: impl Iterator<Item = String>) -> Result<bool, BenchErr
     }
     let loaded = Fixture::load(&fixtures_dir, &fixture_name)
         .map_err(|e| BenchError::Config(format!("fixture {fixture_name}: {e}")))?;
-    let fixture = Arc::new(pad_gaps(&loaded, Duration::from_millis(4_000)));
+    let padded = pad_gaps(&loaded, Duration::from_millis(4_000));
+    let fixtures = Arc::new(
+        (0..8u64)
+            .map(|s| with_leading_silence(&padded, Duration::from_secs(s)))
+            .collect::<Vec<_>>(),
+    );
     let addr = bind_addr(bind, "[::]:8080");
     runtime()?.block_on(async move {
         let hold = Arc::new(Hold {
             clock: SystemClock::shared(),
-            fixture,
+            fixtures,
             targets,
             access_key,
             cancel: CancellationToken::new(),
@@ -330,7 +343,7 @@ impl Hold {
             tokio::spawn(slot(
                 self.clock.clone(),
                 Arc::clone(target),
-                Arc::clone(&self.fixture),
+                Arc::clone(&self.fixtures),
                 stagger(spread, i, added),
                 token.clone(),
             ));
@@ -353,6 +366,7 @@ impl Hold {
             }
             let desired = t.slots.lock().map_or(0, |s| s.len());
             let in_call = t.in_call.load(Ordering::Relaxed);
+            let live = t.live.load(Ordering::Relaxed);
             let (mut ok, mut failed, mut refused, mut late, mut frames, mut missed) =
                 (0u64, 0u64, 0u64, 0u64, 0u64, 0u64);
             let mut v2v = Vec::new();
@@ -388,7 +402,7 @@ impl Hold {
                 .map_or_else(|_| "null".to_owned(), |s| s.clone());
             let _ = write!(
                 out,
-                "{{\"name\":{},\"desired\":{desired},\"in_call\":{in_call},\"calls_ok\":{ok},\
+                "{{\"name\":{},\"desired\":{desired},\"in_call\":{in_call},\"live\":{live},\"calls_ok\":{ok},\
                  \"calls_failed\":{failed},\"calls_refused\":{refused},\"turns_answered\":{},\"turns_missed\":{missed},\
                  \"v2v_p50_ms\":{},\"v2v_p95_ms\":{},\"v2v_max_ms\":{},\"late_frames\":{late},\
                  \"frames\":{frames},\"last_error\":{},\"server\":{server}}}",
@@ -420,7 +434,7 @@ fn pct_ms(sorted: &[Duration], p: usize) -> String {
 async fn slot(
     clock: SharedClock,
     target: Arc<Target>,
-    fixture: Arc<Fixture>,
+    fixtures: Arc<Vec<Fixture>>,
     offset: Duration,
     cancel: CancellationToken,
 ) {
@@ -428,9 +442,14 @@ async fn slot(
         () = cancel.cancelled() => return,
         () = clock.sleep(offset) => {}
     }
+    let mut jitter = u64::try_from(offset.as_nanos() % u128::from(u64::MAX)).unwrap_or(1) | 1;
     while !cancel.is_cancelled() {
+        let pick = usize::try_from(jitter >> 40).unwrap_or(0) % fixtures.len().max(1);
+        let Some(fixture) = fixtures.get(pick) else {
+            return;
+        };
         target.in_call.fetch_add(1, Ordering::Relaxed);
-        let result = run_call(clock.clone(), &target.client, &fixture, &cancel).await;
+        let result = run_call(clock.clone(), &target.client, fixture, &cancel).await;
         target.in_call.fetch_sub(1, Ordering::Relaxed);
         if cancel.is_cancelled() {
             // Hung up because N went down: not a failure.
@@ -479,9 +498,15 @@ async fn slot(
                 events.push_back(Event { at, kind });
             }
         }
+        // Callers do not redial in lockstep: up to 2 s of jitter (a cheap per-slot sequence; the
+        // load generator needs spread, not randomness quality).
+        jitter = jitter
+            .wrapping_mul(6_364_136_223_846_793_005)
+            .wrapping_add(1_442_695_040_888_963_407);
+        let spread = Duration::from_millis((jitter >> 33) % 2_000);
         tokio::select! {
             () = cancel.cancelled() => break,
-            () = clock.sleep(pause) => {}
+            () = clock.sleep(pause + spread) => {}
         }
     }
 }
@@ -704,6 +729,28 @@ where
     stream.shutdown().await
 }
 
+/// `fixture` with `silence` of digital silence in front (segments moved accordingly).
+fn with_leading_silence(fixture: &Fixture, silence: Duration) -> Fixture {
+    let samples = u64::from(fixture.sample_rate.hz())
+        * u64::try_from(silence.as_millis()).unwrap_or(0)
+        / 1000;
+    let bytes = usize::try_from(samples).unwrap_or(0) * 2;
+    let mut pcm = Vec::with_capacity(bytes + fixture.pcm.len());
+    pcm.resize(bytes, 0u8);
+    pcm.extend_from_slice(&fixture.pcm);
+    let mut shifted = fixture.segments.clone();
+    for segment in &mut shifted {
+        segment.start += samples;
+        segment.end += samples;
+    }
+    Fixture {
+        name: fixture.name.clone(),
+        sample_rate: fixture.sample_rate,
+        pcm: bytes::Bytes::from(pcm),
+        segments: shifted,
+    }
+}
+
 /// The request line and the access-key header of a request head. Query values are taken as
 /// they are (no percent-decoding: keys and tokens are URL-safe).
 fn parse_head(head: &[u8]) -> Request {
@@ -781,12 +828,12 @@ mod tests {
         client.connect_timeout = Duration::from_millis(50);
         Hold {
             clock: SystemClock::shared(),
-            fixture: Arc::new(Fixture {
+            fixtures: Arc::new(vec![Fixture {
                 name: "empty".to_owned(),
                 sample_rate: brisvox_core::frame::SampleRate::Hz16000,
                 pcm: bytes::Bytes::new(),
                 segments: Vec::new(),
-            }),
+            }]),
             targets: vec![Arc::new(Target {
                 name: "a".to_owned(),
                 label: "A".to_owned(),
@@ -796,6 +843,7 @@ mod tests {
                 call_token: "ct".to_owned(),
                 slots: Mutex::new(Vec::new()),
                 in_call: AtomicUsize::new(0),
+                live: Arc::new(AtomicUsize::new(0)),
                 events: Mutex::new(VecDeque::new()),
                 server: Mutex::new("null".to_owned()),
             })],
@@ -876,6 +924,27 @@ mod tests {
         assert!(stats.contains("\"desired\":0"), "{stats}");
         assert!(stats.contains("\"calls_failed\":0"), "{stats}");
         h.cancel.cancel();
+    }
+
+    #[test]
+    fn leading_silence_moves_the_speech() {
+        let f = Fixture {
+            name: "f".to_owned(),
+            sample_rate: brisvox_core::frame::SampleRate::Hz16000,
+            pcm: bytes::Bytes::from(vec![1u8; 32]),
+            segments: vec![brisvox_sim::fixture::FixtureSegment {
+                start: 2,
+                end: 10,
+                lang: "en".to_owned(),
+                text: "hi".to_owned(),
+                source: String::new(),
+            }],
+        };
+        let g = with_leading_silence(&f, Duration::from_secs(1));
+        assert_eq!(g.pcm.len(), 32_000 + 32);
+        assert!(g.pcm[..32_000].iter().all(|b| *b == 0));
+        assert_eq!((g.segments[0].start, g.segments[0].end), (16_002, 16_010));
+        assert_eq!(with_leading_silence(&f, Duration::ZERO).pcm, f.pcm);
     }
 
     #[test]

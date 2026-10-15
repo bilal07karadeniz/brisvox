@@ -17,6 +17,22 @@
 //!    behind). It is left only after one full window of calm samples at or below the lower
 //!    resume limit (hysteresis, so the verdict does not flap at the limit). All time comes from
 //!    the manager's injected clock.
+//!
+//!    The signals lag the calls: a call admitted now loads the pool a second or more later,
+//!    when its caller speaks, so a fast ramp of dials can be admitted far beyond what the pool
+//!    serves before the first hot sample (on 4 vCPU, 730 calls for a capacity of about 250).
+//!    With `learn_ceiling` (default) the manager therefore keeps a **learned ceiling**: when the
+//!    pool turns hot it caps the calls it holds at 90% of what it held then; when the pool is
+//!    calm again the calls held at that moment are what it serves well, so the cap is not above
+//!    them (but one hot spell at most halves it); and it raises the cap by 10% (at least one
+//!    call) for every calm window spent at the cap. Calls above the cap are refused as
+//!    overloaded. Like TCP's congestion window, the cap settles near what the machine serves,
+//!    and calls that are already running are never touched.
+//!
+//!    The server also watches the Smart Turn executor ([`AdmissionPolicy::with_secondary_probe`])
+//!    on its queue waits and refused or timed-out jobs: a late analysis delays the end of the
+//!    turn (at worst to the fallback silence). Its queue depth is not judged: its jobs are long,
+//!    so a few queued ones are ordinary.
 //! 2. **Provider budgets** ([`AdmissionSettings::provider_limits`]). A call holds one permit of
 //!    the semaphore of every limited provider it uses, for its whole life, and a call that finds
 //!    one exhausted is refused with [`AdmissionError::ProviderBudget`] (all or none: permits
@@ -38,6 +54,7 @@
 //! |---|---|---|
 //! | `BRISVOX_OVERLOAD_QUEUE_PER_THREAD` | `4` | queued jobs per pool thread that turn the server overloaded; `0` ignores queue depth |
 //! | `BRISVOX_OVERLOAD_RESUME_QUEUE_PER_THREAD` | half of the above | queued jobs per thread at or below which the server may recover |
+//! | `BRISVOX_OVERLOAD_CEILING` | `true` | learn a ceiling of held calls from the hot samples (see above); `false` judges each admission on the pool alone |
 //! | `BRISVOX_OVERLOAD_QUEUE_CONFIRM` | `100ms` | how long the queue must stay over its limit before it counts; `0` sheds on the first such sample |
 //! | `BRISVOX_OVERLOAD_QUEUE_WAIT` | `50ms` | mean queue wait over a window that turns it overloaded; `0` ignores waits |
 //! | `BRISVOX_OVERLOAD_WINDOW` | `2s` | calm time needed to recover, and the window of the wait average |
@@ -62,6 +79,8 @@ use crate::{Error, Result};
 pub const ENV_OVERLOAD_QUEUE_PER_THREAD: &str = "BRISVOX_OVERLOAD_QUEUE_PER_THREAD";
 /// Environment variable: queued jobs per pool thread at or below which the server recovers.
 pub const ENV_OVERLOAD_RESUME_QUEUE_PER_THREAD: &str = "BRISVOX_OVERLOAD_RESUME_QUEUE_PER_THREAD";
+/// Environment variable: whether the manager learns a ceiling of held calls.
+pub const ENV_OVERLOAD_CEILING: &str = "BRISVOX_OVERLOAD_CEILING";
 /// Environment variable: how long the queue depth must stay over its limit to count.
 pub const ENV_OVERLOAD_QUEUE_CONFIRM: &str = "BRISVOX_OVERLOAD_QUEUE_CONFIRM";
 /// Environment variable: mean pool queue wait that makes the server overloaded.
@@ -157,6 +176,8 @@ pub struct OverloadConfig {
     pub wait_limit: Duration,
     /// Calm time needed to recover, and the length of the wait average's window.
     pub window: Duration,
+    /// Learn a ceiling of held calls from the hot samples (see the [module docs](self)).
+    pub learn_ceiling: bool,
 }
 
 impl OverloadConfig {
@@ -183,6 +204,7 @@ impl Default for OverloadConfig {
             depth_confirm: Self::DEFAULT_DEPTH_CONFIRM,
             wait_limit: Self::DEFAULT_WAIT_LIMIT,
             window: Self::DEFAULT_WINDOW,
+            learn_ceiling: true,
         }
     }
 }
@@ -237,6 +259,17 @@ impl AdmissionSettings {
                  {ENV_OVERLOAD_QUEUE_PER_THREAD} ({})",
                 overload.shed_queue_per_thread
             )));
+        }
+        if let Some(text) = var(env, ENV_OVERLOAD_CEILING)? {
+            overload.learn_ceiling = match text.trim().to_ascii_lowercase().as_str() {
+                "1" | "true" | "yes" | "on" => true,
+                "0" | "false" | "no" | "off" => false,
+                _ => {
+                    return Err(Error::Config(format!(
+                        "{ENV_OVERLOAD_CEILING}: expected true or false, got {text:?}"
+                    )));
+                }
+            };
         }
         if let Some(d) = duration_var(env, ENV_OVERLOAD_QUEUE_CONFIRM)? {
             overload.depth_confirm = d;
@@ -472,6 +505,9 @@ impl Budget {
 /// limit (see the [module docs](self)). Build it once per process.
 pub struct AdmissionPolicy {
     gauge: Option<Gauge>,
+    /// Gauges of further pools the calls depend on (the Smart Turn executor): any of them hot
+    /// makes the server overloaded. `/readyz` reports the first gauge only.
+    secondary: Vec<Gauge>,
     budgets: Vec<Budget>,
 }
 
@@ -499,6 +535,7 @@ impl AdmissionPolicy {
     pub const fn none() -> Self {
         Self {
             gauge: None,
+            secondary: Vec::new(),
             budgets: Vec::new(),
         }
     }
@@ -525,14 +562,52 @@ impl AdmissionPolicy {
                 }
             })
             .collect();
-        Self { gauge, budgets }
+        Self {
+            gauge,
+            secondary: Vec::new(),
+            budgets,
+        }
     }
 
-    /// Whether the pool is under pressure at `now` (samples the pool).
-    pub(crate) fn overloaded(&self, now: Instant) -> bool {
+    /// Also watches `probe` (another pool the calls depend on, such as the Smart Turn
+    /// executor) on its queue waits and its refused or timed-out jobs, not on its queue depth:
+    /// its jobs are long (a Smart Turn analysis takes 20-25 ms), so a few queued ones are
+    /// ordinary queueing, while the mean wait is the delay the calls feel. The server is
+    /// overloaded when any of its pools is. Without a primary gauge (shedding off or no pool), or
+    /// with waits off, this does nothing.
+    #[must_use]
+    pub fn with_secondary_probe(mut self, probe: Arc<dyn LoadProbe>) -> Self {
+        if let Some(config) = self.gauge.as_ref().map(|g| g.config)
+            && !config.wait_limit.is_zero()
+        {
+            let waits_only = OverloadConfig {
+                shed_queue_per_thread: 0,
+                resume_queue_per_thread: 0,
+                ..config
+            };
+            self.secondary.push(Gauge::new(waits_only, probe));
+        }
+        self
+    }
+
+    /// The window of the learned ceiling, when the policy learns one.
+    pub(crate) fn ceiling_window(&self) -> Option<Duration> {
         self.gauge
             .as_ref()
-            .is_some_and(|g| g.observe(now).overloaded)
+            .filter(|g| g.config.learn_ceiling)
+            .map(|g| g.config.window)
+    }
+
+    /// Whether any watched pool is under pressure at `now` (samples every pool, so each
+    /// gauge's hysteresis advances).
+    pub(crate) fn overloaded(&self, now: Instant) -> bool {
+        let primary = self
+            .gauge
+            .as_ref()
+            .is_some_and(|g| g.observe(now).overloaded);
+        self.secondary
+            .iter()
+            .fold(primary, |hot, g| g.observe(now).overloaded || hot)
     }
 
     /// One permit of every limited provider, or the refusal naming the first exhausted one
@@ -794,6 +869,13 @@ mod tests {
             Arc::new(s)
         }
 
+        /// `n` more jobs completed, each having waited `wait` in the queue.
+        fn complete(&self, n: u64, wait: Duration) {
+            self.completed.fetch_add(n, Ordering::SeqCst);
+            let ns = u64::try_from(wait.as_nanos()).unwrap_or(u64::MAX);
+            self.wait_ns.fetch_add(ns * n, Ordering::SeqCst);
+        }
+
         fn depth(&self, n: usize) {
             self.depth.store(n, Ordering::SeqCst);
         }
@@ -830,6 +912,7 @@ mod tests {
             depth_confirm: Duration::ZERO,
             wait_limit: Duration::from_millis(50),
             window: Duration::from_secs(2),
+            learn_ceiling: false,
         }
     }
 
@@ -850,6 +933,7 @@ mod tests {
             (ENV_OVERLOAD_QUEUE_WAIT, "20ms"),
             (ENV_OVERLOAD_WINDOW, "5s"),
             (ENV_OVERLOAD_QUEUE_CONFIRM, "250ms"),
+            (ENV_OVERLOAD_CEILING, "off"),
             (ENV_PROVIDER_LIMITS, "Deepgram=50, openai = 100,"),
         ]))
         .unwrap();
@@ -859,6 +943,7 @@ mod tests {
         assert_eq!(o.wait_limit, Duration::from_millis(20));
         assert_eq!(o.window, Duration::from_secs(5));
         assert_eq!(o.depth_confirm, Duration::from_millis(250));
+        assert!(!o.learn_ceiling);
         assert_eq!(s.provider_limits.get("deepgram"), Some(&50));
         assert_eq!(s.provider_limits.get("openai"), Some(&100));
 
@@ -972,6 +1057,32 @@ mod tests {
         assert!(!p.overloaded(at(later, 3_000)));
         assert!(!p.overloaded(at(later, 600_000)));
         assert!(p.overloaded(at(later, 600_100)));
+    }
+
+    #[tokio::test]
+    async fn a_hot_secondary_pool_overloads_the_server_and_readyz_shows_the_primary() {
+        let vad = Script::pool(2);
+        let turn = Script::pool(2);
+        let turn_probe: Arc<dyn LoadProbe> = turn.clone();
+        let p = policy(&vad, config()).with_secondary_probe(turn_probe);
+        let t0 = now();
+        assert!(!p.overloaded(at(t0, 0)));
+        // A deep Smart Turn queue alone is ordinary (long jobs): not judged.
+        turn.depth(40);
+        assert!(!p.overloaded(at(t0, 100)));
+        // Its jobs waiting 80 ms on average over the window: the calls feel it.
+        turn.depth(0);
+        turn.complete(20, Duration::from_millis(80));
+        assert!(p.overloaded(at(t0, 2_200)));
+        let pressure = p.snapshot(at(t0, 2_200)).pressure.unwrap();
+        assert_eq!(pressure.queue_depth, 0, "readyz reports the primary pool");
+        // Calm waits over the next window: admitted again.
+        turn.complete(20, Duration::from_millis(5));
+        assert!(!p.overloaded(at(t0, 4_300)));
+        // Without a primary gauge a secondary probe adds nothing.
+        let none = AdmissionPolicy::none().with_secondary_probe(turn.clone());
+        turn.depth(100);
+        assert!(!none.overloaded(at(t0, 3_000)));
     }
 
     #[tokio::test]

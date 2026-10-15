@@ -65,6 +65,7 @@ exit status 1 and a message naming the variable.
 | `BRISVOX_MAX_SESSIONS` | `256` | Sessions live or reserved at once (1 to 100000); more are refused, never queued. |
 | `BRISVOX_OVERLOAD_QUEUE_PER_THREAD` | `4` | Jobs queued per inference-pool thread at or above which new calls are refused (overloaded). `0` ignores the queue depth. |
 | `BRISVOX_OVERLOAD_RESUME_QUEUE_PER_THREAD` | half of the above | Queued jobs per thread at or below which the server may recover (must be below the above). |
+| `BRISVOX_OVERLOAD_CEILING` | `true` | Learn a ceiling of held calls from pool pressure: when the pool turns hot hold at most 90% of the calls held then, when it is calm again at most the calls held at that moment (one hot spell at most halves the cap), and raise the cap by 10% (at least one call) per calm window spent at it. The pressure signals lag the calls (a call loads the pool when its caller speaks), so without it a fast ramp is admitted far past capacity. `false`: each admission is judged on the pool alone. |
 | `BRISVOX_OVERLOAD_QUEUE_CONFIRM` | `100ms` | How long the queue must stay at or over `BRISVOX_OVERLOAD_QUEUE_PER_THREAD` (in every sample) before it counts. A burst of call starts queues one job per call for microseconds; a pool that is really behind keeps its queue. `0` sheds on the first such sample. |
 | `BRISVOX_OVERLOAD_QUEUE_WAIT` | `50ms` | Mean time pool jobs waited in the queue over a window, at or above which new calls are refused. `0` ignores waits. With both at `0` pressure shedding is off. |
 | `BRISVOX_OVERLOAD_WINDOW` | `2s` | The window of the wait average, and the calm time needed to recover. |
@@ -329,7 +330,10 @@ is not at `BRISVOX_MAX_SESSIONS` still refuses calls it cannot serve well. Every
 counted by reason and is answered cleanly by the transport that met it.
 
 - **Pool pressure.** The calls' DSP and inference run on the shared inference pool, so when it
-  falls behind every call degrades together. The server reads the pool at each admission
+  falls behind every call degrades together; so do the Smart Turn analyses when their executor
+  falls behind (a late analysis delays the end of the turn), so that executor is judged too, on
+  its queue waits and refused or timed-out jobs (not its depth: its jobs take 20-25 ms, so a
+  few queued ones are ordinary), and either one hot refuses new calls. The server reads the pools at each admission
   attempt and each `/readyz` probe: queued jobs per pool thread, jobs refused or timed out, and
   the mean time jobs waited in the queue over `BRISVOX_OVERLOAD_WINDOW` (a job queues only while
   the cores are busy, so the wait is the CPU signal; it is judged only with at least 8 jobs in
@@ -341,6 +345,13 @@ counted by reason and is answered cleanly by the transport that met it.
   one full window of samples at or below the resume limit (hysteresis: a pool hovering at the
   limit does not flap). Sampling is lazy (no background task): an orchestrator polling
   `/readyz` also advances the recovery.
+- **Learned ceiling.** The pressure signals lag the calls: a call admitted now loads the pool
+  a second or more later, when its caller speaks. Measured on Railway (4 vCPU, a capacity of
+  about 250 calls), dialing 900 calls within seconds admitted about 730 before the pool turned
+  hot, and every call degraded (V2V p50 3.7 s). With `BRISVOX_OVERLOAD_CEILING` (default) the
+  pool turning hot caps the held calls at 90% of the calls held then, the pool turning calm
+  caps them at the calls held at that moment (what it served well), and the cap grows by 10%
+  per calm window spent at it, so it settles near what the machine serves. Running calls are never ended to get under it.
 - **Provider budgets.** With `BRISVOX_PROVIDER_LIMITS`, every call holds one permit of each
   limited provider its agent uses (the STT, LLM and TTS named in the agent file) for its whole
   life; permits are all-or-none and come back on every end path (hang-up, error, panic,
