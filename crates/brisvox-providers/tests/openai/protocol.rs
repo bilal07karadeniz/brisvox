@@ -218,10 +218,7 @@ async fn every_documented_server_event_is_parsed_across_arbitrary_chunk_boundari
     mock.script(Script::stream(steps));
 
     let events = run(&mock, user("hi")).await;
-    assert_eq!(
-        text_of(&events),
-        "Merhaba, Ada! \u{1F44B} \"quoted\"\nline"
-    );
+    assert_eq!(text_of(&events), "Merhaba, Ada! \u{1F44B} \"quoted\"\nline");
     let call: Vec<_> = events
         .iter()
         .filter_map(|e| match e {
