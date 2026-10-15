@@ -201,7 +201,7 @@ phone audio" above).
 
 ## Live (2026-10-14)
 
-Owner's machine, WSL2 Ubuntu 24.04, sherpa-onnx 1.13.8 Python `streaming_server.py` (needs
+Test machine, WSL2 Ubuntu 24.04, sherpa-onnx 1.13.8 Python `streaming_server.py` (needs
 `http_server.py` and the `python-api-examples/web` assets next to it), Turkish model
 `atasoglu/seda-v0.1` (int8 encoder/joiner, 76 MB, CPU, `--num-threads 2`), the TR FLEURS fixture
 through `sherpa_onnx` (`SHERPA_ONNX_LANGUAGE=tr`), 2 runs: WER 0.00 on both utterances, 9-11

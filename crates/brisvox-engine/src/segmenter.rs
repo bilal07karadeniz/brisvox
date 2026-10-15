@@ -96,7 +96,7 @@ impl SegmenterStageConfig {
     /// assumption, not a measurement**: only the English answer shape is measured; a
     /// Turkish reply is assumed to open the same way (`Peki,` `Tamam,` and then a long
     /// sentence). The previous 2 was a starting value chosen without data too. Checked with a
-    /// Turkish reference set or the live Turkish TTS tests (Q-009), which also judge the
+    /// Turkish reference set or the live Turkish TTS tests, which also judge the
     /// prosody of a one-word first chunk.
     pub const FIRST_MIN_WORDS_TR: usize = 1;
 

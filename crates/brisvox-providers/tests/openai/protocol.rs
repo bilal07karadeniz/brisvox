@@ -177,9 +177,9 @@ async fn every_documented_server_event_is_parsed_across_arbitrary_chunk_boundari
         json!({"type": "response.output_text.delta", "item_id": "msg_1", "output_index": 1,
                "content_index": 0, "delta": "Merhaba, ", "logprobs": [], "obfuscation": "xx"}),
         json!({"type": "response.output_text.delta", "item_id": "msg_1", "output_index": 1,
-               "content_index": 0, "delta": "Bilal! \u{1F44B} \"quoted\"\nline"}),
+               "content_index": 0, "delta": "Ada! \u{1F44B} \"quoted\"\nline"}),
         json!({"type": "response.output_text.done", "item_id": "msg_1", "output_index": 1,
-               "content_index": 0, "text": "Merhaba, Bilal!"}),
+               "content_index": 0, "text": "Merhaba, Ada!"}),
         json!({"type": "response.content_part.done", "item_id": "msg_1", "part": {}}),
         json!({"type": "response.output_item.done", "output_index": 1,
                "item": {"type": "message", "id": "msg_1", "role": "assistant", "status": "completed", "content": []}}),
@@ -220,7 +220,7 @@ async fn every_documented_server_event_is_parsed_across_arbitrary_chunk_boundari
     let events = run(&mock, user("hi")).await;
     assert_eq!(
         text_of(&events),
-        "Merhaba, Bilal! \u{1F44B} \"quoted\"\nline"
+        "Merhaba, Ada! \u{1F44B} \"quoted\"\nline"
     );
     let call: Vec<_> = events
         .iter()

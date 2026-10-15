@@ -15,7 +15,7 @@ fail-fast = false
 filter = 'test(a_hundred_chaotic_calls_stay_isolated_and_leave_nothing_behind)'
 slow-timeout = { period = "120s", terminate-after = 3 }
 
-# --- real-time capacity tests (T-132.1) --------------------------------------------------------
+# --- real-time capacity tests --------------------------------------------------------
 # A few tests run calls in real time on the system clock and assert how the machine copes: no
 # VAD job past its 250 ms budget, a worker never stalled for long, a verdict ready before the stop
 # arrives. They hold on a quiet development machine and are capacity measurements, not

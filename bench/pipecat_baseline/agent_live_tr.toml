@@ -9,7 +9,7 @@
 #   - no keyterms (the prompt names no product).
 # Keys are never in this file. Set `tts.voice` to a real Cartesia voice id for a run (scripts keep
 # a private copy with the id from CARTESIA_VOICE_ID; a voice id is not a secret, but it is the
-# owner's choice). The LLM key is OPENAI_COMPATIBLE_API_KEY.
+# an arbitrary choice). The LLM key is OPENAI_COMPATIBLE_API_KEY.
 
 [agent]
 name = "bench-live-tr"

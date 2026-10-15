@@ -42,7 +42,7 @@ The whole local stack, step by step: `book/src/quickstart/local.md`; its agent f
 - Turkish support: see the Turkish summary table.
 - Gotchas: see "Gotchas".
 
-Owner hardware (task text): RTX 5070 (NVIDIA page: 12 GB GDDR7, 6,144 CUDA cores), Windows 11 +
+Test hardware: RTX 5070 (NVIDIA page: 12 GB GDDR7, 6,144 CUDA cores), Windows 11 +
 WSL2 Ubuntu + Docker. Production may be CPU-only.
 
 ## 1. Protocol convergence (answer to "is there a standard?")

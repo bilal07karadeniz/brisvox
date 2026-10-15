@@ -551,7 +551,7 @@ def FakeResponder(fake: FakeConfig):  # noqa: N802 (a class built lazily, after 
     return _fake_responder_class()(fake)
 
 
-# Optional shared token (the listening test's public real-call process, bench/railway): when set,
+# Optional shared token (a bot reachable from the internet): when set,
 # a call must present it like a brisvox client does, as the subprotocol `brisvox-token.<token>` (a
 # browser) or `?token=`; otherwise the upgrade is refused (HTTP 403). Unset: open, as before.
 ACCESS_TOKEN_ENV = "BOT_ACCESS_TOKEN"

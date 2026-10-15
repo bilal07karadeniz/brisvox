@@ -286,7 +286,7 @@ async fn every_documented_server_event_is_parsed_across_arbitrary_chunk_boundari
         wire::block_stop(2),
         wire::text_start(3),
         wire::text_delta(3, "Merhaba, "),
-        wire::text_delta(3, "Bilal! \u{1F44B} \"quoted\"\nline"),
+        wire::text_delta(3, "Ada! \u{1F44B} \"quoted\"\nline"),
         json!({"type": "content_block_delta", "index": 3,
                "delta": {"type": "citations_delta", "citation": {"type": "x"}}})
         .to_string(),
@@ -328,7 +328,7 @@ async fn every_documented_server_event_is_parsed_across_arbitrary_chunk_boundari
     let events = run(&mock, user("hi")).await;
     assert_eq!(
         text_of(&events),
-        "Merhaba, Bilal! \u{1F44B} \"quoted\"\nline"
+        "Merhaba, Ada! \u{1F44B} \"quoted\"\nline"
     );
     assert_eq!(
         calls_of(&events),

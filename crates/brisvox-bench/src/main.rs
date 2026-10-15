@@ -14,15 +14,11 @@
 //! brisvox-bench model-cpu --models DIR [--configs 2:1,1:1,2:0,1:0] [--rounds 30] [--batch 20]
 //!                         [--gap-ms 40] [--silero-batch 2000] [--out FILE]   (feature `models`)
 //! brisvox-bench engine-server [--bind 127.0.0.1:0] [--workers N] [--max-calls N] ...
-//! brisvox-bench hold [--bind ADDR] --target 'NAME;LABEL;LOAD_WS_URL;STATS_URL;CALL_URL;TOKEN_VAR' ...
-//! brisvox-bench container-stats [--bind [::]:9100]
 //! ```
 //!
 //! `capacity` ramps N concurrent calls against a server and finds the largest N within a
 //! latency SLO (`capacity_cli.rs`); `engine-server` is the engine over mock providers as
-//! a server process (what `capacity --sim` measures). `hold` keeps N synthetic calls running per
-//! target behind a small control page, and `container-stats` reports a container's CPU and
-//! memory to it (`hold.rs`; the listening test of `bench/railway/README.md`).
+//! a server process (what `capacity --sim` measures).
 //!
 //! `v2v` is the voice-to-voice latency benchmark over the websocket protocol (see
 //! `bench/results/README.md`): `--sim` measures the engine over mock providers in process
@@ -30,7 +26,6 @@
 //! (or the `BRISVOX_BENCH_URL` environment variable) any server.
 
 mod capacity_cli;
-mod hold;
 
 use std::process::ExitCode;
 use std::time::Duration;
@@ -79,9 +74,7 @@ const USAGE: &str = "usage:\n  brisvox-bench sim-load [--sessions 10,100,300,500
                      [--min-gap-ms 4000] [--max-calls 1024] [--workers N] \
                      [--exit-on-stdin-eof] [--models DIR] [--turn-threads N] and the engine target flags of v2v\n  \
                      brisvox-bench model-cpu --models DIR [--configs 2:1,1:1,2:0,1:0] \
-                     [--rounds 30] [--batch 20] [--gap-ms 40] [--silero-batch 2000] [--out FILE]
-                       brisvox-bench hold [--bind ADDR] [--fixtures-dir DIR] [--fixture NAME]                      [--access-key-env VAR] --target 'NAME;LABEL;LOAD_WS_URL;STATS_URL;CALL_URL;TOKEN_VAR' ...
-                       brisvox-bench container-stats [--bind [::]:9100]";
+                     [--rounds 30] [--batch 20] [--gap-ms 40] [--silero-batch 2000] [--out FILE]";
 
 fn resample_cmd(mut args: impl Iterator<Item = String>, command: &str) -> Result<bool, BenchError> {
     let (mut seconds, mut out) = (5usize, None);
@@ -739,8 +732,6 @@ fn run() -> Result<bool, BenchError> {
         Some("speculation") => speculation_cmd(args, &command),
         Some("capacity") => capacity_cli::capacity_cmd(args, &command),
         Some("engine-server") => capacity_cli::engine_server_cmd(args),
-        Some("hold") => hold::hold_cmd(args),
-        Some("container-stats") => hold::container_stats_cmd(args),
         _ => Err(BenchError::Config(USAGE.into())),
     }
 }

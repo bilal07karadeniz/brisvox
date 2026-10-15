@@ -14,8 +14,8 @@ named plain `brisvox` on crates.io, PyPI and npm, are released together under on
   only when callers speak, so a fast ramp used to be admitted far past capacity (on 4 vCPU, about
   730 calls held for a capacity of about 250, every call at 3.7 s p50). The server now learns how
   many calls it serves well from the pressure signals and refuses new calls (503) above that,
-  without touching running calls. Measured on Railway with 900 callers dialing: 120 to 400 calls
-  held at 0.9 to 1.5 s p95, none failed.
+  without touching running calls. In a load test with 900 callers dialing into 4 vCPU: 120 to 400
+  calls held at 0.9 to 1.5 s p95, none failed.
 - **Cautious start**: a fresh server admits 16 calls and doubles per calm window until the pool is
   first under pressure, so a rush right after a restart cannot overshoot.
 - **A second agent per server** (`BRISVOX_WS_AGENT_FILE`): the generic websocket listener runs its
@@ -38,8 +38,6 @@ named plain `brisvox` on crates.io, PyPI and npm, are released together under on
   pass an agent on a platform that cannot mount a file) failed at startup.
 - The release workflow's npm publish step (`./pkg/*.tgz`): 0.1.0 reached GitHub, GHCR and PyPI
   only; crates.io and npm start at 0.1.1.
-- The listening test (`bench/railway`) runs the real call in the same brisvox process as the
-  synthetic calls, and its load generator dials and speaks like real callers (no lockstep).
 
 ## [0.1.0] - 2026-10-15
 

@@ -6,7 +6,7 @@ if [ ! -f Cargo.toml ]; then
   echo "verify: no Cargo workspace yet — skipping"; exit 0
 fi
 # Disk guard: the shared target/ grows by tens of GB per day of parallel worktree builds (it
-# reached 337 GB once and filled the owner's disk). Below BRISVOX_MIN_FREE_GB (default 40) free on
+# reached 337 GB once and filled the disk). Below BRISVOX_MIN_FREE_GB (default 40) free on
 # the target's drive, the debug build output (regenerable) is removed before building.
 TARGET_DIR="${CARGO_TARGET_DIR:-target}"
 MIN_FREE_GB="${BRISVOX_MIN_FREE_GB:-40}"

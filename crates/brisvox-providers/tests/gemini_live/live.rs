@@ -366,7 +366,7 @@ async fn a_real_turkish_turn_gets_a_spoken_answer() {
     // A system note mid-session (`clientContent` without turnComplete) must be accepted.
     control
         .send(S2sControl::Note {
-            text: Arc::from("Arayanın adı Bilal."),
+            text: Arc::from("Arayanın adı Ada."),
         })
         .await
         .expect("control");

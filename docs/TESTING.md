@@ -100,7 +100,7 @@ here). CI images (`ubuntu-latest`, `windows-latest`) ship cmake and a C compiler
   data and lifecycle frames, or drive units directly.
 - Mutation-check every regression/property test: re-introduce the bug, confirm the test fails.
 - The gate runs on Linux and Windows (`.github/workflows/ci.yml`); a test that passed on one
-  desktop only is a bug in the test (T-132). Reproduce Linux failures in a `rust:1.99.0` container
+  desktop only is a bug in the test. Reproduce Linux failures in a `rust:1.99.0` container
   (WSL2 + Docker on the Windows machine) with `cargo nextest run --workspace --all-features`; for
   racy ones add `--stress-count N` and CPU contention (`docker run --cpuset-cpus=0,1`, busy loops).
   The causes found: model goldens that are platform-specific (Smart Turn: only compared where the
@@ -112,7 +112,7 @@ here). CI images (`ubuntu-latest`, `windows-latest`) ship cmake and a C compiler
   sends must let the runtime run); the scheduler's lazily allocated defer list (one allocation the
   first time a task yields: warm it before counting); work started "together" that is only
   ordered by thread start-up (wait for the first job to run before filling the queue behind it).
-- Tests that fail only on a busy runner (T-132.1; reproduce with `docker run --cpuset-cpus=0,1` plus
+- Tests that fail only on a busy runner (reproduce with `docker run --cpuset-cpus=0,1` plus
   busy loops, and `--stress-count`): (1) "a client that does not read" tests with real sockets set
   a tiny `SO_RCVBUF` on the client they own (`TcpSocket::set_recv_buffer_size` before `connect`,
   see `websocket.rs`, `rtvi.rs`): the kernel's autotuned buffers grow and drain while the test
