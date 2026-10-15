@@ -175,6 +175,11 @@ const SLOW_DWELL: Duration = Duration::from_millis(40);
 /// A write that took longer than this counts in `relay_slow_writes`.
 const SLOW_WRITE: Duration = Duration::from_millis(20);
 
+/// How long after a permission was lost (refused, or lapsed unrefreshed) the relay asks for it
+/// again; also the shortest gap between two requests for the same peer, so a server that keeps
+/// refusing costs one request per peer per interval, not a loop.
+const PERMISSION_RETRY: Duration = Duration::from_secs(2);
+
 /// Default port of a `turn:` URL (RFC 7064).
 const DEFAULT_TURN_PORT: u16 = 3478;
 /// Default port of a `turns:` URL (RFC 7064).
@@ -383,6 +388,7 @@ impl RelayService {
             perms_pending: 0,
             perms_ok: 0,
             bound: HashSet::new(),
+            redo: Vec::new(),
             write_timeout: self.config.write_timeout,
         };
         let relayed = match session.setup(&peers, self.config.max_permissions).await {
@@ -905,6 +911,10 @@ struct Session {
     perms_ok: usize,
     /// Peers a channel is bound (or being bound) for; at most [`MAX_CHANNELS`].
     bound: HashSet<SocketAddr>,
+    /// Peers whose permission was lost after the setup, with the clock instant the next request
+    /// for it may go out. Holds a peer at most once and only peers that had a permission, so it
+    /// never outgrows `max_permissions`.
+    redo: Vec<(IpAddr, Instant)>,
     write_timeout: Duration,
 }
 
@@ -961,6 +971,7 @@ impl Session {
     /// woken next.
     async fn cycle(&mut self) -> std::result::Result<Instant, Fail> {
         for _ in 0..MAX_FLUSH_ROUNDS {
+            self.recreate_permissions();
             let now = self.now();
             let wake = match self.client.poll(now) {
                 TurnPollRet::WaitUntil(at) => self.deadline(at),
@@ -972,10 +983,39 @@ impl Session {
             };
             self.drain_events();
             if !self.flush().await? {
-                return Ok(wake);
+                // A permission lost just now is asked for again after its delay.
+                return Ok(self.next_recreation().map_or(wake, |due| wake.min(due)));
             }
         }
         Ok(self.shared.clock.now())
+    }
+
+    /// Asks again for the permissions that were lost after the setup and whose retry time has
+    /// come. The client crate drops a permission for good when its refresh is answered with an
+    /// error or did not get through before the lifetime ran out; without a new
+    /// `CreatePermission` the peer's packets would be dropped by the TURN server (and ours
+    /// refused by the client) for the rest of the call.
+    fn recreate_permissions(&mut self) {
+        if self.redo.is_empty() {
+            return;
+        }
+        let at = self.shared.clock.now();
+        let now = self.now();
+        let client = &mut self.client;
+        self.redo.retain(|&(ip, due)| {
+            if due > at {
+                return true;
+            }
+            // Sent now; a failed answer or a timeout arms it again. An error means there is
+            // nothing to ask for (the allocation is gone, which `poll` reports as closed).
+            let _ = client.create_permission(TransportType::Udp, ip, now);
+            false
+        });
+    }
+
+    /// When the next lost permission is asked for again.
+    fn next_recreation(&self) -> Option<Instant> {
+        self.redo.iter().map(|&(_, due)| due).min()
     }
 
     fn drain_events(&mut self) {
@@ -989,9 +1029,16 @@ impl Session {
                     self.perms_pending = self.perms_pending.saturating_sub(1);
                     self.perms_ok += 1;
                 }
-                TurnEvent::PermissionCreateFailed(..) => {
+                TurnEvent::PermissionCreateFailed(_, ip) => {
+                    // Failures during the setup are judged by `setup`; later ones are tried again.
+                    let after_setup = self.perms_pending == 0;
                     self.perms_pending = self.perms_pending.saturating_sub(1);
                     Counters::bump(&self.shared.stats.relay_permission_failures);
+                    if after_setup && !self.redo.iter().any(|&(peer, _)| peer == ip) {
+                        tracing::debug!(%ip, "webrtc turn relay: permission lost, asking again");
+                        let due = self.shared.clock.now() + PERMISSION_RETRY;
+                        self.redo.push((ip, due));
+                    }
                 }
                 _ => {}
             }

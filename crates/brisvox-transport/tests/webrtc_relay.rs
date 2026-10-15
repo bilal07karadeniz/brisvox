@@ -1440,6 +1440,57 @@ async fn allocation_permissions_and_channels_are_refreshed_on_the_clock_and_the_
 }
 
 #[tokio::test]
+async fn a_permission_that_lapsed_unrefreshed_is_created_again_and_the_call_goes_on() {
+    let clock = StepClock::new();
+    let mock = MockTurn::start(clock.clone(), MockOptions::default()).await;
+    let mut config = plain_config(&mock, true);
+    config.disconnect_grace = Duration::from_secs(10 * 3_600);
+    let mut rig = Rig::start(config, clock.clone()).await;
+    let (browser, mut session) = rig.call().await;
+    let relayed = browser.answer_candidates()[0].1;
+    let poker = UdpSocket::bind("127.0.0.1:0").await.unwrap();
+    let poker_addr = poker.local_addr().unwrap();
+    assert_audio_flows(&browser, &mut session, &rig.clock, 0).await;
+    let permissions = |mock: &MockTurn| mock.count(|e| matches!(e, Ev::Permission(_)));
+    assert_eq!(permissions(&mock), 1, "{:?}", mock.events());
+
+    // One jump past the permission's five minutes: the refresh never had a chance (a TURN server
+    // that did not answer in time, or refused the refresh, leaves the client in the same
+    // state). The client must ask for the permission again instead of dropping the peer for the
+    // rest of the call.
+    clock.advance(Duration::from_secs(400));
+    let deadline = tokio::time::Instant::now() + WAIT;
+    while permissions(&mock) < 2 {
+        assert!(
+            tokio::time::Instant::now() < deadline,
+            "the permission was not created again: {:?} {:?}",
+            rig.server.stats(),
+            mock.events()
+        );
+        // The relay task's timer runs on real time (this clock only jumps): the retry delay
+        // passes in virtual seconds, and a frame from the TURN server (a STUN success response
+        // to nothing the client asked, which it ignores) wakes the task to notice.
+        clock.advance(Duration::from_secs(3));
+        let mut nudge = vec![0x01, 0x01, 0x00, 0x00, 0x21, 0x12, 0xA4, 0x42];
+        nudge.extend_from_slice(&[7; 12]);
+        mock.inject(0, nudge);
+        tokio::time::sleep(Duration::from_millis(20)).await;
+    }
+    // And the peer's packets go through again.
+    let _ = poker.send_to(b"\x00\x00poke", relayed).await;
+    mock.until("the poke to be forwarded", |events| {
+        events
+            .iter()
+            .any(|e| matches!(e, Ev::PeerPacket { from, forwarded: true } if *from == poker_addr))
+    })
+    .await;
+    let stats = rig.server.stats();
+    assert_eq!(stats.relay_lost, 0, "{stats:?}");
+    assert!(stats.relay_permission_failures >= 1, "{stats:?}");
+    browser.stop().await;
+}
+
+#[tokio::test]
 async fn a_hangup_and_a_server_shutdown_release_the_allocations() {
     let clock = StepClock::new();
     let mock = MockTurn::start(clock.clone(), MockOptions::default()).await;
