@@ -327,6 +327,10 @@ class Events(AgentCase):
         async def lost(session, event: EventsLost) -> None:  # noqa: ANN001
             self.seen.append(("lost", event.count))
 
+        @agent.on_session_usage
+        async def usage(session, event) -> None:  # noqa: ANN001
+            self.seen.append(("usage", event.turns, event.usage.llm.input_tokens))
+
         @agent.on_session_end
         async def end(session, event: SessionEnd) -> None:  # noqa: ANN001
             self.seen.append(("end", event.reason, session.end_reason))
@@ -345,6 +349,23 @@ class Events(AgentCase):
         )
         self.assertEqual(self.seen[0], ("transcript", "hel", False))
         self.assertEqual(self.seen[-1], ("end", "hangup", "hangup"))
+
+    async def test_session_usage_is_delivered_before_the_session_end_without_a_subscription(
+        self,
+    ) -> None:
+        fake, accept = await self.call()
+        # `session.usage` is always sent: it is not a subscribable event.
+        self.assertNotIn("session.usage", accept["events"])
+        await fake.send({
+            "type": "session.usage", "duration_ms": 5000, "turns": 2, "interrupted_turns": 0,
+            "latency": {}, "usage": {"llm": {"provider": "openai", "model": "m", "input_tokens": 77,
+                                             "cached_input_tokens": 0, "output_tokens": 3,
+                                             "responses_without_usage": 0}},
+        })
+        await fake.send({"type": "session.end", "reason": "hangup"})
+        await asyncio.wait_for(self.ended.wait(), 5)
+        self.assertEqual([s[0] for s in self.seen], ["usage", "end"])
+        self.assertEqual(self.seen[0], ("usage", 2, 77))
 
     async def test_say_reacts_to_the_event_with_re_and_waits_for_the_result(self) -> None:
         fake, _ = await self.call()

@@ -89,6 +89,15 @@ pub enum ServerBody {
         /// Why (`hangup`, `ended_by_agent`, `shutdown`, ...).
         reason: String,
     },
+    /// What the call used and how fast it was, sent once right before `session.end` (always,
+    /// whatever the agent subscribed to; missing when the link was down at the end of the call).
+    /// The fields of [`CallSummary`] are the message's own.
+    #[serde(rename = "session.usage")]
+    SessionUsage {
+        /// The summary of the call.
+        #[serde(flatten)]
+        summary: CallSummary,
+    },
     /// A user turn started (speech; also a confirmed barge-in).
     #[serde(rename = "turn.user_started")]
     TurnUserStarted {
@@ -158,11 +167,15 @@ pub enum ServerBody {
         /// The delta.
         text: Arc<str>,
     },
-    /// The LLM finished a response round.
+    /// The LLM finished the response of `epoch`.
     #[serde(rename = "bot.llm_stopped")]
     BotLlmStopped {
         /// The response's epoch.
         epoch: u32,
+        /// What the provider reported for the response (summed over the rounds of the turn);
+        /// absent when it reported none.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        usage: Option<TokenUsage>,
     },
     /// A chunk of text sent to the TTS.
     #[serde(rename = "bot.tts_text")]
@@ -293,6 +306,142 @@ pub struct Capabilities {
     pub transfer: bool,
     /// Remote tools can be declared.
     pub tools: bool,
+}
+
+/// Provider-reported LLM token usage (`bot.llm_stopped`).
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct TokenUsage {
+    /// Prompt tokens.
+    pub input_tokens: u32,
+    /// Of `input_tokens`, the tokens served from the provider's prompt cache.
+    pub cached_input_tokens: u32,
+    /// Generated tokens.
+    pub output_tokens: u32,
+}
+
+impl From<brisvox_providers::Usage> for TokenUsage {
+    fn from(usage: brisvox_providers::Usage) -> Self {
+        Self {
+            input_tokens: usage.input_tokens,
+            cached_input_tokens: usage.cached_input_tokens,
+            output_tokens: usage.output_tokens,
+        }
+    }
+}
+
+/// Average and worst value of one latency stage over the turns of a call, in milliseconds
+/// (rounded to 0.1 ms).
+#[derive(Debug, Clone, Copy, Default, PartialEq, Serialize, Deserialize)]
+pub struct StageLatency {
+    /// Mean over the turns that had the stage.
+    pub avg_ms: f64,
+    /// Worst turn.
+    pub max_ms: f64,
+}
+
+/// The latency stages of [`CallSummary`] (the same per-turn numbers as `turn.metrics`); a stage
+/// no turn of the call had is absent.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Serialize, Deserialize)]
+pub struct LatencySummary {
+    /// How long the end-of-turn policy waited after the caller stopped speaking.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub end_of_turn: Option<StageLatency>,
+    /// From the end of the caller's speech to the final transcript.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub stt_final: Option<StageLatency>,
+    /// From the LLM request to its first token.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub llm_ttft: Option<StageLatency>,
+    /// From the TTS request to its first audio.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tts_ttfb: Option<StageLatency>,
+    /// From the end of the caller's speech to the first bot audio out (server side).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub response: Option<StageLatency>,
+}
+
+/// What the LLM provider billed in a call: the provider-reported usage of every response,
+/// speculative responses that were discarded included.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct LlmUsage {
+    /// The provider of the agent definition.
+    pub provider: String,
+    /// The model of the agent definition (`default` when the provider picks it).
+    pub model: String,
+    /// Prompt tokens.
+    pub input_tokens: u64,
+    /// Of `input_tokens`, the tokens served from the provider's prompt cache.
+    pub cached_input_tokens: u64,
+    /// Generated tokens.
+    pub output_tokens: u64,
+    /// Responses that reported no usage: the token counts are lower bounds by those.
+    pub responses_without_usage: u64,
+}
+
+/// The speech-to-text audio sent in a call.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+pub struct SttUsage {
+    /// The provider of the agent definition.
+    pub provider: String,
+    /// The model of the agent definition (`default` when the provider picks it).
+    pub model: String,
+    /// Seconds of audio sent to the provider (millisecond precision).
+    pub audio_seconds: f64,
+}
+
+impl SttUsage {
+    /// The audio in whole milliseconds (the precision `audio_seconds` has); zero for a value
+    /// that is negative, not finite or out of range.
+    pub fn audio_ms(&self) -> u64 {
+        std::time::Duration::try_from_secs_f64(self.audio_seconds).map_or(0, |d| {
+            u64::try_from(d.as_micros().saturating_add(500) / 1_000).unwrap_or(u64::MAX)
+        })
+    }
+}
+
+/// The text-to-speech characters sent in a call.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct TtsUsage {
+    /// The provider of the agent definition.
+    pub provider: String,
+    /// The model of the agent definition (`default` when the provider picks it).
+    pub model: String,
+    /// Characters sent to the provider for synthesis.
+    pub characters: u64,
+}
+
+/// The provider units of a call. A part is absent when the call did not run that stage (a
+/// speech-to-speech call has no separate STT, LLM or TTS).
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+pub struct UsageSummary {
+    /// Language model tokens.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub llm: Option<LlmUsage>,
+    /// Speech-to-text audio.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub stt: Option<SttUsage>,
+    /// Text-to-speech characters.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tts: Option<TtsUsage>,
+}
+
+/// The per-call summary: the body of `session.usage`, and the `summary` of the transcript's
+/// `end` line. Units, not money.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+pub struct CallSummary {
+    /// From the start to the end of the call, on the server's clock.
+    pub duration_ms: u64,
+    /// Turns that finished.
+    pub turns: u64,
+    /// Of `turns`, the ones the caller interrupted (a barge-in recorded after the summary was
+    /// built is not in it).
+    pub interrupted_turns: u64,
+    /// Average and worst latency per stage.
+    #[serde(default)]
+    pub latency: LatencySummary,
+    /// What the providers were used for.
+    #[serde(default)]
+    pub usage: UsageSummary,
 }
 
 /// Turn latencies in milliseconds (`turn.metrics`); absent when not known.
@@ -657,6 +806,7 @@ impl ServerBody {
         match self {
             Self::SessionStart { .. } => "session.start",
             Self::SessionEnd { .. } => "session.end",
+            Self::SessionUsage { .. } => "session.usage",
             Self::TurnUserStarted { .. } => "turn.user_started",
             Self::TurnUserEnded { .. } => "turn.user_ended",
             Self::TurnBotStarted { .. } => "turn.bot_started",
@@ -684,6 +834,110 @@ mod tests {
     use serde_json::json;
 
     use super::*;
+
+    #[test]
+    fn stt_audio_converts_back_to_exact_milliseconds() {
+        let ms = |audio_seconds| {
+            SttUsage {
+                audio_seconds,
+                ..SttUsage::default()
+            }
+            .audio_ms()
+        };
+        assert_eq!(ms(93.125), 93_125);
+        assert_eq!(ms(12.345), 12_345);
+        assert_eq!(ms(0.001), 1);
+        assert_eq!(ms(0.0), 0);
+        assert_eq!(ms(-1.0), 0);
+        assert_eq!(ms(f64::NAN), 0);
+    }
+
+    #[test]
+    fn session_usage_carries_the_summary_flat_and_omits_absent_parts() {
+        let summary = CallSummary {
+            duration_ms: 93_412,
+            turns: 7,
+            interrupted_turns: 1,
+            latency: LatencySummary {
+                end_of_turn: Some(StageLatency {
+                    avg_ms: 412.3,
+                    max_ms: 790.0,
+                }),
+                ..LatencySummary::default()
+            },
+            usage: UsageSummary {
+                stt: Some(SttUsage {
+                    provider: "deepgram".to_owned(),
+                    model: "nova-3".to_owned(),
+                    audio_seconds: 93.125,
+                }),
+                tts: Some(TtsUsage {
+                    provider: "cartesia".to_owned(),
+                    model: "sonic".to_owned(),
+                    characters: 812,
+                }),
+                llm: None,
+            },
+        };
+        let message = ServerMessage {
+            seq: 41,
+            t_ms: 93_500,
+            body: ServerBody::SessionUsage {
+                summary: summary.clone(),
+            },
+        };
+        let wire = serde_json::to_value(&message).expect("serializes");
+        assert_eq!(
+            wire,
+            json!({
+                "seq": 41, "t_ms": 93_500, "type": "session.usage",
+                "duration_ms": 93_412, "turns": 7, "interrupted_turns": 1,
+                "latency": {"end_of_turn": {"avg_ms": 412.3, "max_ms": 790.0}},
+                "usage": {
+                    "stt": {"provider": "deepgram", "model": "nova-3", "audio_seconds": 93.125},
+                    "tts": {"provider": "cartesia", "model": "sonic", "characters": 812}
+                }
+            })
+        );
+        let back: ServerMessage = serde_json::from_value(wire).expect("reads");
+        assert_eq!(back, message);
+    }
+
+    #[test]
+    fn usage_is_an_optional_addition_to_bot_llm_stopped() {
+        // An event without it (an older engine) still reads, and one without usage omits it.
+        let old: ServerBody =
+            serde_json::from_value(json!({"type": "bot.llm_stopped", "epoch": 3}))
+                .expect("old shape");
+        assert_eq!(
+            old,
+            ServerBody::BotLlmStopped {
+                epoch: 3,
+                usage: None
+            }
+        );
+        let wire = serde_json::to_value(&old).expect("serializes");
+        assert_eq!(wire, json!({"type": "bot.llm_stopped", "epoch": 3}));
+
+        let with = ServerBody::BotLlmStopped {
+            epoch: 3,
+            usage: Some(TokenUsage {
+                input_tokens: 12,
+                cached_input_tokens: 5,
+                output_tokens: 7,
+            }),
+        };
+        let wire = serde_json::to_value(&with).expect("serializes");
+        assert_eq!(
+            wire,
+            json!({"type": "bot.llm_stopped", "epoch": 3, "usage":
+                {"input_tokens": 12, "cached_input_tokens": 5, "output_tokens": 7}})
+        );
+        assert_eq!(
+            serde_json::from_value::<ServerBody>(wire).expect("reads"),
+            with
+        );
+    }
 
     #[test]
     fn call_identity_is_an_optional_addition_to_session_start() {
@@ -896,7 +1150,10 @@ mod tests {
                 epoch: 0,
                 text: Arc::from(""),
             },
-            ServerBody::BotLlmStopped { epoch: 0 },
+            ServerBody::BotLlmStopped {
+                epoch: 0,
+                usage: None,
+            },
             ServerBody::BotTtsText {
                 epoch: 0,
                 text: Arc::from(""),

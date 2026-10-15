@@ -743,6 +743,15 @@ class Agent:
         ``session.end`` the reason is ``"link_closed"``."""
         return self.on("session.end")(func)
 
+    def on_session_usage(self, func: F) -> F:
+        """``async def (session, event: SessionUsage)``: what the call used and how fast it was
+        (``duration_ms``, ``turns``, ``latency``, ``usage`` with the LLM tokens, STT audio seconds
+        and TTS characters), once, right before the session end. Units, not money. Always sent
+        by the server (no subscription needed); not sent when the link was down at the end, and
+        delivered like any other event (a handler that fell far behind can lose it, see
+        :meth:`on_events_lost`)."""
+        return self.on("session.usage")(func)
+
     def on_transcript(self, func: F) -> F:
         """``async def (session, event: UserTranscript)``: STT segments (interim and final)."""
         return self.on("user.transcript")(func)
@@ -1326,6 +1335,7 @@ class Agent:
 _ALL_EVENT_TYPES = frozenset(
     {
         "session.end",
+        "session.usage",
         "session.resumed",
         "error",
         "events.lost",

@@ -58,7 +58,7 @@ use brisvox_engine::{
 use brisvox_providers::{LlmProvider, SttProvider, TtsProvider};
 use bytes::Bytes;
 use futures::FutureExt;
-use tokio::sync::mpsc;
+use tokio::sync::{mpsc, oneshot};
 use tokio::task::JoinHandle;
 use tokio::time::Instant;
 use tokio_util::sync::CancellationToken;
@@ -268,6 +268,9 @@ impl Recording {
             .duration_since(UNIX_EPOCH)
             .map_or(0, |d| d.as_secs());
         let stop = CancellationToken::new();
+        // The call's summary, for the `end` line: sent by `finish_with_summary` before the stop.
+        let (summary_tx, summary_rx) = oneshot::channel();
+        let mut summary_rx = Some(summary_rx);
         let mut tasks = Vec::new();
         let mut builder = builder;
         self.stats.calls.fetch_add(1, Ordering::Relaxed);
@@ -312,6 +315,7 @@ impl Recording {
                 recipients: self.settings.age_recipients.clone(),
                 events: stream,
                 heard: heard_rx,
+                summary: summary_rx.take(),
                 clock: self.clock.clone(),
                 start,
                 stop: stop.clone(),
@@ -344,7 +348,14 @@ impl Recording {
                 stats: Arc::clone(&self.stats),
             })));
         }
-        (builder, CallRecording { stop, tasks })
+        (
+            builder,
+            CallRecording {
+                stop,
+                tasks,
+                summary: Some(summary_tx),
+            },
+        )
     }
 }
 
@@ -380,13 +391,29 @@ impl Sweeper {
 pub struct CallRecording {
     stop: CancellationToken,
     tasks: Vec<JoinHandle<()>>,
+    /// Where the call's summary goes to the transcript task.
+    summary: Option<oneshot::Sender<serde_json::Value>>,
 }
 
 impl CallRecording {
     /// Stops the recording tasks after they drained what is queued and waits for them to finish
     /// their files, for at most [`FINISH_TIMEOUT`]. A task that does not finish is aborted
     /// (its file keeps the streaming WAV header, which players read to the end).
-    pub async fn finish(mut self) {
+    pub async fn finish(self) {
+        self.finish_with(None).await;
+    }
+
+    /// [`Self::finish`], with the call's `summary` as the `summary` member of the transcript's
+    /// `end` line (numbers only: durations, counts, latencies, provider units).
+    pub async fn finish_with_summary(self, summary: &impl serde::Serialize) {
+        self.finish_with(serde_json::to_value(summary).ok()).await;
+    }
+
+    async fn finish_with(mut self, summary: Option<serde_json::Value>) {
+        if let (Some(tx), Some(summary)) = (self.summary.take(), summary) {
+            // The task reads it after the stop; a task that is gone has no `end` line to write.
+            let _ = tx.send(summary);
+        }
         self.stop.cancel();
         let mut tasks = std::mem::take(&mut self.tasks);
         let all_done = async {
@@ -711,6 +738,8 @@ struct TranscriptJob {
     redact: Option<PiiKinds>,
     events: EventStream,
     heard: mpsc::Receiver<HeardNote>,
+    /// The call's summary, for the `end` line.
+    summary: Option<oneshot::Receiver<serde_json::Value>>,
     clock: SharedClock,
     start: Instant,
     stop: CancellationToken,
@@ -1048,6 +1077,7 @@ async fn transcript_task(job: TranscriptJob) {
         redact,
         mut events,
         mut heard,
+        summary,
         clock,
         start,
         stop,
@@ -1112,9 +1142,27 @@ async fn transcript_task(job: TranscriptJob) {
     let lost = events.lost();
     stats.events_lost.fetch_add(lost, Ordering::Relaxed);
     let t_ms = writer.t_ms();
-    writer
-        .line(serde_json::json!({"type": "end", "t_ms": t_ms, "events_lost": lost}))
-        .await;
+    let mut end = serde_json::json!({"type": "end", "t_ms": t_ms, "events_lost": lost});
+    // The call's summary is built after the pipeline is gone, which can be after the event ring
+    // closed: wait for the owner to finish the recording (it sends the summary, or drops the
+    // sender, first). A call that ended without a summary (an early error) has none; the wait
+    // is bounded like the owner's own. The summary reaches the transcript after the agent link
+    // said `session.usage` (the link's own close is bounded by twice its `close_timeout`, a few
+    // seconds), so this bound is only the last resort for an owner that never finishes.
+    if let Some(summary) = summary {
+        let deadline = brisvox_core::clock::deadline_after(writer.clock.now(), FINISH_TIMEOUT);
+        let summary = tokio::select! {
+            biased;
+            got = summary => got.ok(),
+            () = writer.clock.sleep_until(deadline) => None,
+        };
+        if let Some(summary) = summary
+            && let Some(object) = end.as_object_mut()
+        {
+            object.insert("summary".to_owned(), summary);
+        }
+    }
+    writer.line(end).await;
     if !writer.failed {
         let finished = writer.file.finish(&*writer.clock, IO_TIMEOUT).await;
         if let Err(e) = finished {

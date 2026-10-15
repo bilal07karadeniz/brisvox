@@ -170,6 +170,10 @@ impl Default for SttStageConfig {
 struct Counters {
     audio_in: AtomicU64,
     audio_sent: AtomicU64,
+    /// PCM16 samples handed to the provider session (the unit of `audio_ms_sent`).
+    samples_sent: AtomicU64,
+    /// Sample rate of those samples in Hz (set once at construction).
+    sample_rate_hz: AtomicU64,
     audio_dropped_queue: AtomicU64,
     audio_dropped_down: AtomicU64,
     audio_dropped_provider: AtomicU64,
@@ -199,6 +203,10 @@ pub struct SttStatsSnapshot {
     pub audio_in: u64,
     /// Audio frames handed to the provider session.
     pub audio_sent: u64,
+    /// Duration of the audio handed to the provider session, in milliseconds (samples sent over
+    /// the sample rate, silence the stage forwards included, `Finalize`s and keepalives not).
+    /// This is what a provider that bills by audio time bills for, up to its own rounding.
+    pub audio_ms_sent: u64,
     /// Audio frames dropped because the command queue was full.
     pub audio_dropped_queue: u64,
     /// Audio frames dropped because there was no session (connecting, down, degraded).
@@ -255,6 +263,10 @@ impl SttStats {
         SttStatsSnapshot {
             audio_in: get(&c.audio_in),
             audio_sent: get(&c.audio_sent),
+            audio_ms_sent: get(&c.samples_sent)
+                .saturating_mul(1000)
+                .checked_div(get(&c.sample_rate_hz))
+                .unwrap_or(0),
             audio_dropped_queue: get(&c.audio_dropped_queue),
             audio_dropped_down: get(&c.audio_dropped_down),
             audio_dropped_provider: get(&c.audio_dropped_provider),
@@ -651,10 +663,17 @@ impl<P: SttProvider> Session<P> {
     }
 
     async fn on_audio(&mut self, audio: Bytes) -> bool {
+        // PCM16: two bytes a sample.
+        let samples = u64::try_from(audio.len() / 2).unwrap_or(u64::MAX);
         match &self.session {
             None => bump(&self.counters.audio_dropped_down),
             Some(session) => match session.input.try_send(SttInput::Audio(audio)) {
-                Ok(()) => bump(&self.counters.audio_sent),
+                Ok(()) => {
+                    bump(&self.counters.audio_sent);
+                    self.counters
+                        .samples_sent
+                        .fetch_add(samples, Ordering::Relaxed);
+                }
                 Err(mpsc::error::TrySendError::Full(_)) => {
                     bump(&self.counters.audio_dropped_provider);
                 }
@@ -837,13 +856,17 @@ impl<P: SttProvider> SttStage<P> {
             config.audio_capacity,
             config.finalize_capacity,
         ));
+        let counters = Counters::default();
+        counters
+            .sample_rate_hz
+            .store(u64::from(config.sample_rate.hz()), Ordering::Relaxed);
         Self {
             provider,
             config,
             clock,
             timeline: None,
             queue,
-            counters: Arc::new(Counters::default()),
+            counters: Arc::new(counters),
             task: None,
             last_audio: None,
             held: VecDeque::new(),

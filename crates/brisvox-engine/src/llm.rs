@@ -131,7 +131,7 @@ use brisvox_agent::played::TruncationStats;
 use brisvox_agent::tools::{FillerPolicy, ToolEngine, ToolRegistry};
 use brisvox_core::frame::{ControlFrame, ControlKind, Frame};
 use brisvox_core::{SharedClock, TimelineRecorder, TurnEpoch};
-use brisvox_providers::{LlmProvider, ToolSpec};
+use brisvox_providers::{LlmProvider, ToolSpec, Usage};
 use tokio::time::Instant;
 use tokio_util::sync::CancellationToken;
 
@@ -205,6 +205,17 @@ counters! {
     idle_timeouts,
     /// Responses the assembler refused (size or call cap, conflicting fragments).
     assemble_errors,
+    /// Prompt tokens the provider reported, summed over every response of the call that reported
+    /// usage: normal rounds, tool-loop rounds and speculative rounds, committed or discarded
+    /// (a discarded one is billed too). Counted once per response, at its `Done`.
+    input_tokens,
+    /// Of `input_tokens`, the tokens served from the provider's prompt cache.
+    cached_input_tokens,
+    /// Generated tokens the provider reported, summed like `input_tokens`.
+    output_tokens,
+    /// Responses that finished (`Done`) without reporting usage: the three token counters above
+    /// are lower bounds by what these responses used.
+    responses_without_usage,
     /// `Done.provider_data` that was not JSON (dropped).
     provider_data_invalid,
     /// `Done.provider_data` larger than [`MAX_PROVIDER_DATA_BYTES`] (dropped, not parsed).
@@ -318,6 +329,24 @@ pub(crate) fn bump(counter: &AtomicU64) {
 #[derive(Debug, Clone, Default)]
 pub struct LlmStats {
     counters: Arc<Counters>,
+    turn_usage: Arc<TurnUsage>,
+}
+
+/// The usage of the provider responses of the turn that is running, summed (what the turn's
+/// `bot.llm_stopped` event carries). One short lock per response and one per turn end; no
+/// allocation.
+#[derive(Debug, Default)]
+struct TurnUsage {
+    slot: Mutex<TurnUsageSlot>,
+}
+
+#[derive(Debug, Default, Clone, Copy)]
+struct TurnUsageSlot {
+    epoch: u32,
+    reported: bool,
+    input: u64,
+    cached: u64,
+    output: u64,
 }
 
 impl LlmStats {
@@ -328,6 +357,66 @@ impl LlmStats {
 
     pub(crate) fn counters(&self) -> &Counters {
         &self.counters
+    }
+
+    /// Counts the usage of a response that finished (once per response): into the call's
+    /// totals. `None` counts a response without usage.
+    pub(crate) fn count_usage(&self, usage: Option<Usage>) {
+        let counters = &self.counters;
+        match usage {
+            Some(usage) => {
+                counters
+                    .input_tokens
+                    .fetch_add(u64::from(usage.input_tokens), Ordering::Relaxed);
+                counters
+                    .cached_input_tokens
+                    .fetch_add(u64::from(usage.cached_input_tokens), Ordering::Relaxed);
+                counters
+                    .output_tokens
+                    .fetch_add(u64::from(usage.output_tokens), Ordering::Relaxed);
+            }
+            None => bump(&counters.responses_without_usage),
+        }
+    }
+
+    /// Adds the usage of a response of the turn of `epoch` to the turn's sum (the totals are
+    /// [`Self::count_usage`]'s). A response of a newer epoch starts a new sum; one of an older
+    /// epoch than the sum's (a stale turn's `Done` landing after the next turn began) is not
+    /// part of any turn still to be reported and leaves the sum alone.
+    pub(crate) fn add_turn_usage(&self, epoch: TurnEpoch, usage: Usage) {
+        let mut slot = lock(&self.turn_usage.slot);
+        if epoch.get() < slot.epoch {
+            return;
+        }
+        if slot.epoch != epoch.get() {
+            *slot = TurnUsageSlot {
+                epoch: epoch.get(),
+                ..TurnUsageSlot::default()
+            };
+        }
+        slot.reported = true;
+        slot.input = slot.input.saturating_add(u64::from(usage.input_tokens));
+        slot.cached = slot
+            .cached
+            .saturating_add(u64::from(usage.cached_input_tokens));
+        slot.output = slot.output.saturating_add(u64::from(usage.output_tokens));
+    }
+
+    /// The summed usage of the turn of `epoch`, once (the sum is cleared); `None` when no
+    /// response of the turn reported usage.
+    pub(crate) fn take_turn_usage(&self, epoch: TurnEpoch) -> Option<Usage> {
+        let mut slot = lock(&self.turn_usage.slot);
+        if slot.epoch != epoch.get() || !slot.reported {
+            return None;
+        }
+        let taken = *slot;
+        *slot = TurnUsageSlot::default();
+        let clamp = |n: u64| u32::try_from(n).unwrap_or(u32::MAX);
+        Some(Usage {
+            input_tokens: clamp(taken.input),
+            cached_input_tokens: clamp(taken.cached),
+            output_tokens: clamp(taken.output),
+        })
     }
 }
 
@@ -524,5 +613,64 @@ impl<P: LlmProvider> Shared<P> {
             bump(&self.count().validate_failures);
             tracing::error!(target: "brisvox::engine", %error, what, "context invalid after mutation");
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    const fn usage(input: u32, cached: u32, output: u32) -> Usage {
+        Usage {
+            input_tokens: input,
+            cached_input_tokens: cached,
+            output_tokens: output,
+        }
+    }
+
+    #[test]
+    fn the_totals_count_each_response_once_and_those_without_usage_apart() {
+        let stats = LlmStats::default();
+        stats.count_usage(Some(usage(10, 4, 3)));
+        stats.count_usage(Some(usage(5, 0, 2)));
+        stats.count_usage(None);
+        let s = stats.snapshot();
+        assert_eq!(
+            (
+                s.input_tokens,
+                s.cached_input_tokens,
+                s.output_tokens,
+                s.responses_without_usage
+            ),
+            (15, 4, 5, 1)
+        );
+    }
+
+    #[test]
+    fn the_turn_sum_is_taken_once_per_epoch_and_a_newer_epoch_starts_afresh() {
+        let stats = LlmStats::default();
+        let (one, two) = (TurnEpoch::new(1), TurnEpoch::new(2));
+        assert_eq!(stats.take_turn_usage(one), None, "nothing reported");
+        stats.add_turn_usage(one, usage(10, 4, 3));
+        stats.add_turn_usage(one, usage(5, 0, 2));
+        assert_eq!(stats.take_turn_usage(two), None, "another epoch's sum");
+        assert_eq!(stats.take_turn_usage(one), Some(usage(15, 4, 5)));
+        assert_eq!(stats.take_turn_usage(one), None, "taken");
+        // A response of a newer epoch drops the older, untaken sum.
+        stats.add_turn_usage(one, usage(1, 0, 1));
+        stats.add_turn_usage(two, usage(2, 0, 2));
+        assert_eq!(stats.take_turn_usage(one), None);
+        assert_eq!(stats.take_turn_usage(two), Some(usage(2, 0, 2)));
+        // A stale turn's response landing after the next turn began does not reset its sum.
+        stats.add_turn_usage(two, usage(3, 1, 1));
+        stats.add_turn_usage(one, usage(100, 0, 100));
+        assert_eq!(stats.take_turn_usage(one), None);
+        assert_eq!(stats.take_turn_usage(two), Some(usage(3, 1, 1)));
+        stats.add_turn_usage(two, usage(0, 0, 0));
+        assert_eq!(stats.take_turn_usage(two), Some(usage(0, 0, 0)));
+        // The sum saturates instead of wrapping.
+        stats.add_turn_usage(two, usage(u32::MAX, 0, 0));
+        stats.add_turn_usage(two, usage(u32::MAX, 0, 0));
+        assert_eq!(stats.take_turn_usage(two), Some(usage(u32::MAX, 0, 0)));
     }
 }

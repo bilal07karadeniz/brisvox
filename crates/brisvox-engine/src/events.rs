@@ -52,7 +52,10 @@ use brisvox_core::{
     Direction, EpochPolicy, Processor, ProcessorContext, Result as CoreResult, TimelineRecorder,
     TurnEpoch, TurnMetrics,
 };
+use brisvox_providers::Usage;
 use tokio::sync::broadcast;
+
+use crate::llm::LlmStats;
 
 /// Default capacity of an [`EngineEvents`] ring: about a minute of a talkative call's text
 /// deltas.
@@ -104,10 +107,15 @@ pub enum EngineEvent {
         /// The delta.
         text: Arc<str>,
     },
-    /// The LLM finished a response round.
+    /// The LLM finished the response of the epoch (the end of its last round: a tool loop has
+    /// several rounds, one [`Self::BotLlmStarted`] each).
     BotLlmStopped {
         /// The response's epoch.
         epoch: TurnEpoch,
+        /// What the provider reported for the provider responses of the turn, summed (for a
+        /// turn of one round that is the round's usage). `None` when none of them reported
+        /// usage, and for a speech-to-speech call.
+        usage: Option<Usage>,
     },
     /// A chunk of text sent to the TTS (verbatim, before speech normalization).
     BotTtsText {
@@ -280,7 +288,7 @@ pub(crate) fn event_of(site: Site, frame: &Frame, direction: Direction) -> Optio
                     Some(EngineEvent::BotLlmStarted { epoch })
                 }
                 (epoch, ControlKind::LlmResponseEnded) => {
-                    Some(EngineEvent::BotLlmStopped { epoch })
+                    Some(EngineEvent::BotLlmStopped { epoch, usage: None })
                 }
                 _ => None,
             },
@@ -314,17 +322,35 @@ pub(crate) fn event_of(site: Site, frame: &Frame, direction: Direction) -> Optio
 pub(crate) struct Observer {
     events: EngineEvents,
     timeline: TimelineRecorder,
+    /// The LLM runner's counters: where the usage of a turn's responses is read at its end.
+    llm: Option<LlmStats>,
 }
 
 impl Observer {
     pub(crate) const fn new(events: EngineEvents, timeline: TimelineRecorder) -> Self {
-        Self { events, timeline }
+        Self {
+            events,
+            timeline,
+            llm: None,
+        }
+    }
+
+    /// Reads the usage of `BotLlmStopped` from the runner `llm`.
+    pub(crate) fn with_llm(mut self, llm: LlmStats) -> Self {
+        self.llm = Some(llm);
+        self
     }
 
     fn observe(&self, site: Site, frame: &Frame, direction: Direction) {
-        let Some(event) = event_of(site, frame, direction) else {
+        let Some(mut event) = event_of(site, frame, direction) else {
             return;
         };
+        // The runner sums the usage of the turn's responses before it sends `LlmResponseEnded`.
+        if let EngineEvent::BotLlmStopped { epoch, usage } = &mut event
+            && let Some(llm) = &self.llm
+        {
+            *usage = llm.take_turn_usage(*epoch);
+        }
         let started = match event {
             EngineEvent::BotStartedSpeaking { epoch } => Some(epoch),
             _ => None,
@@ -505,7 +531,10 @@ mod tests {
                 Site::Segmenter,
                 control(e, ControlKind::LlmResponseEnded),
                 Downstream,
-                Some(EngineEvent::BotLlmStopped { epoch: e }),
+                Some(EngineEvent::BotLlmStopped {
+                    epoch: e,
+                    usage: None,
+                }),
             ),
             (
                 Site::Tts,

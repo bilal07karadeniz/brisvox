@@ -36,6 +36,9 @@ function eventsSetup(options: AgentOptions = {}) {
   h.agent.onEventsLost((_session, event) => {
     seen.push(["lost", event.count]);
   });
+  h.agent.onSessionUsage((_session, event) => {
+    seen.push(["usage", event.turns, event.usage.llm?.inputTokens]);
+  });
   h.agent.onSessionEnd((session, event) => {
     seen.push(["end", event.reason, session.endReason]);
     ended.open();
@@ -60,6 +63,36 @@ describe("events", () => {
       assert.deepEqual(seen[0], ["transcript", "hel", false]);
       assert.deepEqual(seen.at(-1), ["end", "hangup", "hangup"]);
       assert.ok(h.logger.has("handler for error threw"));
+    });
+  });
+
+  it("deliver session.usage before the session end, without a subscription", async () => {
+    const { h, seen, ended } = eventsSetup();
+    await using(h, async () => {
+      const [fake, accept] = await h.call();
+      // `session.usage` is always sent: it is not a subscribable event.
+      assert.equal((accept["events"] as string[]).includes("session.usage"), false);
+      await fake.send({
+        type: "session.usage",
+        duration_ms: 5000,
+        turns: 2,
+        interrupted_turns: 0,
+        latency: {},
+        usage: {
+          llm: {
+            provider: "openai",
+            model: "m",
+            input_tokens: 77,
+            cached_input_tokens: 0,
+            output_tokens: 3,
+            responses_without_usage: 0,
+          },
+        },
+      });
+      await fake.send({ type: "session.end", reason: "hangup" });
+      await ended.promise;
+      assert.deepEqual(names(seen), ["usage", "end"]);
+      assert.deepEqual(seen[0], ["usage", 2, 77]);
     });
   });
 

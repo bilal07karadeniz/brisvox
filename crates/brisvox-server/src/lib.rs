@@ -21,6 +21,7 @@ pub mod resilient;
 pub mod runner;
 pub mod session;
 pub mod settings;
+pub mod summary;
 pub mod telemetry;
 pub mod tools;
 

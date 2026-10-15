@@ -34,7 +34,7 @@ JSON lines, UTF-8:
 {"type":"bot","t_ms":6120,"text":"Thanks, I noted [EMAIL].","interrupted":false,"heard":"full","cut":false}
 {"type":"user","t_ms":9800,"text":"stop, only the weekday hours"}
 {"type":"bot","t_ms":10450,"text":"We open at nine.","interrupted":true,"heard":"partial","estimated":false,"round":0,"barge_in_ms":9300,"cut":false}
-{"type":"end","t_ms":31800,"events_lost":0}
+{"type":"end","t_ms":31800,"events_lost":0,"summary":{"duration_ms":31900,"turns":2,"interrupted_turns":1,"latency":{"response":{"avg_ms":812.5,"max_ms":905.0}},"usage":{"llm":{"provider":"openai","model":"gpt-6-luna","input_tokens":1840,"cached_input_tokens":1024,"output_tokens":96,"responses_without_usage":0},"stt":{"provider":"deepgram","model":"nova-3","audio_seconds":31.5},"tts":{"provider":"cartesia","model":"sonic-3.6","characters":212}}}}
 ```
 
 - `t_ms` is milliseconds since the recording of the call started, on the server's clock.
@@ -45,6 +45,13 @@ JSON lines, UTF-8:
   caller's file that were never delivered). See "What a bot line holds" below.
 - `events_lost` counts conversation events the writer fell too far behind for (a stalled disk).
   Normally `0`.
+- `summary` on the `end` line is the call's usage summary, the same object the agent link sends as
+  `session.usage` (`docs/AGENT_PROTOCOL.md`, "Call summary"): the duration, the turns and
+  interrupted turns, the average and worst latency of each stage, and the provider units the call
+  used (LLM tokens, STT audio seconds, TTS characters, with the configured provider and model).
+  Numbers and provider names only: no conversation text and nothing about the caller. It is an
+  additive member (the format stays `version` 2; a reader that does not know it ignores it) and
+  is absent when the call ended before the server could build it.
 
 ### What a bot line holds
 

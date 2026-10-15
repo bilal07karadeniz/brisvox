@@ -1381,7 +1381,10 @@ impl Task {
         let Some(resp) = self.resp.take() else {
             return;
         };
-        self.publish(EngineEvent::BotLlmStopped { epoch: resp.epoch });
+        self.publish(EngineEvent::BotLlmStopped {
+            epoch: resp.epoch,
+            usage: None,
+        });
         let current = resp.epoch == self.epoch;
         match status {
             S2sResponseStatus::Completed => {

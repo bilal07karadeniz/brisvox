@@ -448,11 +448,21 @@ scrape time.
 | `brisvox_provider_errors_total` | counter | `stage`, `kind` | Provider failures the engine counted (connect failures, session deaths, LLM request/stream errors and timeouts, TTS send failures and stalls), added when a call ends. |
 | `brisvox_engine_events_total` | counter | `event` | Engine trouble of finished calls: queue and stale drops, pool trouble, finals-gate, settle and mark timeouts, truncations. |
 | `brisvox_calls_ended_total` | counter | | Calls whose end-of-call statistics were added. |
+| `brisvox_llm_tokens_total` | counter | `provider`, `model`, `kind` (`input`, `cached_input`, `output`) | LLM tokens the provider reported for finished calls, discarded speculative responses included. `cached_input` is part of `input`. |
+| `brisvox_stt_audio_seconds_total` | counter | `provider`, `model` | Seconds of audio sent to the STT provider by finished calls. |
+| `brisvox_tts_characters_total` | counter | `provider`, `model` | Characters sent to the TTS provider by finished calls. |
+| `brisvox_call_duration_seconds` | histogram | | Duration of finished calls (buckets from 5 s to 1 h). |
 | `brisvox_breaker_state` | gauge | `stage`, `role`, `provider` | Circuit breaker: 0 closed, 1 half-open, 2 open. |
 | `brisvox_breaker_events_total` | counter | `stage`, `role`, `provider`, `event` | Attempts admitted, refused, failed, probes, openings, closings. |
 | `brisvox_retry_budget_available`, `brisvox_retry_budget_total{outcome}` | gauge/counter | `outcome` (`granted`, `refused`) | The process retry budget. |
 | `brisvox_resilience_events_total` | counter | `stage`, `event` | Per-call resilience counters summed: `attempts`, `retries`, `failovers` (served by the secondary), `breaker_skips`, `budget_refusals`, `unavailable`, `recoveries`, `recovery_failures`, `replayed`, `idle_refreshes`. Added at every finished turn and when a call ends. |
 | `brisvox_traces_total`, `brisvox_trace_batches_total` | counter | `outcome` | Traces built and dropped; OTLP batches sent and failed. |
+
+The usage families (`brisvox_llm_tokens_total` and the two after it) are labelled with the
+`provider` and `model` of the agent definitions the process runs (at most two: `BRISVOX_AGENT_FILE`
+and `BRISVOX_WS_AGENT_FILE`), never with anything a caller sends, so their cardinality is fixed; they
+exist at zero from startup. A call that failed over to a secondary provider is still counted under
+the primary. See "Usage and cost".
 
 Useful alerts: `rate(brisvox_smart_turn_rejected_total[5m]) > 0` or
 `rate(brisvox_smart_turn_timed_out_total[5m]) > 0` (the Smart Turn executor is overloaded: every
@@ -463,6 +473,49 @@ threads with `BRISVOX_SMART_TURN_THREADS` or shed calls);
 secondary); `rate(brisvox_resilience_events_total{event="budget_refusals"}[5m]) > 0` (the retry
 budget is spent: an outage is bigger than the budget allows); `rate(brisvox_session_admissions_rejected_total[5m])`
 by `reason`; `histogram_quantile(0.95, sum by (le) (rate(brisvox_stage_latency_seconds_bucket{stage="response"}[5m])))`.
+
+### Usage and cost
+
+brisvox counts what a call used at the providers and reports units, not money: prices change, so
+multiply the units by your provider's current price list (per million tokens, per audio hour, per
+million characters).
+
+What is counted, per call:
+
+- **LLM tokens**: the input, cached input (part of the input) and output tokens the provider
+  reported, summed over every response of the call: normal turns, tool rounds and speculative
+  responses that were started and then discarded (the provider bills those too). The totals are a
+  lower bound: a response is counted when it finishes, so one cancelled by a barge-in or one that
+  fails before its end reports no usage and is not counted, although the provider may bill the
+  tokens it produced. `responses_without_usage` counts only responses that finished without
+  reporting usage.
+- **STT audio seconds**: the audio handed to the STT provider, in seconds (silence the server
+  forwards included, keepalives and finalize messages not): what a provider that bills by audio
+  time bills for, up to its own rounding.
+- **TTS characters**: the characters of text sent to the TTS provider (text that was never sent,
+  and phrases a pre-rendered clip replaced, are not counted): what a provider that bills by
+  character bills for, up to its own counting rules.
+
+Where to read it, all from the same numbers:
+
+- The agent link event `session.usage`, right before `session.end` (`docs/AGENT_PROTOCOL.md`,
+  "Call summary"); an agent process can bill, store or show it per call. `bot.llm_stopped` also
+  carries the tokens of each turn.
+- The `summary` member of the transcript's `end` line when transcripts are recorded
+  (`docs/PRIVACY.md`).
+- One `info` log line `call summary` (target `brisvox::server`) per call, with the numbers as
+  fields: counts, latencies, units, provider and model; no conversation text and nothing about the
+  caller.
+- `GET /metrics`: the `brisvox_llm_tokens_total`, `brisvox_stt_audio_seconds_total`,
+  `brisvox_tts_characters_total` and `brisvox_call_duration_seconds` families, folded in when a
+  call ends. For example, input tokens per hour for the LLM:
+  `sum by (provider, model) (increase(brisvox_llm_tokens_total{kind="input"}[1h]))`.
+
+The summary also holds the call's duration, its turns and interrupted turns and the average and
+worst latency of each stage; its JSON shape is in the protocol document. `provider` and `model`
+are the primaries of the agent definition (`model` is `default` where the adapter leaves the choice
+to the provider). A call that failed over to a secondary is counted under the primary, and a
+call that never connected to a provider has zeros.
 
 ### Traces
 
@@ -484,6 +537,9 @@ occur, and so are values after credential-looking names (`api_key=`, `"token":".
 `Authorization: Bearer ...`, `?key=...`) and the password of `scheme://user:password@host`. The
 scrub over-redacts rather than under-redacts. Credentials in code are `brisvox_core::Secret`
 anyway; this is the second line of defence.
+
+The line `call summary` (target `brisvox::server`, info, one per finished call) carries the call's
+duration, turns, stage latencies and provider units (`docs/OPERATIONS.md`, "Usage and cost").
 
 The line `call admitted` (target `brisvox::server`, info, one per started call) carries the fields
 `transport` (`websocket`, `webrtc`, `twilio`, ...), `session` (the engine session id) and

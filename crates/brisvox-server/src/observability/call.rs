@@ -16,6 +16,7 @@
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, PoisonError};
 
+use brisvox_agent_link::protocol::CallSummary;
 use brisvox_core::{SharedClock, TimelineRecorder, TimelineSink, TurnEpoch, TurnEvent, TurnRecord};
 use brisvox_engine::session::CallStats;
 use brisvox_providers::resilience::ResilienceProbe;
@@ -23,6 +24,7 @@ use brisvox_providers::resilience::ResilienceProbe;
 use super::Observability;
 use super::registry::{ProviderStage, Stage, resilience_events};
 use super::trace::{Anchor, TurnIdentity, build_trace};
+use crate::summary::CallSummarizer;
 
 /// What the observer remembers between events.
 #[derive(Default)]
@@ -131,10 +133,11 @@ impl CallObserver {
     }
 
     /// Ends the call: exports the held turn, folds in the resilience counters and, with the
-    /// engine's end-of-call statistics, the provider and engine counters. Call it once, after
+    /// engine's end-of-call statistics, the provider and engine counters and, with the call's
+    /// `summary`, its duration and usage. Call it once, after
     /// the call has stopped and the recorder was finished (`TimelineRecorder::finish`). Only the
     /// first call counts; later ones do nothing (so a [`CallGuard`] may back an explicit call).
-    pub fn call_ended(&self, stats: Option<&CallStats>) {
+    pub fn call_ended(&self, stats: Option<&CallStats>, summary: Option<&CallSummary>) {
         if self.ended.swap(true, Ordering::AcqRel) {
             return;
         }
@@ -142,7 +145,7 @@ impl CallObserver {
         self.flush_held(&mut state);
         self.sync_resilience(&mut state);
         drop(state);
-        self.obs.metrics().observe_call(stats);
+        self.obs.metrics().observe_call(stats, summary);
     }
 }
 
@@ -204,6 +207,7 @@ impl TimelineSink for CallObserver {
 /// the call; the end then happens once either way.
 pub struct CallGuard<C> {
     observer: Option<Arc<CallObserver>>,
+    summarizer: Arc<CallSummarizer>,
     timeline: TimelineRecorder,
     stats: fn(&C) -> Option<CallStats>,
     call: Option<C>,
@@ -211,14 +215,18 @@ pub struct CallGuard<C> {
 
 impl<C> CallGuard<C> {
     /// A guard for a call that has not started yet. `stats` reads the call's end-of-call
-    /// statistics; without an `observer` the guard only finishes the `timeline`.
+    /// statistics, which the `summarizer` turns into the call's summary (built once: the owner
+    /// may have asked for it already); without an `observer` the guard only finishes the
+    /// `timeline`.
     pub fn new(
         observer: Option<Arc<CallObserver>>,
+        summarizer: Arc<CallSummarizer>,
         timeline: TimelineRecorder,
         stats: fn(&C) -> Option<CallStats>,
     ) -> Self {
         Self {
             observer,
+            summarizer,
             timeline,
             stats,
             call: None,
@@ -235,9 +243,11 @@ impl<C> Drop for CallGuard<C> {
     fn drop(&mut self) {
         // The last turn is finished only now; then the call's counters join the server's.
         self.timeline.finish();
+        let stats = self.call.as_ref().and_then(self.stats);
+        // Built (and logged) here when the owner did not ask for it already.
+        let summary = stats.as_ref().map(|stats| self.summarizer.summary(stats));
         if let Some(observer) = &self.observer {
-            let stats = self.call.as_ref().and_then(self.stats);
-            observer.call_ended(stats.as_ref());
+            observer.call_ended(stats.as_ref(), summary.as_deref());
         }
     }
 }

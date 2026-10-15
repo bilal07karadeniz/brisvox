@@ -317,3 +317,31 @@ fn a_secondary_delivers_the_primarys_rate() {
         "{issue}"
     );
 }
+
+/// The usage labels name the configured primaries and their effective models (the adapters'
+/// defaults where the file sets none), never a secondary.
+#[test]
+fn provider_models_name_the_primaries_and_their_effective_models() {
+    let agent = load(WITH_SECONDARIES).unwrap();
+    let models = agent.provider_models();
+    let stt = models.stt.unwrap();
+    assert_eq!(
+        (stt.provider, stt.model.as_str()),
+        ("deepgram", "nova-3"),
+        "the primary, not the AssemblyAI secondary"
+    );
+    let llm = models.llm.unwrap();
+    assert_eq!(llm.provider, "openai");
+    assert_eq!(llm.model, brisvox_providers::openai::DEFAULT_MODEL);
+    let tts = models.tts.unwrap();
+    assert_eq!(tts.provider, "cartesia");
+    assert_eq!(tts.model, brisvox_providers::cartesia::DEFAULT_MODEL);
+
+    // A model set in the file wins.
+    let text = BASE.replace(
+        "[llm]\nprovider = \"openai\"\napi_key_env = \"OPENAI_API_KEY\"",
+        "[llm]\nprovider = \"openai\"\napi_key_env = \"OPENAI_API_KEY\"\n\n[llm.openai]\nmodel = \"gpt-custom\"",
+    );
+    let agent = load(&text).unwrap();
+    assert_eq!(agent.provider_models().llm.unwrap().model, "gpt-custom");
+}

@@ -333,7 +333,24 @@ async fn a_recorded_call_leaves_a_redacted_transcript_and_two_finished_wav_files
         "partial" | "full" => assert!(!text.is_empty(), "{bot}"),
         other => panic!("heard = {other}: {bot}"),
     }
-    assert_eq!(lines.last().unwrap()["type"], "end");
+    let end = lines.last().unwrap();
+    assert_eq!(end["type"], "end");
+    // The summary of the call: numbers and the configured providers, no conversation text.
+    let summary = &end["summary"];
+    assert!(summary["duration_ms"].as_u64().unwrap() > 0, "{end}");
+    assert!(summary["turns"].as_u64().unwrap() >= 1, "{end}");
+    assert_eq!(summary["usage"]["llm"]["provider"], "openai");
+    assert_eq!(summary["usage"]["stt"]["provider"], "deepgram");
+    assert_eq!(summary["usage"]["tts"]["provider"], "cartesia");
+    assert!(
+        summary["usage"]["tts"]["characters"].as_u64().unwrap() > 0,
+        "{end}"
+    );
+    assert!(summary["usage"]["stt"]["audio_seconds"].is_f64(), "{end}");
+    assert!(
+        !summary.to_string().contains("Hello from the agent"),
+        "{end}"
+    );
 
     // The caller's audio: 16 kHz, what the client sent, header finished.
     let (rate, caller) = wav(&find(".caller.wav"));

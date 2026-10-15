@@ -9,18 +9,27 @@ from pathlib import Path
 
 from brisvox_agent import protocol
 from brisvox_agent.protocol import (
+    BotLlmStopped,
     BotText,
     CommandResult,
     ErrorCode,
     ErrorEvent,
     EventsLost,
+    LatencySummary,
+    LlmUsage,
     Metrics,
     ProtocolError,
     SessionEnd,
     SessionStart,
+    SessionUsage,
+    StageLatency,
+    SttUsage,
+    TokenUsage,
     ToolCall,
     ToolCancel,
+    TtsUsage,
     TurnMetrics,
+    UsageSummary,
     UnknownMessage,
     UserTranscript,
     parse_server_message,
@@ -153,6 +162,15 @@ class DocExamples(unittest.TestCase):
         self.assertEqual(json.loads(accept), json.loads(DOC_SESSION_ACCEPT))
 
     @unittest.skipUnless(DOC_TEXT, "docs/AGENT_PROTOCOL.md is not next to the SDK")
+    def test_the_docs_session_usage_example_is_what_this_test_hardcodes(self) -> None:
+        blocks = re.findall(r"```json\n(.*?)```", DOC_TEXT, re.S)
+        documented = next(json.loads(b) for b in blocks if '"session.usage"' in b)
+        self.assertEqual(
+            {k: v for k, v in documented.items() if k not in ("seq", "t_ms", "type")},
+            DOC_SESSION_USAGE,
+        )
+
+    @unittest.skipUnless(DOC_TEXT, "docs/AGENT_PROTOCOL.md is not next to the SDK")
     def test_error_codes_are_exactly_the_docs_table(self) -> None:
         section = DOC_TEXT.split("## Error codes", 1)[1].split("\n## ", 1)[0]
         documented = set(re.findall(r"^\| `([a-z_]+)` \|", section, re.M))
@@ -162,7 +180,7 @@ class DocExamples(unittest.TestCase):
     def test_event_and_command_names_are_the_docs_tables(self) -> None:
         events = DOC_TEXT.split("### Events", 1)[1].split("### Tool calls", 1)[0]
         documented = set(re.findall(r"^\| `([a-z_.]+)` \|", events, re.M)) - {"type"}
-        subscribable = documented - {"error", "events.lost", "session.end"}
+        subscribable = documented - {"error", "events.lost", "session.end", "session.usage"}
         self.assertEqual(subscribable, set(protocol.EVENT_TYPES))
         # Every documented server message type parses into a typed class, none into Unknown.
         for kind in documented:
@@ -184,12 +202,40 @@ class DocExamples(unittest.TestCase):
         self.assertEqual(protocol.MAX_TOOL_TIMEOUT_MS, 30_000)
 
 
+# The example of "session.usage" in docs/AGENT_PROTOCOL.md.
+DOC_SESSION_USAGE: dict[str, object] = {
+    "duration_ms": 93412,
+    "turns": 7,
+    "interrupted_turns": 1,
+    "latency": {
+        "end_of_turn": {"avg_ms": 412.3, "max_ms": 790.0},
+        "stt_final": {"avg_ms": 138.0, "max_ms": 240.5},
+        "llm_ttft": {"avg_ms": 351.2, "max_ms": 612.0},
+        "tts_ttfb": {"avg_ms": 121.7, "max_ms": 198.4},
+        "response": {"avg_ms": 905.0, "max_ms": 1402.5},
+    },
+    "usage": {
+        "llm": {
+            "provider": "openai",
+            "model": "gpt-6-luna",
+            "input_tokens": 8120,
+            "cached_input_tokens": 6144,
+            "output_tokens": 903,
+            "responses_without_usage": 0,
+        },
+        "stt": {"provider": "deepgram", "model": "nova-3", "audio_seconds": 93.125},
+        "tts": {"provider": "cartesia", "model": "sonic-3.6", "characters": 1204},
+    },
+}
+
+
 def _sample(kind: str) -> str:
     """A well-formed server message of ``kind`` with the doc's fields."""
     extra: dict[str, object] = {
         "session.start": {**{"protocol": "brisvox.agent", "versions": [1], "session_id": "1",
                              "agent": "a"}, "capabilities": {"transfer": True, "tools": True}},
         "session.end": {"reason": "hangup"},
+        "session.usage": DOC_SESSION_USAGE,
         "user.transcript": {"text": "hi", "final": False},
         "user.text": {"epoch": 1, "text": "hi"},
         "bot.text": {"epoch": 1, "text": "hi"},
@@ -223,6 +269,60 @@ class ServerMessages(unittest.TestCase):
         bare = parse_server_message('{"type":"turn.metrics","epoch":2,"metrics":{}}')
         assert isinstance(bare, TurnMetrics)
         self.assertEqual(bare.metrics, Metrics())
+
+    def test_session_usage_carries_the_calls_summary(self) -> None:
+        message = parse_server_message(_sample("session.usage"))
+        assert isinstance(message, SessionUsage)
+        self.assertEqual((message.duration_ms, message.turns, message.interrupted_turns),
+                         (93412, 7, 1))
+        self.assertEqual(message.latency.end_of_turn, StageLatency(avg_ms=412.3, max_ms=790.0))
+        self.assertEqual(message.latency.response, StageLatency(avg_ms=905.0, max_ms=1402.5))
+        self.assertEqual(
+            message.usage.llm,
+            LlmUsage(provider="openai", model="gpt-6-luna", input_tokens=8120,
+                     cached_input_tokens=6144, output_tokens=903, responses_without_usage=0),
+        )
+        self.assertEqual(
+            message.usage.stt, SttUsage(provider="deepgram", model="nova-3", audio_seconds=93.125)
+        )
+        self.assertEqual(
+            message.usage.tts, TtsUsage(provider="cartesia", model="sonic-3.6", characters=1204)
+        )
+
+    def test_session_usage_parts_are_optional(self) -> None:
+        # A call without turns has no latency; a speech-to-speech call has no STT/LLM/TTS.
+        bare = parse_server_message(
+            '{"seq":9,"t_ms":5,"type":"session.usage","duration_ms":1200,"turns":0,'
+            '"interrupted_turns":0,"latency":{},"usage":{}}'
+        )
+        assert isinstance(bare, SessionUsage)
+        self.assertEqual(bare.latency, LatencySummary())
+        self.assertEqual(bare.usage, UsageSummary())
+        # Even the two objects may be missing (an older or leaner server): defaults.
+        lean = parse_server_message(
+            '{"type":"session.usage","duration_ms":10,"turns":1,"interrupted_turns":0}'
+        )
+        assert isinstance(lean, SessionUsage)
+        self.assertEqual((lean.latency, lean.usage), (LatencySummary(), UsageSummary()))
+        # The counts are required: a message without them is unreadable.
+        with self.assertRaises(ProtocolError):
+            parse_server_message('{"type":"session.usage","turns":1,"interrupted_turns":0}')
+
+    def test_bot_llm_stopped_usage_is_optional(self) -> None:
+        old = parse_server_message('{"seq":2,"t_ms":1,"type":"bot.llm_stopped","epoch":3}')
+        assert isinstance(old, BotLlmStopped)
+        self.assertEqual((old.epoch, old.usage), (3, None))
+        new = parse_server_message(
+            '{"seq":2,"t_ms":1,"type":"bot.llm_stopped","epoch":3,"usage":'
+            '{"input_tokens":12,"cached_input_tokens":5,"output_tokens":7}}'
+        )
+        assert isinstance(new, BotLlmStopped)
+        self.assertEqual(new.usage, TokenUsage(input_tokens=12, cached_input_tokens=5,
+                                               output_tokens=7))
+        # A malformed usage is ignored; the event still counts.
+        bad = parse_server_message('{"type":"bot.llm_stopped","epoch":3,"usage":"many"}')
+        assert isinstance(bad, BotLlmStopped)
+        self.assertIsNone(bad.usage)
 
     def test_unknown_fields_are_ignored(self) -> None:
         message = parse_server_message('{"seq":2,"t_ms":1,"type":"bot.text","epoch":1,"text":"a","new":[1]}')

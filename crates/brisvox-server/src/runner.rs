@@ -38,7 +38,7 @@ use std::time::Duration;
 
 use brisvox_agent::turn::TurnPolicy;
 use brisvox_agent_link::{AgentLink, AgentLinkConfig, LinkCall};
-use brisvox_core::{SharedClock, SystemClock, TimelineRecorder};
+use brisvox_core::{SharedClock, SystemClock, TimelineSink};
 use brisvox_engine::rtvi::{RtviBridge, RtviBridgeConfig};
 use brisvox_engine::session::{Call, SessionBuilder};
 use brisvox_engine::{
@@ -50,12 +50,13 @@ use brisvox_transport::rtvi::RtviCall;
 use brisvox_transport::{CallLink, CallStarted, SessionConfig, TransportSession};
 use tokio::time::Instant;
 
-use crate::config::{AgentConfig, Env};
+use crate::config::{AgentConfig, Env, ProviderModels};
 use crate::observability::{Observability, call::CallGuard};
 use crate::privacy::{CallInfo, Recording};
 use crate::providers::{CallProviders, ProviderFactory};
 use crate::session::{SessionContext, SessionRunner};
 use crate::settings::{count_var, duration_var, flag_var, var};
+use crate::summary::CallSummarizer;
 use crate::tools::{
     AgentTools, CallAction, CallTelephony, FAREWELL_TIMEOUT, ToolSetup, VOICEMAIL_PLAY_TIMEOUT,
 };
@@ -326,6 +327,9 @@ impl RunnerConfig {
 /// Runs the server's calls on the engine; see the [module docs](self).
 pub struct EngineRunner<F: ProviderFactory> {
     agent: AgentConfig,
+    /// The agent's primary providers and models: what the call summaries and the usage metrics
+    /// name.
+    models: ProviderModels,
     factory: F,
     offload: Offload,
     vad: Vad,
@@ -403,8 +407,10 @@ impl<F: ProviderFactory> EngineRunner<F> {
         clock: &SharedClock,
     ) -> Result<Self> {
         let tools = AgentTools::bind(tools, &agent, clock)?;
+        let models = agent.provider_models();
         Ok(Self {
             agent,
+            models,
             factory,
             offload,
             vad,
@@ -507,6 +513,7 @@ impl<F: ProviderFactory> EngineRunner<F> {
     /// ([`crate::observability`]). Without it the calls are not observed.
     #[must_use]
     pub fn with_observability(mut self, observability: Arc<Observability>) -> Self {
+        observability.metrics().register_usage(&self.models);
         self.observability = Some(observability);
         self
     }
@@ -589,9 +596,18 @@ impl<F: ProviderFactory> EngineRunner<F> {
             observer.watch_resilience(self.factory.resilience_probes(&providers));
             observer
         });
-        let timeline = observer
-            .as_ref()
-            .map_or_else(TimelineRecorder::new, |observer| observer.recorder());
+        // The summarizer sees every finished turn (and passes it on to the observer): the
+        // call's summary exists with or without metrics.
+        let summarizer = CallSummarizer::new(
+            ctx.clock.clone(),
+            ctx.id.get(),
+            self.agent.name(),
+            self.models.clone(),
+            observer
+                .as_ref()
+                .map(|observer| Arc::clone(observer) as Arc<dyn TimelineSink>),
+        );
+        let timeline = summarizer.recorder();
         let CallProviders { stt, llm, tts } = providers;
         let builder = SessionBuilder::new(
             self.agent.engine(),
@@ -718,7 +734,12 @@ impl<F: ProviderFactory> EngineRunner<F> {
         };
         // From here on, however this future ends (returns, is dropped, panics or leaves
         // through `?`), the guard finishes the last turn and folds the call's counters in.
-        let mut guard = CallGuard::new(observer, timeline, |call: &Call| Some(call.stats()));
+        let mut guard = CallGuard::new(
+            observer,
+            Arc::clone(&summarizer),
+            timeline.clone(),
+            |call: &Call| Some(call.stats()),
+        );
         let started = run_call(session, builder, &ctx.cancel)
             .await
             .map_err(|e| Error::Call(format!("start: {e}")))?;
@@ -733,14 +754,19 @@ impl<F: ProviderFactory> EngineRunner<F> {
             // A warm transfer nobody finished must not leave the caller in a conference alone.
             telephony.finish(ctx.id.get()).await;
         }
+        // The call is over: the last turn finishes now, so the summary counts it. The summary is
+        // built once (and logged); the link, the transcript and the metrics all get that one.
+        timeline.finish();
+        let summary = summarizer.summary(&call.stats());
         if let Some(link) = link {
-            link.close("call_ended").await;
+            link.close_with("call_ended", Some((*summary).clone()))
+                .await;
         }
         drop(guard);
         // The pipeline is gone: the recording drains what is queued and finishes its files
         // (bounded, and it never changes how the call ended).
         if let Some(recording) = recording {
-            recording.finish().await;
+            recording.finish_with_summary(&*summary).await;
         }
         ended
     }

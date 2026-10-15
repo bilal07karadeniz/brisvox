@@ -770,6 +770,91 @@ variant_debug!(TtsProviderConfig {
     OpenAiSpeech: "provider-openai-speech",
 });
 
+/// A configured provider and the model the calls use on it, as the call summary and the usage
+/// metrics name them. Both come from the agent definition, never from a caller.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ProviderModel {
+    /// The provider's name in definition files (`deepgram`, `openai_compatible`).
+    pub provider: &'static str,
+    /// The model the adapter sends; [`DEFAULT_MODEL`] when the provider picks it.
+    pub model: String,
+}
+
+/// The model name used where the adapter sends none and the provider's own default applies.
+pub const DEFAULT_MODEL: &str = "default";
+
+/// The primary STT, LLM and TTS of an agent definition ([`AgentConfig::provider_models`]). A
+/// stage is `None` when a call does not run it as a separate provider (a speech-to-speech
+/// call).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ProviderModels {
+    /// Speech to text.
+    pub stt: Option<ProviderModel>,
+    /// The language model.
+    pub llm: Option<ProviderModel>,
+    /// Text to speech.
+    pub tts: Option<ProviderModel>,
+}
+
+impl SttProviderConfig {
+    /// The model the adapter sends (`None`: the server's own).
+    fn model(&self) -> Option<String> {
+        match self {
+            #[cfg(feature = "provider-deepgram")]
+            Self::Deepgram(c) => Some(c.model.clone()),
+            #[cfg(feature = "provider-assemblyai")]
+            Self::AssemblyAi(c) => Some(c.speech_model.clone()),
+            #[cfg(feature = "provider-gladia")]
+            Self::Gladia(c) => Some(c.model.clone()),
+            #[cfg(feature = "provider-sherpa-onnx")]
+            Self::SherpaOnnx(_) => None,
+            #[cfg(feature = "provider-openai-realtime-stt")]
+            Self::OpenAiRealtimeStt(c) => c
+                .model
+                .clone()
+                .or_else(|| c.dialect.default_model().map(str::to_owned)),
+            #[allow(unreachable_patterns)]
+            _ => None,
+        }
+    }
+}
+
+impl LlmProviderConfig {
+    /// The model the adapter sends.
+    fn model(&self) -> Option<String> {
+        match self {
+            #[cfg(feature = "provider-openai")]
+            Self::OpenAi(c) => Some(c.model.clone()),
+            #[cfg(feature = "provider-anthropic")]
+            Self::Anthropic(c) => Some(c.model.clone()),
+            #[cfg(feature = "provider-gemini")]
+            Self::Gemini(c) => Some(c.model.clone()),
+            #[cfg(feature = "provider-openai-compatible")]
+            Self::OpenAiCompatible(c) => Some(c.model.clone()),
+            #[allow(unreachable_patterns)]
+            _ => None,
+        }
+    }
+}
+
+impl TtsProviderConfig {
+    /// The model the adapter sends (`None`: the voice is the model, as with Deepgram Aura).
+    fn model(&self) -> Option<String> {
+        match self {
+            #[cfg(feature = "provider-cartesia")]
+            Self::Cartesia(c) => Some(c.model_id.clone()),
+            #[cfg(feature = "provider-elevenlabs")]
+            Self::ElevenLabs(c) => Some(c.model_id.clone()),
+            #[cfg(feature = "provider-deepgram-aura")]
+            Self::DeepgramAura(_) => None,
+            #[cfg(feature = "provider-openai-speech")]
+            Self::OpenAiSpeech(c) => Some(c.model.clone()),
+            #[allow(unreachable_patterns)]
+            _ => None,
+        }
+    }
+}
+
 impl AgentConfig {
     /// The definition as read.
     pub fn definition(&self) -> &AgentFile {
@@ -799,6 +884,41 @@ impl AgentConfig {
     /// The system prompt.
     pub fn system_prompt(&self) -> Arc<str> {
         self.file.agent.system_prompt.get_ref().as_str().into()
+    }
+
+    /// The primary providers and models the definition's calls run on (the secondaries a
+    /// failover reaches are not named: usage is attributed to the configured primary). A model
+    /// the adapter leaves to the provider is [`DEFAULT_MODEL`]; Deepgram Aura's voice is its
+    /// model. An adapter that is not compiled into this build keeps its provider name.
+    pub fn provider_models(&self) -> ProviderModels {
+        let named = |provider: Provider, model: Option<String>| ProviderModel {
+            provider: provider.name(),
+            model: model.unwrap_or_else(|| DEFAULT_MODEL.to_owned()),
+        };
+        let stt = named(
+            (*self.file.stt.provider.get_ref()).into(),
+            self.stt().ok().and_then(|c| c.model()),
+        );
+        let llm = named(
+            (*self.file.llm.provider.get_ref()).into(),
+            self.llm().ok().and_then(|c| c.model()),
+        );
+        let tts_kind = *self.file.tts.provider.get_ref();
+        let tts_model = if tts_kind == TtsProviderKind::DeepgramAura {
+            Some(self.voice().to_string())
+        } else {
+            self.tts(
+                brisvox_core::SystemClock::shared(),
+                tokio_util::sync::CancellationToken::new(),
+            )
+            .ok()
+            .and_then(|c| c.model())
+        };
+        ProviderModels {
+            stt: Some(stt),
+            llm: Some(llm),
+            tts: Some(named(tts_kind.into(), tts_model)),
+        }
     }
 
     /// The TTS voice id.

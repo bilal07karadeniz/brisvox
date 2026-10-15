@@ -201,7 +201,7 @@ async fn an_interrupted_turn_waits_for_its_silence_and_is_exported_once() {
     );
     // Turn 1 follows on its own, and nothing is exported twice.
     rig.rec.finish();
-    rig.call.call_ended(None);
+    rig.call.call_ended(None, None);
     let rest = rig.exporter.take();
     assert_eq!(rest.len(), 1);
     assert_eq!(int(&rest[0], "turn", "brisvox.turn.epoch"), Some(1));
@@ -241,7 +241,7 @@ async fn a_held_turn_is_flushed_when_the_call_ends() {
     rig.full_turn(0, t0);
     rig.rec.interrupt(epoch(0), epoch(1), t0 + 2_000 * MS, None);
     // The call ends without ever finishing turn 1 or hearing of the silence.
-    rig.call.call_ended(None);
+    rig.call.call_ended(None, None);
     assert_eq!(rig.exporter.take().len(), 1);
 }
 
@@ -293,6 +293,10 @@ async fn the_exposition_parses_and_carries_the_stage_histograms() {
         "brisvox_provider_errors_total",
         "brisvox_engine_events_total",
         "brisvox_calls_ended_total",
+        "brisvox_llm_tokens_total",
+        "brisvox_stt_audio_seconds_total",
+        "brisvox_tts_characters_total",
+        "brisvox_call_duration_seconds",
         "brisvox_traces_total",
         "brisvox_trace_batches_total",
     ] {
@@ -392,9 +396,14 @@ async fn the_guard_ends_the_call_when_dropped_mid_call() {
     // Turn 0 was interrupted and waits for its silence report; turn 1 is still open.
     rig.rec
         .interrupt(epoch(0), epoch(1), t0 + 2_000 * MS, Some(t0 + 1_990 * MS));
-    let guard = CallGuard::new(Some(rig.call.clone()), rig.rec.clone(), |_: &()| {
-        None::<brisvox_engine::session::CallStats>
-    });
+    let summarizer =
+        crate::summary::CallSummarizer::new(rig.clock.clone(), 7, "test-agent", no_models(), None);
+    let guard = CallGuard::new(
+        Some(rig.call.clone()),
+        summarizer,
+        rig.rec.clone(),
+        |_: &()| None::<brisvox_engine::session::CallStats>,
+    );
     assert_eq!(rig.obs.metrics().calls_ended(), 0);
     // The call future is cancelled: its locals, the guard among them, drop.
     drop(guard);
@@ -402,7 +411,7 @@ async fn the_guard_ends_the_call_when_dropped_mid_call() {
     assert_eq!(rig.obs.metrics().turns(), 2, "the open turn was finished");
     assert_eq!(rig.exporter.take().len(), 2, "the held trace was exported");
     // The normal end after it counts nothing more.
-    rig.call.call_ended(None);
+    rig.call.call_ended(None, None);
     assert_eq!(rig.obs.metrics().calls_ended(), 1);
 }
 
@@ -1067,4 +1076,264 @@ async fn the_smart_turn_series_exist_only_with_an_executor() {
         assert_eq!(family(&families, name).samples[0].value, 0.0, "{name}");
     }
     pool.shutdown();
+}
+
+fn no_models() -> crate::config::ProviderModels {
+    crate::config::ProviderModels {
+        stt: None,
+        llm: None,
+        tts: None,
+    }
+}
+
+fn models(model: &str) -> crate::config::ProviderModels {
+    use crate::config::ProviderModel;
+    let named = |provider: &'static str, model: &str| {
+        Some(ProviderModel {
+            provider,
+            model: model.to_owned(),
+        })
+    };
+    crate::config::ProviderModels {
+        stt: named("deepgram", "nova-3"),
+        llm: named("openai", model),
+        tts: named("cartesia", "sonic"),
+    }
+}
+
+/// The end-of-call statistics of a call that used `tokens` (input, cached, output), `audio_ms`
+/// of STT audio and `chars` TTS characters.
+fn stats_with(tokens: [u64; 3], audio_ms: u64, chars: u64) -> brisvox_engine::session::CallStats {
+    use brisvox_engine::session::{CallStats, StageCounters};
+    use brisvox_engine::{LlmStatsSnapshot, SttStatsSnapshot, TtsStatsSnapshot};
+    CallStats {
+        pipeline: Default::default(),
+        pump: Default::default(),
+        stages: StageCounters {
+            audio_in: Default::default(),
+            vad: Default::default(),
+            stt: SttStatsSnapshot {
+                audio_ms_sent: audio_ms,
+                ..Default::default()
+            },
+            driver: Default::default(),
+            llm: LlmStatsSnapshot {
+                input_tokens: tokens[0],
+                cached_input_tokens: tokens[1],
+                output_tokens: tokens[2],
+                ..Default::default()
+            },
+            speculation: Default::default(),
+            requests: Default::default(),
+            segmenter: Default::default(),
+            tts: TtsStatsSnapshot {
+                chars_sent: chars,
+                ..Default::default()
+            },
+            out: Default::default(),
+            book: Default::default(),
+            truncations: Default::default(),
+            unnoted_clear_cuts: 0,
+        },
+    }
+}
+
+fn observe(
+    obs: &Observability,
+    names: &crate::config::ProviderModels,
+    stats: &brisvox_engine::session::CallStats,
+    duration: Duration,
+) {
+    let summary = crate::summary::build_summary(
+        duration,
+        &crate::summary::TurnTotals::default(),
+        names,
+        &stats.stages.llm,
+        &stats.stages.stt,
+        &stats.stages.tts,
+    );
+    obs.metrics().observe_call(Some(stats), Some(&summary));
+}
+
+/// What a finished call adds to `/metrics`: tokens, audio and characters under the agent's
+/// provider and model labels, and the call's duration in the histogram.
+#[tokio::test(start_paused = true)]
+async fn call_usage_and_duration_reach_the_exposition() {
+    let obs = Arc::new(Observability::new());
+    let names = models("gpt-test");
+    obs.metrics().register_usage(&names);
+    // Registered at zero from startup.
+    let text = obs.render(&manager());
+    let families = parse(&text).unwrap_or_else(|e| panic!("{e}\n{text}"));
+    let tts = family(&families, "brisvox_tts_characters_total");
+    assert_eq!(
+        tts.find(
+            "brisvox_tts_characters_total",
+            &[("provider", "cartesia"), ("model", "sonic")]
+        )
+        .unwrap()
+        .value,
+        0.0
+    );
+
+    observe(
+        &obs,
+        &names,
+        &stats_with([1_000, 600, 50], 12_345, 300),
+        Duration::from_millis(4_000),
+    );
+    observe(
+        &obs,
+        &names,
+        &stats_with([200, 0, 25], 2_000, 40),
+        Duration::from_millis(95_000),
+    );
+    // A call without statistics still counts as ended but adds no usage.
+    obs.metrics().observe_call(None, None);
+
+    let m = obs.metrics();
+    assert_eq!(m.llm_tokens("openai", "gpt-test"), [1_200, 600, 75]);
+    assert_eq!(m.stt_audio_ms("deepgram", "nova-3"), 14_345);
+    assert_eq!(m.tts_characters("cartesia", "sonic"), 340);
+    assert_eq!(m.call_durations(), 2);
+    assert_eq!(m.calls_ended(), 3);
+
+    let text = obs.render(&manager());
+    let families = parse(&text).unwrap_or_else(|e| panic!("{e}\n{text}"));
+    let tokens = family(&families, "brisvox_llm_tokens_total");
+    assert_eq!(tokens.kind, "counter");
+    for (kind, want) in [
+        ("input", 1_200.0),
+        ("cached_input", 600.0),
+        ("output", 75.0),
+    ] {
+        let sample = tokens
+            .find(
+                "brisvox_llm_tokens_total",
+                &[
+                    ("provider", "openai"),
+                    ("model", "gpt-test"),
+                    ("kind", kind),
+                ],
+            )
+            .unwrap_or_else(|| panic!("no {kind}:\n{text}"));
+        assert_eq!(sample.value, want, "{kind}");
+    }
+    let audio = family(&families, "brisvox_stt_audio_seconds_total");
+    let sample = audio
+        .find(
+            "brisvox_stt_audio_seconds_total",
+            &[("provider", "deepgram"), ("model", "nova-3")],
+        )
+        .unwrap();
+    assert!((sample.value - 14.345).abs() < 1e-9, "{}", sample.value);
+    let chars = family(&families, "brisvox_tts_characters_total");
+    assert_eq!(
+        chars
+            .find(
+                "brisvox_tts_characters_total",
+                &[("provider", "cartesia"), ("model", "sonic")]
+            )
+            .unwrap()
+            .value,
+        340.0
+    );
+    let duration = family(&families, "brisvox_call_duration_seconds");
+    assert_eq!(duration.kind, "histogram");
+    let at = |sample: &str, le: Option<&str>| {
+        let labels: Vec<(&str, &str)> = le.map(|le| ("le", le)).into_iter().collect();
+        duration.find(sample, &labels).unwrap().value
+    };
+    assert_eq!(at("brisvox_call_duration_seconds_count", None), 2.0);
+    assert!((at("brisvox_call_duration_seconds_sum", None) - 99.0).abs() < 1e-9);
+    assert_eq!(at("brisvox_call_duration_seconds_bucket", Some("5")), 1.0);
+    assert_eq!(at("brisvox_call_duration_seconds_bucket", Some("60")), 1.0);
+    assert_eq!(at("brisvox_call_duration_seconds_bucket", Some("120")), 2.0);
+    assert_eq!(
+        at("brisvox_call_duration_seconds_bucket", Some("+Inf")),
+        2.0
+    );
+}
+
+/// The label values come from the agents; even so the table has a ceiling, past which a new
+/// series is counted under `other`.
+#[tokio::test(start_paused = true)]
+async fn the_usage_series_are_bounded() {
+    let obs = Arc::new(Observability::new());
+    for n in 0..40 {
+        obs.metrics().register_usage(&models(&format!("model-{n}")));
+    }
+    let text = obs.render(&manager());
+    let llm_series = text
+        .lines()
+        .filter(|l| l.starts_with("brisvox_llm_tokens_total{") && l.contains("kind=\"input\""))
+        .count();
+    assert_eq!(llm_series, 17, "16 models and `other`:\n{text}");
+    assert!(text.contains("brisvox_llm_tokens_total{provider=\"other\",model=\"other\""));
+    // A known series keeps counting.
+    observe(
+        &obs,
+        &models("model-3"),
+        &stats_with([5, 0, 1], 0, 0),
+        Duration::from_secs(1),
+    );
+    assert_eq!(obs.metrics().llm_tokens("openai", "model-3"), [5, 0, 1]);
+}
+
+/// One `call summary` line at info on `brisvox::server`, with the numbers as fields.
+#[test]
+fn the_call_summary_is_one_structured_info_line() {
+    use brisvox_agent_link::protocol::StageLatency;
+
+    let mut summary = crate::summary::build_summary(
+        Duration::from_millis(93_412),
+        &crate::summary::TurnTotals::default(),
+        &models("gpt-test"),
+        &stats_with([1_200, 800, 90], 0, 0).stages.llm,
+        &stats_with([0; 3], 93_125, 0).stages.stt,
+        &stats_with([0; 3], 0, 812).stages.tts,
+    );
+    summary.turns = 7;
+    summary.interrupted_turns = 1;
+    summary.latency.response = Some(StageLatency {
+        avg_ms: 512.5,
+        max_ms: 800.0,
+    });
+    let capture = Capture::default();
+    let sink = capture.clone();
+    let subscriber = build_subscriber(
+        LogFormat::Json,
+        build_filter(Some("info")).unwrap(),
+        Arc::new(Redactor::from_vars([("OPENAI_API_KEY", LIVE_KEY)])),
+        move || sink.clone(),
+    );
+    tracing::subscriber::with_default(subscriber, || {
+        crate::summary::log_summary(17, "support", &summary);
+    });
+    let out = capture.text();
+    let lines: Vec<serde_json::Value> = out
+        .lines()
+        .map(|l| serde_json::from_str(l).unwrap())
+        .collect();
+    assert_eq!(lines.len(), 1, "{out}");
+    let line = &lines[0];
+    assert_eq!(line["level"], "INFO");
+    assert_eq!(line["target"], "brisvox::server");
+    let fields = &line["fields"];
+    assert_eq!(fields["message"], "call summary");
+    assert_eq!(fields["session"], 17);
+    assert_eq!(fields["agent"], "support");
+    assert_eq!(fields["duration_ms"], 93_412);
+    assert_eq!(fields["turns"], 7);
+    assert_eq!(fields["interrupted_turns"], 1);
+    assert_eq!(fields["response_avg_ms"], 512.5);
+    assert_eq!(fields["llm_provider"], "openai");
+    assert_eq!(fields["llm_model"], "gpt-test");
+    assert_eq!(fields["llm_input_tokens"], 1_200);
+    assert_eq!(fields["llm_cached_input_tokens"], 800);
+    assert_eq!(fields["llm_output_tokens"], 90);
+    assert_eq!(fields["stt_audio_seconds"], 93.125);
+    assert_eq!(fields["tts_characters"], 812);
+    // A stage without samples has no field value, not a made-up zero.
+    assert!(fields.get("llm_ttft_avg_ms").is_none(), "{line}");
 }

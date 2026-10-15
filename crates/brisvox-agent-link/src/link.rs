@@ -40,10 +40,10 @@ use tokio_tungstenite::{Connector, MaybeTlsStream, WebSocketStream};
 use tokio_util::sync::CancellationToken;
 
 use crate::protocol::{
-    AGENT_TYPES, AgentMessage, CallIdentity, Capabilities, EVENT_TYPES, ErrorCode,
+    AGENT_TYPES, AgentMessage, CallIdentity, CallSummary, Capabilities, EVENT_TYPES, ErrorCode,
     MAX_COMMAND_ID_BYTES, MAX_CONTEXT_MESSAGES, MAX_MESSAGE_BYTES, MAX_NOTE_BYTES, MAX_TOOLS,
     Metrics, PROTOCOL, Probe, Resume, SUPPORTED_VERSIONS, ServerBody, ServerMessage, SessionAccept,
-    ToolDecl, WireError, WireMessage, WireRole, WireToolKind, WireTransferMode,
+    TokenUsage, ToolDecl, WireError, WireMessage, WireRole, WireToolKind, WireTransferMode,
 };
 use crate::security;
 use crate::tool::RemoteTool;
@@ -706,6 +706,8 @@ pub(crate) struct LinkShared {
     /// Milliseconds since `t0` of the last frame from the agent (liveness).
     last_rx_ms: AtomicU64,
     end_reason: Mutex<String>,
+    /// The call's summary, sent as `session.usage` right before the closing `session.end`.
+    summary: Mutex<Option<CallSummary>>,
     counters: Counters,
 }
 
@@ -1411,7 +1413,10 @@ fn body_of(event: &EngineEvent) -> Option<ServerBody> {
             epoch: epoch.get(),
             text: Arc::clone(text),
         },
-        EngineEvent::BotLlmStopped { epoch } => ServerBody::BotLlmStopped { epoch: epoch.get() },
+        EngineEvent::BotLlmStopped { epoch, usage } => ServerBody::BotLlmStopped {
+            epoch: epoch.get(),
+            usage: usage.map(TokenUsage::from),
+        },
         EngineEvent::BotTtsText { epoch, text } => ServerBody::BotTtsText {
             epoch: epoch.get(),
             text: Arc::clone(text),
@@ -1591,7 +1596,15 @@ impl AgentLink {
 
     /// Ends the link: `session.end` with `reason` (unless the agent ended the call), then the
     /// close frame, bounded by `close_timeout`.
-    pub async fn close(mut self, reason: &str) {
+    pub async fn close(self, reason: &str) {
+        self.close_with(reason, None).await;
+    }
+
+    /// [`Self::close`], saying `session.usage` with `summary` right before `session.end`. Like
+    /// `session.end` it is written straight to the socket by the closing connection task, so a
+    /// full event queue cannot drop it; it is lost only when the link is down at the end.
+    pub async fn close_with(mut self, reason: &str, summary: Option<CallSummary>) {
+        *lock(&self.shared.summary) = summary;
         {
             let mut end = lock(&self.shared.end_reason);
             if end.is_empty() {
@@ -1853,6 +1866,7 @@ where
         hops: Mutex::new(HopRing::new()),
         last_rx_ms: AtomicU64::new(0),
         end_reason: Mutex::new(String::new()),
+        summary: Mutex::new(None),
         counters: Counters::default(),
     });
     bump(&shared.counters.messages_sent); // session.start
@@ -2300,6 +2314,21 @@ async fn writer(
                 body,
             };
             if let Ok(text) = serde_json::to_string(&message) {
+                if sink.send(WsMessage::text(text)).await.is_err() {
+                    return;
+                }
+                bump(&shared.counters.messages_sent);
+            }
+        }
+        let summary = lock(&shared.summary).take();
+        if let Some(summary) = summary {
+            *seq = seq.saturating_add(1);
+            let usage = ServerMessage {
+                seq: *seq,
+                t_ms: shared.ms_since_t0(clock.now()),
+                body: ServerBody::SessionUsage { summary },
+            };
+            if let Ok(text) = serde_json::to_string(&usage) {
                 if sink.send(WsMessage::text(text)).await.is_err() {
                     return;
                 }

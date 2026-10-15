@@ -713,7 +713,7 @@ where
     } = builder;
     let s2s_events = events.clone();
     let driver_events = events.clone();
-    let observer = events.map(|events| Observer::new(events, timeline.clone()));
+    let mut observer = events.map(|events| Observer::new(events, timeline.clone()));
     let book = PlayoutBook::shared(book_capacity);
     let rates = CallRatesCell::new(config.rates.fallback_call);
     let tap_upstream_dropped = Arc::new(AtomicU64::new(0));
@@ -800,6 +800,7 @@ where
     }
     let llm_stage = runner.build();
     let llm_stats = llm_stage.stats();
+    observer = observer.map(|observer| observer.with_llm(llm_stats.clone()));
     let speculation = llm_stage.speculation_stats();
     let requests = llm_stage.request_stats();
     let context = llm_stage.context();

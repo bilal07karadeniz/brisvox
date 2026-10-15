@@ -28,6 +28,32 @@ const DOC_SESSION_ACCEPT = `{"type":"session.accept","version":1,
            "parameters":{"type":"object","properties":{"time":{"type":"string"}},"required":["time"]},
            "kind":"side_effect","timeout_ms":4000}]}`;
 
+// The example of "session.usage" in docs/AGENT_PROTOCOL.md ("Call summary").
+const DOC_SESSION_USAGE = {
+  duration_ms: 93412,
+  turns: 7,
+  interrupted_turns: 1,
+  latency: {
+    end_of_turn: { avg_ms: 412.3, max_ms: 790.0 },
+    stt_final: { avg_ms: 138.0, max_ms: 240.5 },
+    llm_ttft: { avg_ms: 351.2, max_ms: 612.0 },
+    tts_ttfb: { avg_ms: 121.7, max_ms: 198.4 },
+    response: { avg_ms: 905.0, max_ms: 1402.5 },
+  },
+  usage: {
+    llm: {
+      provider: "openai",
+      model: "gpt-6-luna",
+      input_tokens: 8120,
+      cached_input_tokens: 6144,
+      output_tokens: 903,
+      responses_without_usage: 0,
+    },
+    stt: { provider: "deepgram", model: "nova-3", audio_seconds: 93.125 },
+    tts: { provider: "cartesia", model: "sonic-3.6", characters: 1204 },
+  },
+};
+
 function sample(kind: string): string {
   const extra: Record<string, Record<string, unknown>> = {
     "session.start": {
@@ -38,6 +64,7 @@ function sample(kind: string): string {
       capabilities: { transfer: true, tools: true },
     },
     "session.end": { reason: "hangup" },
+    "session.usage": DOC_SESSION_USAGE,
     "user.transcript": { text: "hi", final: false },
     "user.text": { epoch: 1, text: "hi" },
     "bot.text": { epoch: 1, text: "hi" },
@@ -148,6 +175,15 @@ describe("doc examples", () => {
     assert.deepEqual(JSON.parse(accept ?? ""), JSON.parse(DOC_SESSION_ACCEPT));
   });
 
+  it("hardcodes exactly the doc's session.usage example", docOnly, () => {
+    const blocks = [...DOC.matchAll(/```json\n([\s\S]*?)```/g)].map((m) => m[1] ?? "");
+    const block = blocks.find((b) => b.includes('"session.usage"'));
+    assert.ok(block);
+    const { seq, t_ms, type, ...body } = JSON.parse(block) as Record<string, unknown>;
+    assert.deepEqual([typeof seq, typeof t_ms, type], ["number", "number", "session.usage"]);
+    assert.deepEqual(body, DOC_SESSION_USAGE);
+  });
+
   it("has exactly the error codes of the doc's table", docOnly, () => {
     const section = DOC.split("## Error codes")[1]?.split("\n## ")[0] ?? "";
     const documented = new Set([...section.matchAll(/^\| `([a-z_]+)` \|/gm)].map((m) => m[1]));
@@ -159,7 +195,7 @@ describe("doc examples", () => {
     const documented = new Set([...events.matchAll(/^\| `([a-z_.]+)` \|/gm)].map((m) => m[1] as string));
     documented.delete("type");
     const subscribable = new Set(documented);
-    for (const kind of ["error", "events.lost", "session.end"]) {
+    for (const kind of ["error", "events.lost", "session.end", "session.usage"]) {
       subscribable.delete(kind);
     }
     assert.deepEqual(subscribable, new Set(protocol.EVENT_TYPES));
@@ -222,6 +258,57 @@ describe("server messages", () => {
     const empty = parseServerMessage('{"type":"turn.metrics","epoch":2}');
     assert.ok(empty.type === "turn.metrics");
     assert.deepEqual(empty.metrics, {});
+  });
+
+  it("reads the summary of session.usage", () => {
+    const message = parseServerMessage(sample("session.usage"));
+    assert.ok(message.type === "session.usage");
+    assert.deepEqual(
+      [message.durationMs, message.turns, message.interruptedTurns],
+      [93412, 7, 1],
+    );
+    assert.deepEqual(message.latency.endOfTurn, { avgMs: 412.3, maxMs: 790 });
+    assert.deepEqual(message.latency.response, { avgMs: 905, maxMs: 1402.5 });
+    assert.deepEqual(message.usage.llm, {
+      provider: "openai",
+      model: "gpt-6-luna",
+      inputTokens: 8120,
+      cachedInputTokens: 6144,
+      outputTokens: 903,
+      responsesWithoutUsage: 0,
+    });
+    assert.deepEqual(message.usage.stt, { provider: "deepgram", model: "nova-3", audioSeconds: 93.125 });
+    assert.deepEqual(message.usage.tts, { provider: "cartesia", model: "sonic-3.6", characters: 1204 });
+  });
+
+  it("leaves absent parts of session.usage out", () => {
+    const bare = parseServerMessage(
+      '{"type":"session.usage","duration_ms":1200,"turns":0,"interrupted_turns":0,"latency":{},"usage":{}}',
+    );
+    assert.ok(bare.type === "session.usage");
+    assert.deepEqual([bare.latency, bare.usage], [{}, {}]);
+    const lean = parseServerMessage('{"type":"session.usage","duration_ms":10,"turns":1,"interrupted_turns":0}');
+    assert.ok(lean.type === "session.usage");
+    assert.deepEqual([lean.latency, lean.usage], [{}, {}]);
+    // The counts are required.
+    assert.throws(
+      () => parseServerMessage('{"type":"session.usage","turns":1,"interrupted_turns":0}'),
+      ProtocolError,
+    );
+  });
+
+  it("reads the optional usage of bot.llm_stopped", () => {
+    const old = parseServerMessage('{"type":"bot.llm_stopped","seq":2,"t_ms":1,"epoch":3}');
+    assert.deepEqual(old, { type: "bot.llm_stopped", seq: 2, tMs: 1, epoch: 3 });
+    const current = parseServerMessage(
+      '{"type":"bot.llm_stopped","seq":2,"t_ms":1,"epoch":3,"usage":{"input_tokens":12,"cached_input_tokens":5,"output_tokens":7}}',
+    );
+    assert.ok(current.type === "bot.llm_stopped");
+    assert.deepEqual(current.usage, { inputTokens: 12, cachedInputTokens: 5, outputTokens: 7 });
+    // A malformed usage is ignored; the event still counts.
+    const bad = parseServerMessage('{"type":"bot.llm_stopped","epoch":3,"usage":"many"}');
+    assert.ok(bad.type === "bot.llm_stopped");
+    assert.equal("usage" in bad, false);
   });
 
   it("ignores unknown fields", () => {

@@ -43,10 +43,18 @@ __all__ = [
     "ResumeInfo",
     "Resumed",
     "Metrics",
+    "TokenUsage",
+    "StageLatency",
+    "LatencySummary",
+    "LlmUsage",
+    "SttUsage",
+    "TtsUsage",
+    "UsageSummary",
     "Message",
     "Event",
     "SessionStart",
     "SessionEnd",
+    "SessionUsage",
     "TurnUserStarted",
     "TurnUserEnded",
     "TurnBotStarted",
@@ -237,6 +245,76 @@ class Metrics:
     response_ms: float | None = None
 
 
+@dataclass(frozen=True, slots=True)
+class TokenUsage:
+    """Provider-reported LLM token usage of a response (``bot.llm_stopped.usage``)."""
+
+    input_tokens: int = 0
+    cached_input_tokens: int = 0
+    """Of ``input_tokens``, the tokens served from the provider's prompt cache."""
+    output_tokens: int = 0
+
+
+@dataclass(frozen=True, slots=True)
+class StageLatency:
+    """Average and worst value of one latency stage over the turns of a call, in milliseconds."""
+
+    avg_ms: float
+    max_ms: float
+
+
+@dataclass(frozen=True, slots=True)
+class LatencySummary:
+    """The per-call latency stages of ``session.usage``; ``None`` for a stage no turn had."""
+
+    end_of_turn: StageLatency | None = None
+    stt_final: StageLatency | None = None
+    llm_ttft: StageLatency | None = None
+    tts_ttfb: StageLatency | None = None
+    response: StageLatency | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class LlmUsage:
+    """What the LLM provider billed in a call (discarded speculative responses included)."""
+
+    provider: str
+    model: str
+    input_tokens: int = 0
+    cached_input_tokens: int = 0
+    output_tokens: int = 0
+    responses_without_usage: int = 0
+    """Responses that reported no usage: the token counts are lower bounds by those."""
+
+
+@dataclass(frozen=True, slots=True)
+class SttUsage:
+    """The speech-to-text audio sent in a call."""
+
+    provider: str
+    model: str
+    audio_seconds: float = 0.0
+
+
+@dataclass(frozen=True, slots=True)
+class TtsUsage:
+    """The text-to-speech characters sent in a call."""
+
+    provider: str
+    model: str
+    characters: int = 0
+
+
+@dataclass(frozen=True, slots=True)
+class UsageSummary:
+    """The provider units of a call; a part is ``None`` when the call did not run that stage
+    (a speech-to-speech call has no separate STT, LLM or TTS). Units, not money."""
+
+    llm: LlmUsage | None = None
+    stt: SttUsage | None = None
+    tts: TtsUsage | None = None
+
+
 # ---------------------------------------------------------------------------
 # Server -> agent
 # ---------------------------------------------------------------------------
@@ -281,6 +359,23 @@ class SessionEnd(Event):
 
     TYPE: ClassVar[str] = "session.end"
     reason: str
+
+
+@dataclass(frozen=True, slots=True, kw_only=True)
+class SessionUsage(Event):
+    """What the call used and how fast it was, sent once right before ``session.end`` (always,
+    whatever the agent subscribed to; missing when the link was down at the end of the call).
+    Units, not money: multiply by your providers' prices."""
+
+    TYPE: ClassVar[str] = "session.usage"
+    duration_ms: int
+    """From the start to the end of the call, on the server's clock."""
+    turns: int
+    """Turns that finished."""
+    interrupted_turns: int
+    """Of ``turns``, the ones the caller interrupted."""
+    latency: LatencySummary = LatencySummary()
+    usage: UsageSummary = UsageSummary()
 
 
 @dataclass(frozen=True, slots=True, kw_only=True)
@@ -369,10 +464,13 @@ class BotText(Event):
 
 @dataclass(frozen=True, slots=True, kw_only=True)
 class BotLlmStopped(Event):
-    """The round ended."""
+    """The response ended."""
 
     TYPE: ClassVar[str] = "bot.llm_stopped"
     epoch: int
+    usage: TokenUsage | None = None
+    """What the provider reported for the response, summed over the rounds of the turn;
+    ``None`` when it reported none (an older server sends none either)."""
 
 
 @dataclass(frozen=True, slots=True, kw_only=True)
@@ -535,6 +633,77 @@ def _parse_metrics(raw: Any) -> Metrics:
     )
 
 
+def _count(obj: Mapping[str, Any], key: str) -> int:
+    value = obj.get(key)
+    if isinstance(value, bool) or not isinstance(value, int):
+        return 0
+    return value
+
+
+def _parse_token_usage(raw: Any) -> TokenUsage | None:
+    # An optional addition: a malformed one is ignored, the event still counts.
+    if not isinstance(raw, Mapping):
+        return None
+    return TokenUsage(
+        input_tokens=_count(raw, "input_tokens"),
+        cached_input_tokens=_count(raw, "cached_input_tokens"),
+        output_tokens=_count(raw, "output_tokens"),
+    )
+
+
+def _parse_stage_latency(raw: Any) -> StageLatency | None:
+    if not isinstance(raw, Mapping):
+        return None
+    avg, worst = _opt_number(raw, "avg_ms"), _opt_number(raw, "max_ms")
+    if avg is None or worst is None:
+        return None
+    return StageLatency(avg_ms=avg, max_ms=worst)
+
+
+def _parse_latency_summary(raw: Any) -> LatencySummary:
+    if not isinstance(raw, Mapping):
+        return LatencySummary()
+    return LatencySummary(
+        end_of_turn=_parse_stage_latency(raw.get("end_of_turn")),
+        stt_final=_parse_stage_latency(raw.get("stt_final")),
+        llm_ttft=_parse_stage_latency(raw.get("llm_ttft")),
+        tts_ttfb=_parse_stage_latency(raw.get("tts_ttfb")),
+        response=_parse_stage_latency(raw.get("response")),
+    )
+
+
+def _parse_usage_summary(raw: Any) -> UsageSummary:
+    if not isinstance(raw, Mapping):
+        return UsageSummary()
+    llm, stt, tts = raw.get("llm"), raw.get("stt"), raw.get("tts")
+    return UsageSummary(
+        llm=LlmUsage(
+            provider=str(llm.get("provider", "")),
+            model=str(llm.get("model", "")),
+            input_tokens=_count(llm, "input_tokens"),
+            cached_input_tokens=_count(llm, "cached_input_tokens"),
+            output_tokens=_count(llm, "output_tokens"),
+            responses_without_usage=_count(llm, "responses_without_usage"),
+        )
+        if isinstance(llm, Mapping)
+        else None,
+        stt=SttUsage(
+            provider=str(stt.get("provider", "")),
+            model=str(stt.get("model", "")),
+            audio_seconds=_opt_number(stt, "audio_seconds") or 0.0,
+        )
+        if isinstance(stt, Mapping)
+        else None,
+        tts=TtsUsage(
+            provider=str(tts.get("provider", "")),
+            model=str(tts.get("model", "")),
+            characters=_count(tts, "characters"),
+        )
+        if isinstance(tts, Mapping)
+        else None,
+    )
+
+
 def _parse_body(kind: str, obj: Mapping[str, Any], env: dict[str, int]) -> Message:
     what = kind
     epoch = lambda: _need(obj, "epoch", int, what)  # noqa: E731
@@ -570,6 +739,15 @@ def _parse_body(kind: str, obj: Mapping[str, Any], env: dict[str, int]) -> Messa
         )
     if kind == "session.end":
         return SessionEnd(**env, reason=_need(obj, "reason", str, what))
+    if kind == "session.usage":
+        return SessionUsage(
+            **env,
+            duration_ms=_need(obj, "duration_ms", int, what),
+            turns=_need(obj, "turns", int, what),
+            interrupted_turns=_need(obj, "interrupted_turns", int, what),
+            latency=_parse_latency_summary(obj.get("latency")),
+            usage=_parse_usage_summary(obj.get("usage")),
+        )
     if kind == "turn.user_started":
         return TurnUserStarted(**env, epoch=epoch())
     if kind == "turn.user_ended":
@@ -591,7 +769,7 @@ def _parse_body(kind: str, obj: Mapping[str, Any], env: dict[str, int]) -> Messa
     if kind == "bot.text":
         return BotText(**env, epoch=epoch(), text=text())
     if kind == "bot.llm_stopped":
-        return BotLlmStopped(**env, epoch=epoch())
+        return BotLlmStopped(**env, epoch=epoch(), usage=_parse_token_usage(obj.get("usage")))
     if kind == "bot.tts_text":
         return BotTtsText(**env, epoch=epoch(), text=text())
     if kind == "bot.tts_stopped":

@@ -19,8 +19,9 @@ use brisvox_agent::tools::{EngineConfig as ToolConfig, SessionId, ToolEngine, To
 use brisvox_agent::tools::{ToolRegistry, ToolSpec};
 use brisvox_agent_link::client::{AgentServer, AgentSession};
 use brisvox_agent_link::protocol::{
-    AgentMessage, CallIdentity, CancelReason, ErrorCode, ServerBody, ServerMessage, SessionAccept,
-    ToolDecl, WireMessage, WireRole, WireToolKind,
+    AgentMessage, CallIdentity, CallSummary, CancelReason, ErrorCode, LlmUsage, ServerBody,
+    ServerMessage, SessionAccept, StageLatency, TokenUsage, ToolDecl, UsageSummary, WireMessage,
+    WireRole, WireToolKind,
 };
 use brisvox_agent_link::{AgentLink, AgentLinkConfig, LinkCall, attach};
 use brisvox_core::{SharedClock, SystemClock, TimelineRecorder};
@@ -29,6 +30,7 @@ use brisvox_engine::{
     Call, EngineConfig, InterruptionConfig, Offload, SessionBuilder, TextTurn, TextTurnSender,
     run_call, text_turns,
 };
+use brisvox_providers::Usage;
 use brisvox_sim::mock_llm::LlmScript;
 use brisvox_sim::session::SimSession;
 use serde_json::json;
@@ -302,6 +304,91 @@ async fn the_agent_greets_follows_the_turns_and_speaks_a_line() {
             reason: "hangup".to_owned()
         }
     );
+    rig.cancel.cancel();
+}
+
+fn sample_summary() -> CallSummary {
+    let mut summary = CallSummary {
+        duration_ms: 93_412,
+        turns: 3,
+        interrupted_turns: 1,
+        usage: UsageSummary {
+            llm: Some(LlmUsage {
+                provider: "openai".to_owned(),
+                model: "gpt-test".to_owned(),
+                input_tokens: 1_200,
+                cached_input_tokens: 800,
+                output_tokens: 90,
+                responses_without_usage: 0,
+            }),
+            ..UsageSummary::default()
+        },
+        ..CallSummary::default()
+    };
+    summary.latency.response = Some(StageLatency {
+        avg_ms: 512.5,
+        max_ms: 800.0,
+    });
+    summary
+}
+
+/// `session.usage` comes right before `session.end` and carries the summary; an agent that
+/// subscribed to nothing still gets it, and a full event queue cannot lose it.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn session_usage_precedes_session_end_even_when_events_are_dropped() {
+    let accept = SessionAccept {
+        version: 1,
+        events: Some(vec!["bot.text".to_owned()]),
+        ..SessionAccept::default()
+    };
+    let scripts = vec![LlmScript::text(["One."]), LlmScript::text(["Two."])];
+    let mut rig = start(accept, scripts, None, |config| config.event_queue = 1).await;
+    rig.text.try_send(TextTurn::now("hello")).unwrap();
+    rig.text.try_send(TextTurn::now("again")).unwrap();
+    until("both turns ended", || {
+        rig.call.handles().driver.snapshot().turns_ended == 2
+    })
+    .await;
+    let summary = sample_summary();
+    rig.link
+        .take()
+        .unwrap()
+        .close_with("hangup", Some(summary.clone()))
+        .await;
+    let usage = rig
+        .agent
+        .recv_until(is_type("session.usage"))
+        .await
+        .unwrap();
+    assert_eq!(usage.body, ServerBody::SessionUsage { summary });
+    let end = rig.agent.recv().await.unwrap().unwrap();
+    assert_eq!(
+        end.body,
+        ServerBody::SessionEnd {
+            reason: "hangup".to_owned()
+        }
+    );
+    assert_eq!(end.seq, usage.seq + 1, "nothing between the two");
+    rig.cancel.cancel();
+}
+
+/// Without a summary the link ends as before: no `session.usage`.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn closing_without_a_summary_says_no_usage() {
+    let accept = SessionAccept {
+        version: 1,
+        ..SessionAccept::default()
+    };
+    let mut rig = start(accept, vec![], None, |_| {}).await;
+    rig.link.take().unwrap().close("hangup").await;
+    let end = rig
+        .agent
+        .recv_until(|body| {
+            matches!(body, ServerBody::SessionUsage { .. }) || is_type("session.end")(body)
+        })
+        .await
+        .unwrap();
+    assert_eq!(end.body.type_name(), "session.end");
     rig.cancel.cancel();
 }
 
@@ -591,6 +678,133 @@ async fn a_remote_tool_runs_in_the_agent_and_an_unanswered_one_is_cancelled() {
     let stats = link.stats();
     assert_eq!((stats.tool_calls, stats.tool_results), (2, 1), "{stats:?}");
     assert!(stats.tool_cancels >= 1, "{stats:?}");
+    rig.cancel.cancel();
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn bot_llm_stopped_carries_the_usage_of_the_turns_provider_responses() {
+    let accept = SessionAccept {
+        version: 1,
+        tools: vec![lookup(WireToolKind::ReadOnly, 5_000)],
+        ..SessionAccept::default()
+    };
+    let scripts = vec![
+        // Turn 1: a tool round and the answer, both with usage: the event carries the sum.
+        LlmScript::text(["Checking."])
+            .with_tool_call("c1", "lookup", r#"{"q":"weather"}"#)
+            .with_usage(Usage {
+                input_tokens: 100,
+                cached_input_tokens: 40,
+                output_tokens: 10,
+            }),
+        LlmScript::text(["It is 21 degrees."]).with_usage(Usage {
+            input_tokens: 150,
+            cached_input_tokens: 100,
+            output_tokens: 20,
+        }),
+        // Turn 2: one response that reports none.
+        LlmScript::text(["Anything else?"]).without_usage(),
+        // Turn 3: one response with usage.
+        LlmScript::text(["Goodbye."]).with_usage(Usage {
+            input_tokens: 7,
+            cached_input_tokens: 0,
+            output_tokens: 2,
+        }),
+    ];
+    let mut rig = start(accept, scripts, None, |_| {}).await;
+
+    rig.text.try_send(TextTurn::now("weather?")).unwrap();
+    let call = rig.agent.recv_until(is_type("tool.call")).await.unwrap();
+    let ServerBody::ToolCall { id, .. } = call.body else {
+        panic!("not a tool message")
+    };
+    rig.agent
+        .send(&AgentMessage::ToolResult {
+            id,
+            result: Some(json!({"celsius": 21})),
+            error: None,
+        })
+        .await
+        .unwrap();
+    let stopped = rig
+        .agent
+        .recv_until(is_type("bot.llm_stopped"))
+        .await
+        .unwrap();
+    let ServerBody::BotLlmStopped { epoch, usage } = &stopped.body else {
+        panic!("not a stop")
+    };
+    assert_eq!(
+        *usage,
+        Some(TokenUsage {
+            input_tokens: 250,
+            cached_input_tokens: 140,
+            output_tokens: 30,
+        }),
+        "the two rounds of the turn, summed (epoch {epoch})"
+    );
+    // On the wire it is an object with the three counts.
+    let wire = serde_json::to_value(&stopped).unwrap();
+    assert_eq!(
+        wire["usage"],
+        json!({"input_tokens": 250, "cached_input_tokens": 140, "output_tokens": 30}),
+        "{wire}"
+    );
+    rig.agent
+        .recv_until(is_type("turn.bot_ended"))
+        .await
+        .unwrap();
+
+    // A response without usage: the field is absent, not zero.
+    rig.text.try_send(TextTurn::now("no")).unwrap();
+    let stopped = rig
+        .agent
+        .recv_until(is_type("bot.llm_stopped"))
+        .await
+        .unwrap();
+    assert!(
+        matches!(stopped.body, ServerBody::BotLlmStopped { usage: None, .. }),
+        "{stopped:?}"
+    );
+    let wire = serde_json::to_value(&stopped).unwrap();
+    assert!(wire.get("usage").is_none(), "{wire}");
+    rig.agent
+        .recv_until(is_type("turn.bot_ended"))
+        .await
+        .unwrap();
+
+    // The sum starts afresh with each turn: nothing of turn 1 leaks into turn 3.
+    rig.text.try_send(TextTurn::now("bye")).unwrap();
+    let stopped = rig
+        .agent
+        .recv_until(is_type("bot.llm_stopped"))
+        .await
+        .unwrap();
+    assert!(
+        matches!(
+            stopped.body,
+            ServerBody::BotLlmStopped {
+                usage: Some(TokenUsage {
+                    input_tokens: 7,
+                    cached_input_tokens: 0,
+                    output_tokens: 2,
+                }),
+                ..
+            }
+        ),
+        "{stopped:?}"
+    );
+    let totals = rig.call.stats().stages.llm;
+    assert_eq!(
+        (
+            totals.input_tokens,
+            totals.cached_input_tokens,
+            totals.output_tokens,
+            totals.responses_without_usage
+        ),
+        (257, 140, 32, 1),
+        "{totals:?}"
+    );
     rig.cancel.cancel();
 }
 

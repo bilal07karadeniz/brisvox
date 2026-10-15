@@ -440,6 +440,17 @@ export class Agent {
     return this.on("session.end", handler);
   }
 
+  /**
+   * What the call used and how fast it was (`durationMs`, `turns`, `latency`, `usage` with the
+   * LLM tokens, STT audio seconds and TTS characters), once, right before the session end. Units,
+   * not money. Always sent by the server (no subscription needed); not sent when the link was
+   * down at the end, and delivered like any other event (a handler that fell far behind can
+   * lose it, see {@link Agent.onEventsLost}).
+   */
+  onSessionUsage(handler: Handler<EventMap["session.usage"]>): this {
+    return this.on("session.usage", handler);
+  }
+
   /** STT segments (interim and final). */
   onTranscript(handler: Handler<EventMap["user.transcript"]>): this {
     return this.on("user.transcript", handler);

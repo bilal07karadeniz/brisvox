@@ -10,6 +10,15 @@ named plain `brisvox` on crates.io, PyPI and npm, are released together under on
 
 ### Added
 
+- **Usage and cost per call**: the engine counts the provider billing units of every call (LLM
+  tokens including discarded speculative responses, STT audio seconds sent, TTS characters sent)
+  and the server delivers one per-call summary (duration, turns, average and worst stage latency,
+  units with the configured provider and model) as the agent link event `session.usage` before
+  `session.end`, as the `summary` of the transcript's `end` line, as one `call summary` log line
+  and as the Prometheus families `brisvox_llm_tokens_total`, `brisvox_stt_audio_seconds_total`,
+  `brisvox_tts_characters_total` and `brisvox_call_duration_seconds`; `bot.llm_stopped` carries
+  the tokens of each turn, and the Python and TypeScript agent SDKs have a typed `session.usage`
+  event. Units, not money (`docs/OPERATIONS.md`, "Usage and cost").
 - **Learned admission ceiling** (`BRISVOX_OVERLOAD_CEILING`, on by default). Pool pressure shows
   only when callers speak, so a fast ramp used to be admitted far past capacity (on 4 vCPU, about
   730 calls held for a capacity of about 250, every call at 3.7 s p50). The server now learns how
@@ -25,6 +34,11 @@ named plain `brisvox` on crates.io, PyPI and npm, are released together under on
 
 ### Changed
 
+- Library API (`brisvox-engine`, `brisvox-agent-link`, `brisvox-server`): `EngineEvent::BotLlmStopped`
+  has a new `usage` field (patterns need `..`); `CallGuard::new` takes a `summarizer` argument;
+  `Metrics::observe_call` and `CallObserver::call_ended` take a `summary` argument;
+  `observability::metrics::Histogram::new` is no longer `const` (use `Histogram::with_bounds` for
+  other buckets); new `AgentLink::close_with` (`close` is unchanged).
 - `BRISVOX_MAX_SESSIONS` defaults to 256 per core (at least 256) instead of 256.
 - Pool pressure also watches the Smart Turn executor (its queue waits): a late end-of-turn verdict
   delays the reply as much as a late VAD window. `/readyz` reports `overloaded` at the learned

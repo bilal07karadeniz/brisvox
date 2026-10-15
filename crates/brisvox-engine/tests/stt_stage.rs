@@ -210,6 +210,27 @@ async fn the_stop_is_forwarded_first_then_finalized_and_answered_once() {
 }
 
 #[tokio::test(start_paused = true)]
+async fn the_audio_sent_to_the_provider_is_counted_in_milliseconds_silence_included() {
+    let mut rig = Rig::new(Arc::new(mock()), config()).await;
+    rig.clock.sleep(100 * MS).await;
+    // 10 frames of speech and 5 of silence, 20 ms each: the stage forwards all of it. The
+    // `Finalize` of the stop is not audio.
+    rig.utterance(10).await;
+    rig.clock.sleep(500 * MS).await;
+    let stats = rig.stats.snapshot();
+    assert_eq!(stats.audio_in, 15, "{stats:?}");
+    assert_eq!(stats.audio_sent, 15, "{stats:?}");
+    assert_eq!(stats.audio_ms_sent, 300, "{stats:?}");
+    assert_eq!(stats.finalizes_sent, 1, "{stats:?}");
+
+    // A second utterance adds to the call's total.
+    rig.utterance(5).await;
+    rig.clock.sleep(500 * MS).await;
+    let stats = rig.stats.snapshot();
+    assert_eq!(stats.audio_ms_sent, 300 + 200, "{stats:?}");
+}
+
+#[tokio::test(start_paused = true)]
 async fn the_session_connects_at_start_before_any_audio() {
     let stt = mock();
     let rig = Rig::new(Arc::new(stt.clone()), config()).await;
@@ -731,6 +752,8 @@ async fn a_stuck_provider_never_blocks_the_audio_and_ends_its_session() {
     );
     let snapshot = stats.snapshot();
     assert_eq!(snapshot.audio_sent, 2, "{snapshot:?}");
+    // Only what the provider's input took is counted: two 20 ms frames, not the nine dropped.
+    assert_eq!(snapshot.audio_ms_sent, 40, "{snapshot:?}");
     assert_eq!(snapshot.audio_dropped_provider, 9, "{snapshot:?}");
     // The Finalize found the provider's input full: that is a stuck provider. The stop is still
     // answered, once, and the session restarted.

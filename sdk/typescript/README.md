@@ -46,7 +46,7 @@ address the line says so:
 |---|---|
 | Handshake, version negotiation | Automatic. The highest version both sides speak is picked; none in common sends `session.reject` with `unsupported_version`. `agent.onSessionStart(...)` may return `{ systemPrompt, context, greeting, events, tools }` for this call or throw `new Reject(code, message)`. |
 | `session.accept` fields | `new Agent({ systemPrompt, context, greeting, events })`. `events: "auto"` (default) subscribes only to the event types you registered handlers for. |
-| Events | `agent.onUserText`, `onTranscript`, `onBotText`, `onTurn`, `onError`, `onEventsLost`, `onResumed`, `onSessionEnd`, or any event by wire type: `agent.on("turn.interrupted", ...)`. Events are readonly objects with a `type` discriminant (so `if (event.type === "turn.metrics")` narrows), camelCase fields (`tMs`, `sessionId`). Handlers of one call run one at a time, in order. |
+| Events | `agent.onUserText`, `onTranscript`, `onBotText`, `onTurn`, `onError`, `onEventsLost`, `onResumed`, `onSessionUsage`, `onSessionEnd`, or any event by wire type: `agent.on("turn.interrupted", ...)`. Events are readonly objects with a `type` discriminant (so `if (event.type === "turn.metrics")` narrows), camelCase fields (`tMs`, `sessionId`). Handlers of one call run one at a time, in order. |
 | Remote tools | `agent.tool({ name, description, parameters, handler, kind, timeoutMs, fillerAfterMs, confirm, repeatable })`. With `parameters: s.object({...})` the handler's `args` are typed and validated; with a plain JSON-schema object they arrive as sent. The handler's second argument is a `ToolContext` (`idempotencyKey`, `epoch`, `signal`, `session`). |
 | Who is calling | `session.call` is `undefined` unless the agent definition opted in (`[agent_link] caller_identity = true`, or `BRISVOX_AGENT_CALLER_IDENTITY=1`) and the call comes through a carrier (Twilio, Telnyx, SIP). Then it is a `CallIdentity`: `carrier`, `carrierCallId` (Twilio `CallSid`, Telnyx `call_control_id`, SIP `Call-ID`), `from`, `to` and `piiRedacted` (the Python SDK calls `from` and `to` `from_number` and `to_number`). The numbers are absent when the carrier did not say or when the server redacts phone numbers (`docs/PRIVACY.md`); with Twilio they exist only when the TwiML passes them as stream parameters `from` and `to` (`docs/TELEPHONY.md`). A caller ID can be spoofed: use it as a hint, and keep it out of your logs. |
 | Repeating a side effect | The server refuses an identical `side_effect` call (same arguments) that the model repeats in a later response of the same turn, answering `already_done` without calling your handler. `repeatable: true` lets such a repeat through, for a tool where doing the same thing twice is legitimate (pressing the same IVR digit twice). It needs `kind: "side_effect"` (`RangeError` on a read-only tool, like `confirm`). |
@@ -115,6 +115,12 @@ typed by inference. A zod user can pass `z.toJSONSchema(schema)` as a raw `param
   (`eventQueue: 1024`); when it overflows the newest events are dropped and the handlers get an
   `events.lost` in front of the next event after the gap, exactly like the server's own backpressure
   policy. `session.end` is never dropped.
+* **Usage.** `agent.onSessionUsage` gets a `SessionUsage` once per call, right before the session end:
+  `durationMs`, `turns`, `interruptedTurns`, `latency` (`avgMs` / `maxMs` per stage) and `usage` (`llm`
+  tokens, `stt.audioSeconds`, `tts.characters`, with the configured provider and model). The server
+  always sends it (it is not a subscription); it is missing when the link was down at the end.
+  `BotLlmStopped.usage` (`TokenUsage`, or absent) is the tokens one turn's responses used. Units, not
+  money: multiply by your provider's prices.
 * **Session end.** `onSessionEnd` runs once per call; if the link dropped without `session.end` the
   reason is `"link_closed"`. When the link drops every running tool sees `ctx.signal` abort (reason
   `"link_closed"`); `read_only` tools are abandoned, `side_effect` tools get `sideEffectGraceMs` to wind

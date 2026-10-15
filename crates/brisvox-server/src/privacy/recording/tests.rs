@@ -4,7 +4,7 @@
 use std::fs;
 use std::path::PathBuf;
 
-use brisvox_core::SystemClock;
+use brisvox_core::{SharedClock, SimClock, SystemClock};
 use serde_json::Value;
 
 use super::*;
@@ -66,7 +66,37 @@ fn start_transcript_with(
     capacity: usize,
     recipients: Option<AgeRecipients>,
 ) -> Transcript {
-    let clock = SystemClock::shared();
+    start_transcript_full(dir, redact, capacity, recipients, None)
+}
+
+/// [`start_transcript_with`], waiting for the call's summary on `summary` (as an attached
+/// recording does) when it is given.
+fn start_transcript_full(
+    dir: &Path,
+    redact: bool,
+    capacity: usize,
+    recipients: Option<AgeRecipients>,
+    summary: Option<oneshot::Receiver<serde_json::Value>>,
+) -> Transcript {
+    start_transcript_on(
+        SystemClock::shared(),
+        dir,
+        redact,
+        capacity,
+        recipients,
+        summary,
+    )
+}
+
+/// [`start_transcript_full`] on `clock`.
+fn start_transcript_on(
+    clock: SharedClock,
+    dir: &Path,
+    redact: bool,
+    capacity: usize,
+    recipients: Option<AgeRecipients>,
+    summary: Option<oneshot::Receiver<serde_json::Value>>,
+) -> Transcript {
     let ring = EngineEvents::new(capacity);
     let stop = CancellationToken::new();
     let stats = Arc::new(RecordingStats::default());
@@ -88,6 +118,7 @@ fn start_transcript_with(
         redact: redact.then_some(PiiKinds::ALL),
         events: ring.subscribe(),
         heard,
+        summary,
         start: clock.now(),
         clock,
         stop: stop.clone(),
@@ -157,7 +188,103 @@ async fn a_transcript_has_a_header_the_turns_in_order_and_an_end_line() {
         "chunks of one response join"
     );
     assert_eq!(l[5]["events_lost"], 0);
+    assert!(
+        l[5].get("summary").is_none(),
+        "a call finished without a summary has none: {}",
+        l[5]
+    );
     assert_eq!(t.stats.transcript_lines(), 6);
+    fs::remove_dir_all(&dir).unwrap();
+}
+
+/// The call's summary is the `summary` member of the `end` line, after everything the
+/// conversation wrote, and it holds numbers only.
+#[tokio::test(start_paused = true)]
+async fn the_end_line_carries_the_calls_summary() {
+    let dir = dir("summary");
+    let (summary_tx, summary_rx) = oneshot::channel();
+    let t = start_transcript_on(SimClock::shared(), &dir, true, 64, None, Some(summary_rx));
+    user(&t.ring, "my email is jane@example.com");
+    bot(&t.ring, 1, "Thanks.");
+    t.ring
+        .publish(EngineEvent::BotStoppedSpeaking { epoch: epoch(1) });
+    // The pipeline is gone and its event ring closed before the call's summary exists: the
+    // transcript waits for the owner to finish the recording instead of ending without it.
+    drop(t.ring);
+    // Well inside the wait's bound, on the simulated clock: still waiting.
+    tokio::time::sleep(Duration::from_secs(5)).await;
+    assert!(!t.task.is_finished(), "the end line waits for the summary");
+    let summary = serde_json::json!({
+        "duration_ms": 31_800,
+        "turns": 1,
+        "interrupted_turns": 0,
+        "latency": {"response": {"avg_ms": 812.5, "max_ms": 812.5}},
+        "usage": {
+            "llm": {"provider": "openai", "model": "gpt-test", "input_tokens": 120,
+                    "cached_input_tokens": 0, "output_tokens": 9, "responses_without_usage": 0},
+            "stt": {"provider": "deepgram", "model": "nova-3", "audio_seconds": 31.5},
+            "tts": {"provider": "cartesia", "model": "sonic", "characters": 7}
+        }
+    });
+    let recording = CallRecording {
+        stop: t.stop.clone(),
+        tasks: vec![t.task],
+        summary: Some(summary_tx),
+    };
+    tokio::time::timeout(WAIT, recording.finish_with_summary(&summary))
+        .await
+        .unwrap();
+    let l = lines(&t.path);
+    let kinds: Vec<&str> = l.iter().map(|v| v["type"].as_str().unwrap()).collect();
+    assert_eq!(kinds, ["call", "user", "bot", "end"]);
+    let end = &l[3];
+    assert_eq!(end["events_lost"], 0);
+    assert_eq!(end["summary"], summary);
+    assert!(!end.to_string().contains("example.com"));
+    fs::remove_dir_all(&dir).unwrap();
+}
+
+/// An owner that holds the sender and never finishes keeps the end line waiting only for
+/// `FINISH_TIMEOUT`; the line is then written without a summary.
+#[tokio::test(start_paused = true)]
+async fn the_end_line_stops_waiting_for_a_summary_after_the_finish_bound() {
+    let dir = dir("summary-timeout");
+    let (summary_tx, summary_rx) = oneshot::channel::<serde_json::Value>();
+    let t = start_transcript_on(SimClock::shared(), &dir, false, 64, None, Some(summary_rx));
+    user(&t.ring, "hello");
+    drop(t.ring);
+    tokio::time::sleep(FINISH_TIMEOUT - Duration::from_secs(1)).await;
+    assert!(!t.task.is_finished(), "still inside the bound");
+    tokio::time::sleep(Duration::from_secs(2)).await;
+    finished(t.task).await;
+    let l = lines(&t.path);
+    let end = l.last().unwrap();
+    assert_eq!(end["type"], "end");
+    assert!(end.get("summary").is_none(), "{end}");
+    drop(summary_tx); // alive until now: the owner never finished
+    fs::remove_dir_all(&dir).unwrap();
+}
+
+/// A recording finished without a summary (or dropped) does not keep the end line waiting.
+#[tokio::test]
+async fn a_recording_finished_without_a_summary_writes_its_end_line_at_once() {
+    let dir = dir("no-summary");
+    let (summary_tx, summary_rx) = oneshot::channel();
+    let t = start_transcript_full(&dir, false, 64, None, Some(summary_rx));
+    user(&t.ring, "hello");
+    drop(t.ring);
+    let recording = CallRecording {
+        stop: t.stop.clone(),
+        tasks: vec![t.task],
+        summary: Some(summary_tx),
+    };
+    tokio::time::timeout(Duration::from_secs(5), recording.finish())
+        .await
+        .unwrap();
+    let l = lines(&t.path);
+    let end = l.last().unwrap();
+    assert_eq!(end["type"], "end");
+    assert!(end.get("summary").is_none(), "{end}");
     fs::remove_dir_all(&dir).unwrap();
 }
 
@@ -845,6 +972,7 @@ async fn dropping_a_call_recording_finishes_its_files_without_finish() {
     let recording = CallRecording {
         stop: rig.stop.clone(),
         tasks: vec![rig.task],
+        summary: None,
     };
     drop(recording);
     // The task was told to stop though the queue's sender is alive.
@@ -885,6 +1013,7 @@ async fn finish_waits_for_the_tasks_and_returns() {
     let recording = CallRecording {
         stop: rig.stop.clone(),
         tasks: vec![rig.task],
+        summary: None,
     };
     tokio::time::timeout(WAIT, recording.finish())
         .await

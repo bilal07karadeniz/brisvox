@@ -260,6 +260,7 @@ struct Counters {
     chunks: AtomicU64,
     contexts: AtomicU64,
     text_sent: AtomicU64,
+    chars_sent: AtomicU64,
     text_dropped: AtomicU64,
     normalized: AtomicU64,
     normalize_offloaded: AtomicU64,
@@ -312,6 +313,11 @@ pub struct TtsStatsSnapshot {
     pub contexts: u64,
     /// Chunks sent to the provider.
     pub text_sent: u64,
+    /// Unicode scalar values (chars) of the text sent to the provider, after normalization,
+    /// summed over the call. Text that was not sent (dropped chunks, whitespace kept back, clip
+    /// phrases the stage plays from a pre-rendered clip) is not counted. This is what a
+    /// provider that bills by character bills for, up to its own counting rules.
+    pub chars_sent: u64,
     /// Chunks dropped: no session, a dead context, a failed send.
     pub text_dropped: u64,
     /// Chunks whose spoken form differs from the written one.
@@ -409,6 +415,7 @@ impl TtsStats {
             chunks: get(&c.chunks),
             contexts: get(&c.contexts),
             text_sent: get(&c.text_sent),
+            chars_sent: get(&c.chars_sent),
             text_dropped: get(&c.text_dropped),
             normalized: get(&c.normalized),
             normalize_offloaded: get(&c.normalize_offloaded),
@@ -1157,6 +1164,7 @@ impl<P: TtsProvider> TtsStage<P> {
         self.book.push_sent(open.id, &raw);
         // Before the send: the provider may answer before the send call returns.
         self.shared.lock().expect_reply(open.id);
+        let chars = u64::try_from(spoken.chars().count()).unwrap_or(u64::MAX);
         let sent = self
             .send_input(
                 TtsInput::Text {
@@ -1170,6 +1178,9 @@ impl<P: TtsProvider> TtsStage<P> {
         match sent {
             SendOutcome::Sent => {
                 bump(&self.counters().text_sent);
+                self.counters()
+                    .chars_sent
+                    .fetch_add(chars, Ordering::Relaxed);
                 self.shared.owed.notify_one();
             }
             SendOutcome::Stale => {

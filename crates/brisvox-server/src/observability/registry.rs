@@ -13,19 +13,27 @@
 //! | `brisvox_smart_turn_queue_depth`, `brisvox_smart_turn_rejected_total`, `brisvox_smart_turn_timed_out_total` | gauge/counter | none | the Smart Turn executor, read at scrape; absent without one |
 //! | `brisvox_resilience_events_total` | counter | `stage`, `event` | each call's resilience counters (failovers, recoveries, budget refusals) |
 //! | `brisvox_traces_*_total` | counter | none | the trace exporter |
+//! | `brisvox_llm_tokens_total` | counter | `provider`, `model`, `kind` | each call's LLM tokens, at call end |
+//! | `brisvox_stt_audio_seconds_total`, `brisvox_tts_characters_total` | counter | `provider`, `model` | each call's STT audio and TTS characters, at call end |
+//! | `brisvox_call_duration_seconds` | histogram | none | each call's duration, at call end |
+//!
+//! The usage series are labelled with the configured providers and models of the process's agents
+//! (at most two), never with anything a caller sends; the table is capped regardless.
 //!
 //! Counters fed per call are folded in at every finished turn and at the end of the call, so a
 //! failover during a long call is visible within one turn. Nothing is touched per audio frame.
 
-use std::sync::Arc;
+use std::sync::{Arc, Mutex, PoisonError};
 use std::time::Duration;
 
+use brisvox_agent_link::protocol::CallSummary;
 use brisvox_core::{TurnEvent, TurnRecord};
 use brisvox_engine::session::StageCounters;
 use brisvox_inference::PoolMetrics;
 use brisvox_providers::resilience::{BreakerState, BreakerStats, ResilienceStats};
 
-use super::metrics::{Counter, Histogram, Kind, Prom};
+use super::metrics::{CALL_DURATION_BOUNDS_US, Counter, Histogram, Kind, Prom, Seconds};
+use crate::config::ProviderModels;
 use crate::session::{SessionManager, SessionStats};
 
 /// The latency stages of a turn (definitions in `docs/LATENCY.md`).
@@ -114,6 +122,22 @@ impl Stage {
             Self::LlmRound => None,
         }
     }
+}
+
+/// The series of `(provider, model)` in `rows`.
+fn find_series<'a>(
+    rows: &'a [UsageSeries],
+    provider: &str,
+    model: &str,
+) -> Option<&'a UsageSeries> {
+    rows.iter()
+        .find(|r| r.provider == provider && r.model == model)
+}
+
+/// Whether anything was marked on `turn`: a turn nothing was marked on (the epoch of a barge-in
+/// that never spoke) is not a turn of the call.
+pub(crate) fn turn_has_marks(turn: &TurnRecord) -> bool {
+    TurnEvent::ALL.iter().any(|e| turn.at(*e).is_some())
 }
 
 /// The provider stages the resilience layer and the error counters distinguish.
@@ -296,6 +320,66 @@ pub struct TraceCounters {
     pub batches_failed: Counter,
 }
 
+/// Most distinct `(provider, model)` usage series per stage; a series beyond it is added to
+/// `other`/`other`. The label values come from the agent definitions (at most two agents per
+/// process), so the cap only guards against a future caller.
+const MAX_USAGE_SERIES: usize = 16;
+
+/// What the calls of one `(provider, model)` used, summed.
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct UsageSeries {
+    provider: String,
+    model: String,
+    /// LLM tokens: input, cached input, output.
+    tokens: [u64; 3],
+    /// STT audio sent, in milliseconds.
+    audio_ms: u64,
+    /// TTS characters sent.
+    characters: u64,
+}
+
+/// The usage series of the three stages.
+#[derive(Debug, Default)]
+struct UsageTable {
+    llm: Vec<UsageSeries>,
+    stt: Vec<UsageSeries>,
+    tts: Vec<UsageSeries>,
+}
+
+impl UsageTable {
+    /// The series of `(provider, model)` in `rows`, added when there is room, else `other`.
+    fn series<'a>(
+        rows: &'a mut Vec<UsageSeries>,
+        provider: &str,
+        model: &str,
+    ) -> Option<&'a mut UsageSeries> {
+        let known = rows
+            .iter()
+            .any(|r| r.provider == provider && r.model == model);
+        let (provider, model) = if known || rows.len() < MAX_USAGE_SERIES {
+            (provider, model)
+        } else {
+            ("other", "other")
+        };
+        let index = if let Some(index) = rows
+            .iter()
+            .position(|r| r.provider == provider && r.model == model)
+        {
+            index
+        } else {
+            rows.push(UsageSeries {
+                provider: provider.to_owned(),
+                model: model.to_owned(),
+                tokens: [0; 3],
+                audio_ms: 0,
+                characters: 0,
+            });
+            rows.len().saturating_sub(1)
+        };
+        rows.get_mut(index)
+    }
+}
+
 /// All the counters and histograms the server feeds.
 #[derive(Debug)]
 pub struct Metrics {
@@ -307,6 +391,8 @@ pub struct Metrics {
     provider_errors: [Counter; ERROR_KINDS.len()],
     engine: [Counter; ENGINE_EVENTS.len()],
     resilience: [[Counter; RESILIENCE_EVENTS.len()]; 3],
+    usage: Mutex<UsageTable>,
+    call_duration: Histogram,
     /// The trace pipeline's counters.
     pub traces: Arc<TraceCounters>,
 }
@@ -329,6 +415,8 @@ impl Metrics {
             provider_errors: std::array::from_fn(|_| Counter::new()),
             engine: std::array::from_fn(|_| Counter::new()),
             resilience: std::array::from_fn(|_| std::array::from_fn(|_| Counter::new())),
+            usage: Mutex::new(UsageTable::default()),
+            call_duration: Histogram::with_bounds(&CALL_DURATION_BOUNDS_US),
             traces: Arc::new(TraceCounters::default()),
         }
     }
@@ -341,8 +429,7 @@ impl Metrics {
     /// Records the stage latencies of a finished turn (not `TimeToSilence`, which arrives after
     /// the turn: [`Self::observe_silence`]) and counts the turn.
     pub fn observe_turn(&self, turn: &TurnRecord) {
-        if TurnEvent::ALL.iter().all(|e| turn.at(*e).is_none()) {
-            // A turn nothing was marked on (the epoch of a barge-in that never spoke).
+        if !turn_has_marks(turn) {
             return;
         }
         for stage in Stage::ALL {
@@ -405,8 +492,15 @@ impl Metrics {
     }
 
     /// Counts an ended call (`calls_ended`) and, when its statistics could be read, folds its
-    /// counters in. A call that never got as far as having statistics still counts.
-    pub fn observe_call(&self, stats: Option<&brisvox_engine::session::CallStats>) {
+    /// counters in: the provider and engine counters of `stats`, and, with the call's `summary`,
+    /// its duration and its usage, taken from the summary's own figures (so the metrics, the
+    /// log, the link and the transcript always report the same numbers) under its providers and
+    /// models. A call that never got as far as having statistics still counts.
+    pub fn observe_call(
+        &self,
+        stats: Option<&brisvox_engine::session::CallStats>,
+        summary: Option<&CallSummary>,
+    ) {
         self.calls_ended.inc();
         let Some(stats) = stats else {
             return;
@@ -421,6 +515,76 @@ impl Metrics {
         for (counter, n) in self.engine.iter().zip(engine_events(stats)) {
             counter.add(n);
         }
+        if let Some(summary) = summary {
+            self.call_duration
+                .observe(Duration::from_millis(summary.duration_ms));
+            let mut table = self.usage.lock().unwrap_or_else(PoisonError::into_inner);
+            Self::add_usage(summary, &mut table);
+        }
+    }
+
+    /// Adds the units of a call, as the summary states them, to the series the summary names.
+    fn add_usage(summary: &CallSummary, table: &mut UsageTable) {
+        if let Some(u) = &summary.usage.llm
+            && let Some(row) = UsageTable::series(&mut table.llm, &u.provider, &u.model)
+        {
+            for (total, n) in
+                row.tokens
+                    .iter_mut()
+                    .zip([u.input_tokens, u.cached_input_tokens, u.output_tokens])
+            {
+                *total = total.saturating_add(n);
+            }
+        }
+        if let Some(u) = &summary.usage.stt
+            && let Some(row) = UsageTable::series(&mut table.stt, &u.provider, &u.model)
+        {
+            row.audio_ms = row.audio_ms.saturating_add(u.audio_ms());
+        }
+        if let Some(u) = &summary.usage.tts
+            && let Some(row) = UsageTable::series(&mut table.tts, &u.provider, &u.model)
+        {
+            row.characters = row.characters.saturating_add(u.characters);
+        }
+    }
+
+    /// Creates the usage series of an agent's providers at zero, so `/metrics` shows them from
+    /// startup and a counter's first increase is visible to `rate()`.
+    pub fn register_usage(&self, names: &ProviderModels) {
+        let mut table = self.usage.lock().unwrap_or_else(PoisonError::into_inner);
+        if let Some(n) = &names.llm {
+            UsageTable::series(&mut table.llm, n.provider, &n.model);
+        }
+        if let Some(n) = &names.stt {
+            UsageTable::series(&mut table.stt, n.provider, &n.model);
+        }
+        if let Some(n) = &names.tts {
+            UsageTable::series(&mut table.tts, n.provider, &n.model);
+        }
+    }
+
+    /// The LLM tokens `[input, cached input, output]` counted for `(provider, model)` so far
+    /// (zero where the series does not exist).
+    pub fn llm_tokens(&self, provider: &str, model: &str) -> [u64; 3] {
+        let table = self.usage.lock().unwrap_or_else(PoisonError::into_inner);
+        find_series(&table.llm, provider, model).map_or([0; 3], |r| r.tokens)
+    }
+
+    /// The STT audio, in milliseconds, counted for `(provider, model)` so far.
+    pub fn stt_audio_ms(&self, provider: &str, model: &str) -> u64 {
+        let table = self.usage.lock().unwrap_or_else(PoisonError::into_inner);
+        find_series(&table.stt, provider, model).map_or(0, |r| r.audio_ms)
+    }
+
+    /// The TTS characters counted for `(provider, model)` so far.
+    pub fn tts_characters(&self, provider: &str, model: &str) -> u64 {
+        let table = self.usage.lock().unwrap_or_else(PoisonError::into_inner);
+        find_series(&table.tts, provider, model).map_or(0, |r| r.characters)
+    }
+
+    /// Call durations recorded so far.
+    pub fn call_durations(&self) -> u64 {
+        self.call_duration.count()
     }
 
     /// Adds what a call's resilience wrapper counted since the last time (the caller passes the
@@ -467,6 +631,7 @@ impl Metrics {
         render_sessions(&mut p, &manager.stats());
         render_admission(&mut p, manager);
         self.render_errors(&mut p);
+        self.render_usage(&mut p);
         if let Some(source) = resilience {
             self.render_resilience(&mut p, &source.resilience_snapshot());
         }
@@ -540,6 +705,59 @@ impl Metrics {
             Kind::Counter,
         );
         p.sample("brisvox_calls_ended_total", &[], self.calls_ended.get());
+    }
+
+    fn render_usage(&self, p: &mut Prom) {
+        let table = self.usage.lock().unwrap_or_else(PoisonError::into_inner);
+        p.family(
+            "brisvox_llm_tokens_total",
+            "LLM tokens the providers reported for finished calls, by the agent's provider and model and kind (input, cached_input, output); discarded speculative responses are included.",
+            Kind::Counter,
+        );
+        for row in &table.llm {
+            for (kind, n) in ["input", "cached_input", "output"].iter().zip(row.tokens) {
+                p.sample(
+                    "brisvox_llm_tokens_total",
+                    &[
+                        ("provider", &row.provider),
+                        ("model", &row.model),
+                        ("kind", kind),
+                    ],
+                    n,
+                );
+            }
+        }
+        p.family(
+            "brisvox_stt_audio_seconds_total",
+            "Seconds of audio sent to the STT provider by finished calls, by the agent's provider and model.",
+            Kind::Counter,
+        );
+        for row in &table.stt {
+            p.sample(
+                "brisvox_stt_audio_seconds_total",
+                &[("provider", &row.provider), ("model", &row.model)],
+                Seconds(row.audio_ms.saturating_mul(1_000)),
+            );
+        }
+        p.family(
+            "brisvox_tts_characters_total",
+            "Characters sent to the TTS provider by finished calls, by the agent's provider and model.",
+            Kind::Counter,
+        );
+        for row in &table.tts {
+            p.sample(
+                "brisvox_tts_characters_total",
+                &[("provider", &row.provider), ("model", &row.model)],
+                row.characters,
+            );
+        }
+        drop(table);
+        p.family(
+            "brisvox_call_duration_seconds",
+            "Duration of finished calls, from the start to the end of the call.",
+            Kind::Histogram,
+        );
+        p.histogram("brisvox_call_duration_seconds", &[], &self.call_duration);
     }
 
     fn render_resilience(&self, p: &mut Prom, snap: &ResilienceSnapshot) {

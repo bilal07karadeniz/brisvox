@@ -614,7 +614,15 @@ impl<P: LlmProvider> Turn<P> {
                         return Attempt::Failed { emitted };
                     }
                 }
-                LlmEvent::Done { provider_data, .. } => {
+                LlmEvent::Done {
+                    usage,
+                    provider_data,
+                    ..
+                } => {
+                    s.stats.count_usage(usage);
+                    if let Some(usage) = usage {
+                        s.stats.add_turn_usage(self.epoch, usage);
+                    }
                     if let Some(delta) = provider_data_of(&self.s, provider_data.as_deref()).await
                         && assembler.push(delta).is_err()
                     {
@@ -856,7 +864,11 @@ impl<P: LlmProvider> Turn<P> {
             calls,
             speculation,
             filler,
+            usage,
         } = done;
+        if let Some(usage) = usage {
+            self.s.stats.add_turn_usage(self.epoch, usage);
+        }
         self.push_message(key, message);
         if !had_calls {
             return Next::Done;

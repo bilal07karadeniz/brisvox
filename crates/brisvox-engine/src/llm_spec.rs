@@ -43,7 +43,7 @@ use brisvox_agent::context::{Context, Message};
 use brisvox_agent::tools::{FillerPlan, Speculation, ToolEngine};
 use brisvox_core::TurnEpoch;
 use brisvox_core::clock::deadline_after;
-use brisvox_providers::{LlmEvent, LlmProvider, LlmStream, ToolSpec};
+use brisvox_providers::{LlmEvent, LlmProvider, LlmStream, ToolSpec, Usage};
 use tokio::sync::mpsc;
 use tokio::time::Instant;
 use tokio_util::sync::CancellationToken;
@@ -109,6 +109,9 @@ pub(crate) struct SpecDone {
     pub(crate) speculation: Option<HeldSpeculation>,
     /// When the tool phase needs a filler (the tool layer's [`FillerPolicy`]).
     pub(crate) filler: Option<FillerPlan>,
+    /// What the provider reported for the response. The call's totals counted it already when the
+    /// response ended (committed or not); the committed turn adds it to its own sum.
+    pub(crate) usage: Option<Usage>,
 }
 
 /// A speculative tool phase that gives back the retry-budget round it spent unless it is
@@ -544,6 +547,8 @@ impl<P: LlmProvider> Task<P> {
                     provider_data,
                     ..
                 } => {
+                    // Billed whether the turn commits or discards the speculation.
+                    s.stats.count_usage(usage);
                     if let Some(usage) = usage {
                         self.shared
                             .input_tokens
@@ -557,7 +562,7 @@ impl<P: LlmProvider> Task<P> {
                     {
                         bump_llm(&s.count().assemble_errors);
                     }
-                    self.complete(assembler).await;
+                    self.complete(assembler, usage).await;
                     return;
                 }
                 LlmEvent::Error(error) => {
@@ -577,7 +582,7 @@ impl<P: LlmProvider> Task<P> {
     }
 
     /// `Done`: finish the response, run the speculative tool phase, hand everything over.
-    async fn complete(&self, assembler: ResponseAssembler) {
+    async fn complete(&self, assembler: ResponseAssembler, usage: Option<Usage>) {
         let s = &self.s;
         self.shared
             .mark(|marks| marks.done_at = Some(s.clock.now()));
@@ -594,6 +599,7 @@ impl<P: LlmProvider> Task<P> {
             calls: Vec::new(),
             speculation: None,
             filler: None,
+            usage,
         };
         if !had_calls {
             self.send(SpecItem::Done(Box::new(done))).await;

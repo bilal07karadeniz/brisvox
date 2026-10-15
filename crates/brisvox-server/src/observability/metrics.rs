@@ -50,11 +50,30 @@ pub const LATENCY_BOUNDS_US: [u64; 18] = [
     500_000, 750_000, 1_000_000, 1_500_000, 2_000_000, 3_000_000, 5_000_000,
 ];
 
-/// A fixed-bucket latency histogram over [`LATENCY_BOUNDS_US`] (plus the `+Inf` bucket).
+/// Upper bounds of the call-duration buckets, in microseconds: from a failed start to a
+/// multi-hour call.
+pub const CALL_DURATION_BOUNDS_US: [u64; 11] = [
+    5_000_000,
+    10_000_000,
+    30_000_000,
+    60_000_000,
+    120_000_000,
+    180_000_000,
+    300_000_000,
+    600_000_000,
+    900_000_000,
+    1_800_000_000,
+    3_600_000_000,
+];
+
+/// A fixed-bucket histogram of durations (plus the `+Inf` bucket): [`Histogram::new`] over
+/// [`LATENCY_BOUNDS_US`], [`Histogram::with_bounds`] over other bounds.
 #[derive(Debug)]
 pub struct Histogram {
+    /// Upper bounds in microseconds, ascending.
+    bounds: &'static [u64],
     /// Observations per bucket (not cumulative); the last slot is the `+Inf` overflow.
-    buckets: [AtomicU64; LATENCY_BOUNDS_US.len() + 1],
+    buckets: Box<[AtomicU64]>,
     sum_us: AtomicU64,
     count: AtomicU64,
 }
@@ -69,7 +88,7 @@ impl Default for Histogram {
 /// an observation can see the count one ahead of the buckets, which Prometheus tolerates).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct HistogramSnapshot {
-    /// Cumulative counts, one per bound of [`LATENCY_BOUNDS_US`].
+    /// Cumulative counts, one per bound of the histogram.
     pub cumulative: Vec<u64>,
     /// Observations in all.
     pub count: u64,
@@ -78,10 +97,16 @@ pub struct HistogramSnapshot {
 }
 
 impl Histogram {
-    /// An empty histogram.
-    pub const fn new() -> Self {
+    /// An empty latency histogram over [`LATENCY_BOUNDS_US`].
+    pub fn new() -> Self {
+        Self::with_bounds(&LATENCY_BOUNDS_US)
+    }
+
+    /// An empty histogram over `bounds` (microseconds, ascending).
+    pub fn with_bounds(bounds: &'static [u64]) -> Self {
         Self {
-            buckets: [const { AtomicU64::new(0) }; LATENCY_BOUNDS_US.len() + 1],
+            bounds,
+            buckets: (0..=bounds.len()).map(|_| AtomicU64::new(0)).collect(),
             sum_us: AtomicU64::new(0),
             count: AtomicU64::new(0),
         }
@@ -90,7 +115,7 @@ impl Histogram {
     /// Records one observation.
     pub fn observe(&self, value: Duration) {
         let us = u64::try_from(value.as_micros()).unwrap_or(u64::MAX);
-        let slot = LATENCY_BOUNDS_US.partition_point(|bound| *bound < us);
+        let slot = self.bounds.partition_point(|bound| *bound < us);
         if let Some(bucket) = self.buckets.get(slot) {
             bucket.fetch_add(1, Ordering::Relaxed);
         }
@@ -113,7 +138,7 @@ impl Histogram {
         let cumulative = self
             .buckets
             .iter()
-            .take(LATENCY_BOUNDS_US.len())
+            .take(self.bounds.len())
             .map(|bucket| {
                 running = running.saturating_add(bucket.load(Ordering::Relaxed));
                 running
@@ -222,7 +247,7 @@ impl Prom {
     /// `name` (seconds).
     pub fn histogram(&mut self, name: &str, labels: &[(&str, &str)], histogram: &Histogram) {
         let snap = histogram.snapshot();
-        for (bound_us, cumulative) in LATENCY_BOUNDS_US.iter().zip(&snap.cumulative) {
+        for (bound_us, cumulative) in histogram.bounds.iter().zip(&snap.cumulative) {
             let le = Seconds(*bound_us).to_string();
             self.out.push_str(name);
             self.out.push_str("_bucket");
@@ -250,7 +275,7 @@ impl Prom {
 }
 
 /// Microseconds printed as decimal seconds without float rounding (`1500` -> `0.0015`).
-struct Seconds(u64);
+pub(super) struct Seconds(pub(super) u64);
 
 impl Display for Seconds {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {

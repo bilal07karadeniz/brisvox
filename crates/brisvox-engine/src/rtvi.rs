@@ -535,7 +535,7 @@ impl Mapper {
                     out.push(RtviEvent::BotLlmText(TextData::new(&*text)));
                 }
             }
-            EngineEvent::BotLlmStopped { epoch } => {
+            EngineEvent::BotLlmStopped { epoch, .. } => {
                 if self.current(epoch) && std::mem::take(&mut self.llm_open) {
                     out.push(RtviEvent::BotLlmStopped);
                 }
@@ -718,7 +718,10 @@ mod tests {
                     epoch: e,
                     text: text("Hello."),
                 },
-                EngineEvent::BotLlmStopped { epoch: e },
+                EngineEvent::BotLlmStopped {
+                    epoch: e,
+                    usage: None,
+                },
                 EngineEvent::BotStartedSpeaking { epoch: e },
                 EngineEvent::TurnMetrics {
                     epoch: e,

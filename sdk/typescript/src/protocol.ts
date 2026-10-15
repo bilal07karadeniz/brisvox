@@ -136,6 +136,71 @@ export interface Metrics {
   readonly responseMs?: number;
 }
 
+/** Provider-reported LLM token usage of a response (`bot.llm_stopped.usage`). */
+export interface TokenUsage {
+  /** Prompt tokens. */
+  readonly inputTokens: number;
+  /** Of `inputTokens`, the tokens served from the provider's prompt cache. */
+  readonly cachedInputTokens: number;
+  /** Generated tokens. */
+  readonly outputTokens: number;
+}
+
+/** Average and worst value of one latency stage over the turns of a call, in milliseconds. */
+export interface StageLatency {
+  readonly avgMs: number;
+  readonly maxMs: number;
+}
+
+/** The per-call latency stages of `session.usage`; a stage no turn had is absent. */
+export interface LatencySummary {
+  /** The end-of-turn policy's wait after the caller stopped speaking. */
+  readonly endOfTurn?: StageLatency;
+  /** End of the caller's speech to the final transcript. */
+  readonly sttFinal?: StageLatency;
+  /** LLM request to first token. */
+  readonly llmTtft?: StageLatency;
+  /** TTS request to first audio. */
+  readonly ttsTtfb?: StageLatency;
+  /** End of the caller's speech to the first bot audio (server side). */
+  readonly response?: StageLatency;
+}
+
+/** What the LLM provider billed in a call (discarded speculative responses included). */
+export interface LlmUsage {
+  readonly provider: string;
+  readonly model: string;
+  readonly inputTokens: number;
+  readonly cachedInputTokens: number;
+  readonly outputTokens: number;
+  /** Responses that reported no usage: the token counts are lower bounds by those. */
+  readonly responsesWithoutUsage: number;
+}
+
+/** The speech-to-text audio sent in a call. */
+export interface SttUsage {
+  readonly provider: string;
+  readonly model: string;
+  readonly audioSeconds: number;
+}
+
+/** The text-to-speech characters sent in a call. */
+export interface TtsUsage {
+  readonly provider: string;
+  readonly model: string;
+  readonly characters: number;
+}
+
+/**
+ * The provider units of a call; a part is absent when the call did not run that stage (a
+ * speech-to-speech call has no separate STT, LLM or TTS). Units, not money.
+ */
+export interface UsageSummary {
+  readonly llm?: LlmUsage;
+  readonly stt?: SttUsage;
+  readonly tts?: TtsUsage;
+}
+
 // ---------------------------------------------------------------------------------------------
 // Server -> agent
 // ---------------------------------------------------------------------------------------------
@@ -209,6 +274,23 @@ export interface SessionEnd extends Envelope {
   readonly reason: string;
 }
 
+/**
+ * What the call used and how fast it was, sent once right before `session.end` (always, whatever
+ * the agent subscribed to; missing when the link was down at the end of the call). Units, not
+ * money: multiply by your providers' prices.
+ */
+export interface SessionUsage extends Envelope {
+  readonly type: "session.usage";
+  /** From the start to the end of the call, on the server's clock. */
+  readonly durationMs: number;
+  /** Turns that finished. */
+  readonly turns: number;
+  /** Of `turns`, the ones the caller interrupted. */
+  readonly interruptedTurns: number;
+  readonly latency: LatencySummary;
+  readonly usage: UsageSummary;
+}
+
 /** A user turn started (speech; also a confirmed barge-in). */
 export interface TurnUserStarted extends Envelope {
   readonly type: "turn.user_started";
@@ -273,10 +355,15 @@ export interface BotText extends Envelope {
   readonly text: string;
 }
 
-/** The round ended. */
+/** The LLM finished the response of `epoch` (the end of its last round). */
 export interface BotLlmStopped extends Envelope {
   readonly type: "bot.llm_stopped";
   readonly epoch: number;
+  /**
+   * What the provider reported for the response, summed over the rounds of the turn; absent when
+   * it reported none (an older server sends none either).
+   */
+  readonly usage?: TokenUsage;
 }
 
 /** A chunk sent to the TTS. */
@@ -376,6 +463,7 @@ export type ToolKind = "read_only" | "side_effect";
 /** Every message the server sends to an agent that handlers can see as an event. */
 export type AgentEvent =
   | SessionEnd
+  | SessionUsage
   | TurnUserStarted
   | TurnUserEnded
   | TurnBotStarted
@@ -405,6 +493,7 @@ export type ServerMessage =
 /** Wire `type` to message type, for every message a handler can be registered on. */
 export interface EventMap {
   "session.end": SessionEnd;
+  "session.usage": SessionUsage;
   "turn.user_started": TurnUserStarted;
   "turn.user_ended": TurnUserEnded;
   "turn.bot_started": TurnBotStarted;
@@ -431,6 +520,7 @@ export type EventType = keyof EventMap;
 export const HANDLER_TYPES: ReadonlySet<string> = new Set<EventType>([
   ...EVENT_TYPES,
   "session.end",
+  "session.usage",
   "error",
   "events.lost",
   "session.resumed",
@@ -527,6 +617,81 @@ function parseMetrics(raw: unknown): Metrics {
   return out;
 }
 
+function optCount(obj: Obj, key: string): number {
+  const value = obj[key];
+  return typeof value === "number" && Number.isInteger(value) ? value : 0;
+}
+
+function parseTokenUsage(raw: unknown): TokenUsage | undefined {
+  // An optional addition: a malformed one is ignored, the event still counts.
+  if (!isObject(raw)) {
+    return undefined;
+  }
+  return {
+    inputTokens: optCount(raw, "input_tokens"),
+    cachedInputTokens: optCount(raw, "cached_input_tokens"),
+    outputTokens: optCount(raw, "output_tokens"),
+  };
+}
+
+function parseStageLatency(raw: unknown): StageLatency | undefined {
+  if (!isObject(raw)) {
+    return undefined;
+  }
+  const avgMs = optNumber(raw, "avg_ms");
+  const maxMs = optNumber(raw, "max_ms");
+  return avgMs === undefined || maxMs === undefined ? undefined : { avgMs, maxMs };
+}
+
+function parseLatencySummary(raw: unknown): LatencySummary {
+  if (!isObject(raw)) {
+    return {};
+  }
+  const out: { -readonly [K in keyof LatencySummary]: LatencySummary[K] } = {};
+  const pairs: [keyof LatencySummary, string][] = [
+    ["endOfTurn", "end_of_turn"],
+    ["sttFinal", "stt_final"],
+    ["llmTtft", "llm_ttft"],
+    ["ttsTtfb", "tts_ttfb"],
+    ["response", "response"],
+  ];
+  for (const [name, wire] of pairs) {
+    const stage = parseStageLatency(raw[wire]);
+    if (stage !== undefined) {
+      out[name] = stage;
+    }
+  }
+  return out;
+}
+
+function parseUsageSummary(raw: unknown): UsageSummary {
+  if (!isObject(raw)) {
+    return {};
+  }
+  const names = (part: Obj): { provider: string; model: string } => ({
+    provider: optStr(part, "provider") ?? "",
+    model: optStr(part, "model") ?? "",
+  });
+  const { llm, stt, tts } = raw;
+  return {
+    ...(isObject(llm)
+      ? {
+          llm: {
+            ...names(llm),
+            inputTokens: optCount(llm, "input_tokens"),
+            cachedInputTokens: optCount(llm, "cached_input_tokens"),
+            outputTokens: optCount(llm, "output_tokens"),
+            responsesWithoutUsage: optCount(llm, "responses_without_usage"),
+          },
+        }
+      : {}),
+    ...(isObject(stt)
+      ? { stt: { ...names(stt), audioSeconds: optNumber(stt, "audio_seconds") ?? 0 } }
+      : {}),
+    ...(isObject(tts) ? { tts: { ...names(tts), characters: optCount(tts, "characters") } } : {}),
+  };
+}
+
 function parseBody(kind: string, obj: Obj, env: Envelope): ServerMessage {
   const epoch = (): number => needInt(obj, "epoch", kind);
   const text = (): string => needStr(obj, "text", kind);
@@ -567,13 +732,26 @@ function parseBody(kind: string, obj: Obj, env: Envelope): ServerMessage {
     }
     case "session.end":
       return { type: kind, ...env, reason: needStr(obj, "reason", kind) };
+    case "session.usage":
+      return {
+        type: kind,
+        ...env,
+        durationMs: needInt(obj, "duration_ms", kind),
+        turns: needInt(obj, "turns", kind),
+        interruptedTurns: needInt(obj, "interrupted_turns", kind),
+        latency: parseLatencySummary(obj["latency"]),
+        usage: parseUsageSummary(obj["usage"]),
+      };
+    case "bot.llm_stopped": {
+      const usage = parseTokenUsage(obj["usage"]);
+      return { type: kind, ...env, epoch: epoch(), ...(usage === undefined ? {} : { usage }) };
+    }
     case "turn.user_started":
     case "turn.user_ended":
     case "turn.bot_started":
     case "turn.bot_ended":
     case "turn.interrupted":
     case "bot.llm_started":
-    case "bot.llm_stopped":
     case "bot.tts_stopped":
       return { type: kind, ...env, epoch: epoch() };
     case "turn.metrics":

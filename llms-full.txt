@@ -1825,11 +1825,21 @@ scrape time.
 | `brisvox_provider_errors_total` | counter | `stage`, `kind` | Provider failures the engine counted (connect failures, session deaths, LLM request/stream errors and timeouts, TTS send failures and stalls), added when a call ends. |
 | `brisvox_engine_events_total` | counter | `event` | Engine trouble of finished calls: queue and stale drops, pool trouble, finals-gate, settle and mark timeouts, truncations. |
 | `brisvox_calls_ended_total` | counter | | Calls whose end-of-call statistics were added. |
+| `brisvox_llm_tokens_total` | counter | `provider`, `model`, `kind` (`input`, `cached_input`, `output`) | LLM tokens the provider reported for finished calls, discarded speculative responses included. `cached_input` is part of `input`. |
+| `brisvox_stt_audio_seconds_total` | counter | `provider`, `model` | Seconds of audio sent to the STT provider by finished calls. |
+| `brisvox_tts_characters_total` | counter | `provider`, `model` | Characters sent to the TTS provider by finished calls. |
+| `brisvox_call_duration_seconds` | histogram | | Duration of finished calls (buckets from 5 s to 1 h). |
 | `brisvox_breaker_state` | gauge | `stage`, `role`, `provider` | Circuit breaker: 0 closed, 1 half-open, 2 open. |
 | `brisvox_breaker_events_total` | counter | `stage`, `role`, `provider`, `event` | Attempts admitted, refused, failed, probes, openings, closings. |
 | `brisvox_retry_budget_available`, `brisvox_retry_budget_total{outcome}` | gauge/counter | `outcome` (`granted`, `refused`) | The process retry budget. |
 | `brisvox_resilience_events_total` | counter | `stage`, `event` | Per-call resilience counters summed: `attempts`, `retries`, `failovers` (served by the secondary), `breaker_skips`, `budget_refusals`, `unavailable`, `recoveries`, `recovery_failures`, `replayed`, `idle_refreshes`. Added at every finished turn and when a call ends. |
 | `brisvox_traces_total`, `brisvox_trace_batches_total` | counter | `outcome` | Traces built and dropped; OTLP batches sent and failed. |
+
+The usage families (`brisvox_llm_tokens_total` and the two after it) are labelled with the
+`provider` and `model` of the agent definitions the process runs (at most two: `BRISVOX_AGENT_FILE`
+and `BRISVOX_WS_AGENT_FILE`), never with anything a caller sends, so their cardinality is fixed; they
+exist at zero from startup. A call that failed over to a secondary provider is still counted under
+the primary. See "Usage and cost".
 
 Useful alerts: `rate(brisvox_smart_turn_rejected_total[5m]) > 0` or
 `rate(brisvox_smart_turn_timed_out_total[5m]) > 0` (the Smart Turn executor is overloaded: every
@@ -1840,6 +1850,49 @@ threads with `BRISVOX_SMART_TURN_THREADS` or shed calls);
 secondary); `rate(brisvox_resilience_events_total{event="budget_refusals"}[5m]) > 0` (the retry
 budget is spent: an outage is bigger than the budget allows); `rate(brisvox_session_admissions_rejected_total[5m])`
 by `reason`; `histogram_quantile(0.95, sum by (le) (rate(brisvox_stage_latency_seconds_bucket{stage="response"}[5m])))`.
+
+### Usage and cost
+
+brisvox counts what a call used at the providers and reports units, not money: prices change, so
+multiply the units by your provider's current price list (per million tokens, per audio hour, per
+million characters).
+
+What is counted, per call:
+
+- **LLM tokens**: the input, cached input (part of the input) and output tokens the provider
+  reported, summed over every response of the call: normal turns, tool rounds and speculative
+  responses that were started and then discarded (the provider bills those too). The totals are a
+  lower bound: a response is counted when it finishes, so one cancelled by a barge-in or one that
+  fails before its end reports no usage and is not counted, although the provider may bill the
+  tokens it produced. `responses_without_usage` counts only responses that finished without
+  reporting usage.
+- **STT audio seconds**: the audio handed to the STT provider, in seconds (silence the server
+  forwards included, keepalives and finalize messages not): what a provider that bills by audio
+  time bills for, up to its own rounding.
+- **TTS characters**: the characters of text sent to the TTS provider (text that was never sent,
+  and phrases a pre-rendered clip replaced, are not counted): what a provider that bills by
+  character bills for, up to its own counting rules.
+
+Where to read it, all from the same numbers:
+
+- The agent link event `session.usage`, right before `session.end` (`docs/AGENT_PROTOCOL.md`,
+  "Call summary"); an agent process can bill, store or show it per call. `bot.llm_stopped` also
+  carries the tokens of each turn.
+- The `summary` member of the transcript's `end` line when transcripts are recorded
+  (`docs/PRIVACY.md`).
+- One `info` log line `call summary` (target `brisvox::server`) per call, with the numbers as
+  fields: counts, latencies, units, provider and model; no conversation text and nothing about the
+  caller.
+- `GET /metrics`: the `brisvox_llm_tokens_total`, `brisvox_stt_audio_seconds_total`,
+  `brisvox_tts_characters_total` and `brisvox_call_duration_seconds` families, folded in when a
+  call ends. For example, input tokens per hour for the LLM:
+  `sum by (provider, model) (increase(brisvox_llm_tokens_total{kind="input"}[1h]))`.
+
+The summary also holds the call's duration, its turns and interrupted turns and the average and
+worst latency of each stage; its JSON shape is in the protocol document. `provider` and `model`
+are the primaries of the agent definition (`model` is `default` where the adapter leaves the choice
+to the provider). A call that failed over to a secondary is counted under the primary, and a
+call that never connected to a provider has zeros.
 
 ### Traces
 
@@ -1861,6 +1914,9 @@ occur, and so are values after credential-looking names (`api_key=`, `"token":".
 `Authorization: Bearer ...`, `?key=...`) and the password of `scheme://user:password@host`. The
 scrub over-redacts rather than under-redacts. Credentials in code are `brisvox_core::Secret`
 anyway; this is the second line of defence.
+
+The line `call summary` (target `brisvox::server`, info, one per finished call) carries the call's
+duration, turns, stage latencies and provider units (`docs/OPERATIONS.md`, "Usage and cost").
 
 The line `call admitted` (target `brisvox::server`, info, one per started call) carries the fields
 `transport` (`websocket`, `webrtc`, `twilio`, ...), `session` (the engine session id) and
@@ -3390,7 +3446,7 @@ it to stderr when logging is not configured, and on a loopback address the line 
 |---|---|
 | Handshake, version negotiation | Automatic. The highest version both sides speak is picked; none in common sends `session.reject` with `unsupported_version`. `@agent.on_session_start` may return `Accept(...)` (prompt, context, greeting, events, tools for this call) or raise `Reject(code, message)`. |
 | `session.accept` fields | `Agent(system_prompt=, context=, greeting=, events=)`. `events="auto"` (default) subscribes only to the event types you registered handlers for. |
-| Events | `@agent.on_user_text`, `on_transcript`, `on_bot_text`, `on_turn`, `on_error`, `on_events_lost`, `on_resumed`, `on_session_end`, or any event by class: `@agent.on(TurnInterrupted)` / `@agent.on("bot.tts_text")`. Typed frozen dataclasses (`brisvox_agent.protocol`). Handlers of one call run one at a time, in order. |
+| Events | `@agent.on_user_text`, `on_transcript`, `on_bot_text`, `on_turn`, `on_error`, `on_events_lost`, `on_resumed`, `on_session_usage`, `on_session_end`, or any event by class: `@agent.on(TurnInterrupted)` / `@agent.on("bot.tts_text")`. Typed frozen dataclasses (`brisvox_agent.protocol`). Handlers of one call run one at a time, in order. |
 | Remote tools | `@agent.tool(kind="read_only" or "side_effect", timeout_ms=, filler_after_ms=)`. Schema from type hints (`str int float bool list dict Optional Literal Enum dataclass date datetime Annotated[T, "doc"]`) and the docstring (`Args:`). Arguments arrive converted to the hinted types. Add `ctx: ToolContext` for the `idempotency_key`, `epoch`, and the cancel signal. Plain `def` tools run on a worker thread. |
 | `tool.cancel` | `read_only`: the tool task is cancelled (`asyncio.CancelledError`). `side_effect`: not cancelled (advice only), `ctx.cancelled` is set; the result still goes out and becomes a late note. |
 | Commands | `await session.say(text, interrupt=)`, `end(say=, reason=)`, `transfer(destination, mode=, summary=, reason=, id=)`, `update_context(system_prompt=, append=)`, `set_tools(names or None)`. Each awaits its `command.result` and raises `CommandError(code)` (an `ErrorCode`) on refusal; `wait=False` returns a future instead. |
@@ -3448,6 +3504,12 @@ it to stderr when logging is not configured, and on a loopback address the line 
   (`Agent(event_queue=1024)`); when it overflows the newest events are dropped and the handlers
   get an `EventsLost` in front of the next event after the gap, exactly like the server's own
   backpressure policy. `session.end` is never dropped.
+* **Usage.** `@agent.on_session_usage` gets a `SessionUsage` once per call, right before the
+  session end: `duration_ms`, `turns`, `interrupted_turns`, `latency` (`avg_ms` / `max_ms` per stage)
+  and `usage` (`llm` tokens, `stt.audio_seconds`, `tts.characters`, with the configured provider and
+  model). The server always sends it (it is not a subscription); it is missing when the link was down
+  at the end. `BotLlmStopped.usage` (`TokenUsage`, or `None`) is the tokens one turn's responses used.
+  Units, not money: multiply by your provider's prices.
 * **Session end.** `on_session_end` runs once per call; if the link dropped without
   `session.end` the reason is `"link_closed"`. When the link drops every running tool sees `ctx.cancelled` (reason
   `"link_closed"`); `read_only` tools are cancelled, `side_effect` tools get
@@ -3602,7 +3664,7 @@ address the line says so:
 |---|---|
 | Handshake, version negotiation | Automatic. The highest version both sides speak is picked; none in common sends `session.reject` with `unsupported_version`. `agent.onSessionStart(...)` may return `{ systemPrompt, context, greeting, events, tools }` for this call or throw `new Reject(code, message)`. |
 | `session.accept` fields | `new Agent({ systemPrompt, context, greeting, events })`. `events: "auto"` (default) subscribes only to the event types you registered handlers for. |
-| Events | `agent.onUserText`, `onTranscript`, `onBotText`, `onTurn`, `onError`, `onEventsLost`, `onResumed`, `onSessionEnd`, or any event by wire type: `agent.on("turn.interrupted", ...)`. Events are readonly objects with a `type` discriminant (so `if (event.type === "turn.metrics")` narrows), camelCase fields (`tMs`, `sessionId`). Handlers of one call run one at a time, in order. |
+| Events | `agent.onUserText`, `onTranscript`, `onBotText`, `onTurn`, `onError`, `onEventsLost`, `onResumed`, `onSessionUsage`, `onSessionEnd`, or any event by wire type: `agent.on("turn.interrupted", ...)`. Events are readonly objects with a `type` discriminant (so `if (event.type === "turn.metrics")` narrows), camelCase fields (`tMs`, `sessionId`). Handlers of one call run one at a time, in order. |
 | Remote tools | `agent.tool({ name, description, parameters, handler, kind, timeoutMs, fillerAfterMs, confirm, repeatable })`. With `parameters: s.object({...})` the handler's `args` are typed and validated; with a plain JSON-schema object they arrive as sent. The handler's second argument is a `ToolContext` (`idempotencyKey`, `epoch`, `signal`, `session`). |
 | Who is calling | `session.call` is `undefined` unless the agent definition opted in (`[agent_link] caller_identity = true`, or `BRISVOX_AGENT_CALLER_IDENTITY=1`) and the call comes through a carrier (Twilio, Telnyx, SIP). Then it is a `CallIdentity`: `carrier`, `carrierCallId` (Twilio `CallSid`, Telnyx `call_control_id`, SIP `Call-ID`), `from`, `to` and `piiRedacted` (the Python SDK calls `from` and `to` `from_number` and `to_number`). The numbers are absent when the carrier did not say or when the server redacts phone numbers (`docs/PRIVACY.md`); with Twilio they exist only when the TwiML passes them as stream parameters `from` and `to` (`docs/TELEPHONY.md`). A caller ID can be spoofed: use it as a hint, and keep it out of your logs. |
 | Repeating a side effect | The server refuses an identical `side_effect` call (same arguments) that the model repeats in a later response of the same turn, answering `already_done` without calling your handler. `repeatable: true` lets such a repeat through, for a tool where doing the same thing twice is legitimate (pressing the same IVR digit twice). It needs `kind: "side_effect"` (`RangeError` on a read-only tool, like `confirm`). |
@@ -3671,6 +3733,12 @@ typed by inference. A zod user can pass `z.toJSONSchema(schema)` as a raw `param
   (`eventQueue: 1024`); when it overflows the newest events are dropped and the handlers get an
   `events.lost` in front of the next event after the gap, exactly like the server's own backpressure
   policy. `session.end` is never dropped.
+* **Usage.** `agent.onSessionUsage` gets a `SessionUsage` once per call, right before the session end:
+  `durationMs`, `turns`, `interruptedTurns`, `latency` (`avgMs` / `maxMs` per stage) and `usage` (`llm`
+  tokens, `stt.audioSeconds`, `tts.characters`, with the configured provider and model). The server
+  always sends it (it is not a subscription); it is missing when the link was down at the end.
+  `BotLlmStopped.usage` (`TokenUsage`, or absent) is the tokens one turn's responses used. Units, not
+  money: multiply by your provider's prices.
 * **Session end.** `onSessionEnd` runs once per call; if the link dropped without `session.end` the
   reason is `"link_closed"`. When the link drops every running tool sees `ctx.signal` abort (reason
   `"link_closed"`); `read_only` tools are abandoned, `side_effect` tools get `sideEffectGraceMs` to wind
@@ -6608,7 +6676,7 @@ JSON lines, UTF-8:
 {"type":"bot","t_ms":6120,"text":"Thanks, I noted [EMAIL].","interrupted":false,"heard":"full","cut":false}
 {"type":"user","t_ms":9800,"text":"stop, only the weekday hours"}
 {"type":"bot","t_ms":10450,"text":"We open at nine.","interrupted":true,"heard":"partial","estimated":false,"round":0,"barge_in_ms":9300,"cut":false}
-{"type":"end","t_ms":31800,"events_lost":0}
+{"type":"end","t_ms":31800,"events_lost":0,"summary":{"duration_ms":31900,"turns":2,"interrupted_turns":1,"latency":{"response":{"avg_ms":812.5,"max_ms":905.0}},"usage":{"llm":{"provider":"openai","model":"gpt-6-luna","input_tokens":1840,"cached_input_tokens":1024,"output_tokens":96,"responses_without_usage":0},"stt":{"provider":"deepgram","model":"nova-3","audio_seconds":31.5},"tts":{"provider":"cartesia","model":"sonic-3.6","characters":212}}}}
 ```
 
 - `t_ms` is milliseconds since the recording of the call started, on the server's clock.
@@ -6619,6 +6687,13 @@ JSON lines, UTF-8:
   caller's file that were never delivered). See "What a bot line holds" below.
 - `events_lost` counts conversation events the writer fell too far behind for (a stalled disk).
   Normally `0`.
+- `summary` on the `end` line is the call's usage summary, the same object the agent link sends as
+  `session.usage` (`docs/AGENT_PROTOCOL.md`, "Call summary"): the duration, the turns and
+  interrupted turns, the average and worst latency of each stage, and the provider units the call
+  used (LLM tokens, STT audio seconds, TTS characters, with the configured provider and model).
+  Numbers and provider names only: no conversation text and nothing about the caller. It is an
+  additive member (the format stays `version` 2; a reader that does not know it ignores it) and
+  is absent when the call ended before the server could build it.
 
 ### What a bot line holds
 

@@ -41,7 +41,7 @@ it to stderr when logging is not configured, and on a loopback address the line 
 |---|---|
 | Handshake, version negotiation | Automatic. The highest version both sides speak is picked; none in common sends `session.reject` with `unsupported_version`. `@agent.on_session_start` may return `Accept(...)` (prompt, context, greeting, events, tools for this call) or raise `Reject(code, message)`. |
 | `session.accept` fields | `Agent(system_prompt=, context=, greeting=, events=)`. `events="auto"` (default) subscribes only to the event types you registered handlers for. |
-| Events | `@agent.on_user_text`, `on_transcript`, `on_bot_text`, `on_turn`, `on_error`, `on_events_lost`, `on_resumed`, `on_session_end`, or any event by class: `@agent.on(TurnInterrupted)` / `@agent.on("bot.tts_text")`. Typed frozen dataclasses (`brisvox_agent.protocol`). Handlers of one call run one at a time, in order. |
+| Events | `@agent.on_user_text`, `on_transcript`, `on_bot_text`, `on_turn`, `on_error`, `on_events_lost`, `on_resumed`, `on_session_usage`, `on_session_end`, or any event by class: `@agent.on(TurnInterrupted)` / `@agent.on("bot.tts_text")`. Typed frozen dataclasses (`brisvox_agent.protocol`). Handlers of one call run one at a time, in order. |
 | Remote tools | `@agent.tool(kind="read_only" or "side_effect", timeout_ms=, filler_after_ms=)`. Schema from type hints (`str int float bool list dict Optional Literal Enum dataclass date datetime Annotated[T, "doc"]`) and the docstring (`Args:`). Arguments arrive converted to the hinted types. Add `ctx: ToolContext` for the `idempotency_key`, `epoch`, and the cancel signal. Plain `def` tools run on a worker thread. |
 | `tool.cancel` | `read_only`: the tool task is cancelled (`asyncio.CancelledError`). `side_effect`: not cancelled (advice only), `ctx.cancelled` is set; the result still goes out and becomes a late note. |
 | Commands | `await session.say(text, interrupt=)`, `end(say=, reason=)`, `transfer(destination, mode=, summary=, reason=, id=)`, `update_context(system_prompt=, append=)`, `set_tools(names or None)`. Each awaits its `command.result` and raises `CommandError(code)` (an `ErrorCode`) on refusal; `wait=False` returns a future instead. |
@@ -99,6 +99,12 @@ it to stderr when logging is not configured, and on a loopback address the line 
   (`Agent(event_queue=1024)`); when it overflows the newest events are dropped and the handlers
   get an `EventsLost` in front of the next event after the gap, exactly like the server's own
   backpressure policy. `session.end` is never dropped.
+* **Usage.** `@agent.on_session_usage` gets a `SessionUsage` once per call, right before the
+  session end: `duration_ms`, `turns`, `interrupted_turns`, `latency` (`avg_ms` / `max_ms` per stage)
+  and `usage` (`llm` tokens, `stt.audio_seconds`, `tts.characters`, with the configured provider and
+  model). The server always sends it (it is not a subscription); it is missing when the link was down
+  at the end. `BotLlmStopped.usage` (`TokenUsage`, or `None`) is the tokens one turn's responses used.
+  Units, not money: multiply by your provider's prices.
 * **Session end.** `on_session_end` runs once per call; if the link dropped without
   `session.end` the reason is `"link_closed"`. When the link drops every running tool sees `ctx.cancelled` (reason
   `"link_closed"`); `read_only` tools are cancelled, `side_effect` tools get

@@ -252,7 +252,12 @@ async fn a_mock_call_shows_up_in_metrics_and_traces() {
     // Before any call: the families exist at zero.
     let (status, body) = get(health, "/metrics").await;
     assert_eq!(status, 200, "{body}");
-    let before = parse(&body).unwrap_or_else(|e| panic!("{e}\n{body}"));
+    let before = parse(&body).unwrap_or_else(|e| {
+        panic!(
+            "{e}
+{body}"
+        )
+    });
     assert_eq!(
         value(
             &before,
@@ -313,7 +318,12 @@ async fn a_mock_call_shows_up_in_metrics_and_traces() {
     // The scrape after the call.
     let (status, body) = get(health, "/metrics").await;
     assert_eq!(status, 200);
-    let after = parse(&body).unwrap_or_else(|e| panic!("{e}\n{body}"));
+    let after = parse(&body).unwrap_or_else(|e| {
+        panic!(
+            "{e}
+{body}"
+        )
+    });
     let turns = value(
         &after,
         "brisvox_turns_total",
@@ -325,7 +335,11 @@ async fn a_mock_call_shows_up_in_metrics_and_traces() {
         "brisvox_turns_total",
         &[("outcome", "interrupted")],
     );
-    assert!(turns >= 1.0, "no turn was observed:\n{body}");
+    assert!(
+        turns >= 1.0,
+        "no turn was observed:
+{body}"
+    );
     for stage in ["llm_first_token", "llm_round", "tts_first_byte"] {
         let n = value(
             &after,
@@ -333,7 +347,11 @@ async fn a_mock_call_shows_up_in_metrics_and_traces() {
             "brisvox_stage_latency_seconds_count",
             &[("stage", stage)],
         );
-        assert!(n >= 1.0, "{stage} was not observed:\n{body}");
+        assert!(
+            n >= 1.0,
+            "{stage} was not observed:
+{body}"
+        );
     }
     assert_eq!(
         value(
@@ -399,6 +417,49 @@ async fn a_mock_call_shows_up_in_metrics_and_traces() {
             "brisvox_retry_budget_total",
             &[("outcome", "granted")]
         ) >= 1.0,
+        "{body}"
+    );
+
+    // The call's usage: the agent's provider and model label every series.
+    let models = agent().provider_models();
+    let (llm, tts) = (models.llm.unwrap(), models.tts.unwrap());
+    let stt = models.stt.unwrap();
+    for kind in ["input", "output"] {
+        let tokens = value(
+            &after,
+            "brisvox_llm_tokens_total",
+            "brisvox_llm_tokens_total",
+            &[
+                ("provider", llm.provider),
+                ("model", &llm.model),
+                ("kind", kind),
+            ],
+        );
+        assert!(tokens > 0.0, "no {kind} tokens:\n{body}");
+    }
+    assert!(
+        value(
+            &after,
+            "brisvox_tts_characters_total",
+            "brisvox_tts_characters_total",
+            &[("provider", tts.provider), ("model", &tts.model)],
+        ) >= "Hello from the agent.".len() as f64,
+        "{body}"
+    );
+    value(
+        &after,
+        "brisvox_stt_audio_seconds_total",
+        "brisvox_stt_audio_seconds_total",
+        &[("provider", stt.provider), ("model", &stt.model)],
+    );
+    assert_eq!(
+        value(
+            &after,
+            "brisvox_call_duration_seconds",
+            "brisvox_call_duration_seconds_count",
+            &[]
+        ),
+        1.0,
         "{body}"
     );
 

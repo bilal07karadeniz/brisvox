@@ -71,6 +71,18 @@ pub enum LlmFault {
     InterleavedToolDeltas,
 }
 
+/// The usage a scripted response reports in its `Done`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum ScriptedUsage {
+    /// Rough counts made from the request and the number of events (the default).
+    #[default]
+    Estimated,
+    /// Exactly these counts.
+    Reported(Usage),
+    /// The response finishes without usage.
+    Absent,
+}
+
 /// One scripted response.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct LlmScript {
@@ -82,6 +94,8 @@ pub struct LlmScript {
     pub argument_chunk: usize,
     /// Faults applied to this response.
     pub faults: Vec<LlmFault>,
+    /// The usage the final event reports.
+    pub usage: ScriptedUsage,
 }
 
 impl LlmScript {
@@ -96,7 +110,22 @@ impl LlmScript {
             tool_calls: Vec::new(),
             argument_chunk: 8,
             faults: Vec::new(),
+            usage: ScriptedUsage::Estimated,
         }
+    }
+
+    /// The response reports exactly `usage`.
+    #[must_use]
+    pub const fn with_usage(mut self, usage: Usage) -> Self {
+        self.usage = ScriptedUsage::Reported(usage);
+        self
+    }
+
+    /// The response finishes without usage.
+    #[must_use]
+    pub const fn without_usage(mut self) -> Self {
+        self.usage = ScriptedUsage::Absent;
+        self
     }
 
     /// Adds a tool call.
@@ -140,7 +169,7 @@ impl LlmScript {
     }
 
     /// The events of a successful stream, before timing and connection faults.
-    fn events(&self, usage: Usage) -> Vec<LlmEvent> {
+    fn events(&self, usage: Option<Usage>, estimated: bool) -> Vec<LlmEvent> {
         let mut events: Vec<LlmEvent> = self
             .text
             .iter()
@@ -195,7 +224,17 @@ impl LlmScript {
         };
         events.push(LlmEvent::Done {
             finish,
-            usage: Some(usage),
+            // An estimate reports the number of text and tool-call events as the output.
+            usage: usage.map(|usage| {
+                if estimated {
+                    Usage {
+                        output_tokens: u32::try_from(events.len()).unwrap_or(u32::MAX),
+                        ..usage
+                    }
+                } else {
+                    usage
+                }
+            }),
             provider_data: None,
         });
         events
@@ -380,7 +419,12 @@ impl LlmProvider for MockLlm {
                 status,
             });
         }
-        let events = script.events(usage);
+        let reported = match script.usage {
+            ScriptedUsage::Estimated => Some(usage),
+            ScriptedUsage::Reported(fixed) => Some(fixed),
+            ScriptedUsage::Absent => None,
+        };
+        let events = script.events(reported, script.usage == ScriptedUsage::Estimated);
         let timing: Vec<Duration> = {
             let mut state = self.lock();
             let first = state.first_token.sample();
@@ -428,7 +472,6 @@ async fn play(
     tx: mpsc::Sender<LlmEvent>,
     sent: Arc<AtomicUsize>,
 ) {
-    let output_tokens = u32::try_from(events.len().saturating_sub(1)).unwrap_or(u32::MAX);
     for (i, event) in events.into_iter().enumerate() {
         let mut wait = timing.get(i).copied().unwrap_or_default();
         for fault in &faults {
@@ -474,21 +517,6 @@ async fn play(
             let _ = tx.send(LlmEvent::Error(error)).await;
             return;
         }
-        let event = match event {
-            LlmEvent::Done {
-                finish,
-                usage: Some(usage),
-                provider_data,
-            } => LlmEvent::Done {
-                finish,
-                usage: Some(Usage {
-                    output_tokens,
-                    ..usage
-                }),
-                provider_data,
-            },
-            other => other,
-        };
         if tx.send(event).await.is_err() {
             return;
         }

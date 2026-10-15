@@ -506,6 +506,52 @@ async fn chunks_are_spoken_normalized_but_recorded_verbatim() {
 }
 
 #[tokio::test(start_paused = true)]
+async fn the_characters_sent_are_chars_of_the_spoken_text_not_bytes() {
+    let rig = Rig::new().await;
+    // 10 + 9 chars: 19 chars but more bytes (the umlauts and the emoji are multi-byte).
+    let first = "Çok güzel,";
+    let second = " şöyle 😀.";
+    assert_eq!(first.chars().count() + second.chars().count(), 19);
+    assert!(first.len() + second.len() > 19);
+    // Whitespace alone is recorded but never sent: it is not counted.
+    rig.respond(1, &[first, "   ", second]).await;
+    rig.run_for(3 * Duration::from_secs(1)).await;
+    let stats = rig.stats.snapshot();
+    assert_eq!(stats.text_sent, 2, "{stats:?}");
+    assert_eq!(stats.chars_sent, 19, "{stats:?}");
+
+    // A second response adds to the call's total.
+    rig.respond(2, &["Hi."]).await;
+    rig.run_for(3 * Duration::from_secs(1)).await;
+    assert_eq!(rig.stats.snapshot().chars_sent, 22);
+}
+
+#[tokio::test(start_paused = true)]
+async fn the_characters_sent_are_counted_after_normalization() {
+    let rig = Rig::with(
+        Options {
+            language: Language::Tr,
+            ..Options::default()
+        },
+        MockTts::new,
+    )
+    .await;
+    rig.respond(1, &["Merhaba", " Toplam 12 TL"]).await;
+    rig.run_for(3 * Duration::from_secs(1)).await;
+    let spoken: usize = rig
+        .tts
+        .texts()
+        .into_iter()
+        .map(|(_, t)| t.chars().count())
+        .sum();
+    let stats = rig.stats.snapshot();
+    assert_eq!(stats.normalized, 1, "{stats:?}");
+    assert_eq!(stats.chars_sent, spoken as u64, "{stats:?}");
+    // The written chunks are 20 chars; the spoken form of the digits is longer.
+    assert!(stats.chars_sent > 20, "{stats:?}");
+}
+
+#[tokio::test(start_paused = true)]
 async fn a_long_chunk_is_normalized_on_the_offload_and_gives_the_same_text() {
     let rig = Rig::with(
         Options {

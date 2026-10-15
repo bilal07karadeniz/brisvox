@@ -122,7 +122,7 @@ clock). The fields below are the body.
 | `user.text` | `epoch`, `text` | The whole text of the user turn the LLM answers (spoken finals and typed text). |
 | `bot.llm_started` | `epoch` | The LLM started a response round (a tool loop has several). |
 | `bot.text` | `epoch`, `text` | A streamed LLM delta. A bot line arrives as one delta. |
-| `bot.llm_stopped` | `epoch` | The round ended. |
+| `bot.llm_stopped` | `epoch`, `usage` (optional) | The LLM finished the response of `epoch`: sent once, when the last round of the turn ended. `usage` is `{input_tokens, cached_input_tokens, output_tokens}`, the tokens the provider reported for the provider responses of the turn, summed over its rounds (a tool loop has several; for a one-round turn it is that round's usage). `cached_input_tokens` is part of `input_tokens`. It is absent when none of the turn's responses reported usage (never sent as zeros). |
 | `bot.tts_text` | `epoch`, `text` | A chunk sent to the TTS. |
 | `bot.tts_stopped` | `epoch` | The TTS produced the response's last audio. |
 | `turn.bot_started` | `epoch` | The bot's audio of `epoch` started playing. |
@@ -131,6 +131,7 @@ clock). The fields below are the body.
 | `turn.metrics` | `epoch`, `metrics` (`end_of_turn_ms`, `stt_final_ms`, `llm_ttft_ms`, `tts_ttfb_ms`, `response_ms`; absent when unknown) | The turn's latencies when its first audio went out. |
 | `error` | `stage`, `message`, `fatal` | A stage of the call reported an error, or the link refused something without a command id (`stage: "agent_link"`, the message starts with the error code). |
 | `events.lost` | `count` | Events the agent did not get (see "Backpressure"). |
+| `session.usage` | `duration_ms`, `turns`, `interrupted_turns`, `latency`, `usage` (see "Call summary") | What the call used and how fast it was; sent once, right before `session.end`. Not subscribable: it is always sent. |
 | `session.end` | `reason` (`call_ended`, `hangup`, `ended_by_agent`, ...) | The last message; the server closes the link after it. |
 
 The epochs are the engine's turn numbers: a bot event of an epoch older than the newest
@@ -223,6 +224,49 @@ filler policy and the result bounds, then the link sends `tool.call` and waits f
   original request, and never sees a held request that was not confirmed. The rules (a later user
   turn, expiry, barge-in clears, once only) are in `docs/TOOLS.md`.
 
+## Call summary
+
+`session.usage` carries the per-call summary the server also writes to the transcript's `end`
+line, its log and its metrics (`docs/OPERATIONS.md`, "Usage and cost"). It is sent once, right
+before `session.end`, on the same connection, whether or not the agent subscribed to anything:
+
+```json
+{"seq":412,"t_ms":93500,"type":"session.usage","duration_ms":93412,"turns":7,"interrupted_turns":1,
+ "latency":{"end_of_turn":{"avg_ms":412.3,"max_ms":790.0},"stt_final":{"avg_ms":138.0,"max_ms":240.5},
+            "llm_ttft":{"avg_ms":351.2,"max_ms":612.0},"tts_ttfb":{"avg_ms":121.7,"max_ms":198.4},
+            "response":{"avg_ms":905.0,"max_ms":1402.5}},
+ "usage":{"llm":{"provider":"openai","model":"gpt-6-luna","input_tokens":8120,"cached_input_tokens":6144,
+                 "output_tokens":903,"responses_without_usage":0},
+          "stt":{"provider":"deepgram","model":"nova-3","audio_seconds":93.125},
+          "tts":{"provider":"cartesia","model":"sonic-3.6","characters":1204}}}
+```
+
+- `duration_ms`: from the start to the end of the call on the server's clock. `turns`: turns that
+  finished; `interrupted_turns`: of those, the ones the caller interrupted (a barge-in the engine
+  records after the summary was built is not in it).
+- `latency`: `avg_ms` and `max_ms` (rounded to 0.1 ms) over the turns, for `end_of_turn` (the
+  end-of-turn policy's wait), `stt_final` (end of speech to the final transcript), `llm_ttft`
+  (LLM request to first token), `tts_ttfb` (TTS request to first audio) and `response` (end of
+  speech to the first bot audio, server side). These are the numbers of `turn.metrics`, per
+  turn. A stage no turn had is absent; a call without turns has `"latency": {}`.
+- `usage.llm`: the tokens the provider reported, summed over every response of the call,
+  including speculative responses that were discarded (the provider bills them too) and tool
+  rounds. `cached_input_tokens` is part of `input_tokens`. The totals are a lower bound: a
+  response is counted when it finishes, so one cancelled by a barge-in or failing before its end
+  reports no usage and is not counted. `responses_without_usage` counts only the responses that
+  finished without reporting usage.
+- `usage.stt.audio_seconds`: seconds of audio sent to the speech-to-text provider (millisecond
+  precision). `usage.tts.characters`: characters sent to the text-to-speech provider (text that
+  was never sent, or that a pre-rendered clip replaced, is not counted).
+- `provider` and `model` are the primaries of the agent definition (`model` is `default` when the
+  provider picks it); a call that failed over to a secondary is still counted under the
+  primary. A part is absent when the call did not run that stage.
+- Units, not money: prices change, so multiply by your provider's price list.
+
+The server writes it in the closing step, straight to the connection, like `session.end`: a full
+event queue cannot drop it. It is missing when the link was down (and not yet reopened) when the
+call ended.
+
 ## Ordering
 
 - The server writes messages in one task: `seq` order is write order. Events keep the engine's
@@ -245,6 +289,7 @@ filler policy and the result bounds, then the link sends `tool.call` and waits f
 | conversation edits into the call | 64 | `queue_full` (nothing of the command is applied) |
 | `end` / `transfer` | 4 | `queue_full` |
 | remote calls waiting | 32 | `tool_failed` at once |
+| `session.usage`, `session.end` | written by the closing task, not queued | not dropped by a full event queue; bounded by `close_timeout` |
 
 The server never waits on the agent: every write is bounded by `write_timeout` (2 s; a slower
 write takes the link down) and every command is queued without waiting. A slow agent loses

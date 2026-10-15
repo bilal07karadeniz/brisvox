@@ -208,16 +208,38 @@ async fn the_agent_greets_and_ends_a_hosted_call() {
         matches!(&result.body, ServerBody::CommandResult { id, ok: true, .. } if id == "bye"),
         "{result:?}"
     );
-    let end = session
-        .recv_until(|b| matches!(b, ServerBody::SessionEnd { .. }))
+    // The call's summary comes right before `session.end`, and the agent never subscribed to it.
+    let usage = session
+        .recv_until(|b| matches!(b, ServerBody::SessionUsage { .. }))
         .await
         .unwrap();
+    let ServerBody::SessionUsage { summary } = &usage.body else {
+        panic!("{usage:?}");
+    };
+    assert!(summary.duration_ms > 0, "{summary:?}");
+    let llm = summary.usage.llm.as_ref().unwrap();
+    assert_eq!(llm.provider, "openai");
+    assert_eq!(llm.model, brisvox_providers::openai::DEFAULT_MODEL);
+    let stt = summary.usage.stt.as_ref().unwrap();
+    assert_eq!(
+        (stt.provider.as_str(), stt.model.as_str()),
+        ("deepgram", "nova-3")
+    );
+    let tts = summary.usage.tts.as_ref().unwrap();
+    assert_eq!(tts.provider, "cartesia");
+    // The greeting and the farewell were sent to the TTS.
+    assert!(
+        tts.characters >= ("Welcome!".len() + "Goodbye!".len()) as u64,
+        "{summary:?}"
+    );
+    let end = session.recv().await.unwrap().unwrap();
     assert_eq!(
         end.body,
         ServerBody::SessionEnd {
             reason: "ended_by_agent".to_owned()
         }
     );
+    assert_eq!(end.seq, usage.seq + 1);
     let manager = server.manager().clone();
     let ended = async {
         while manager.stats().active != 0 {
