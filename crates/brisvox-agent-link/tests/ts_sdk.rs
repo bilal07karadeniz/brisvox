@@ -40,6 +40,10 @@ use brisvox_sim::session::SimSession;
 mod support;
 
 const WAIT: Duration = Duration::from_secs(20);
+/// How long the Node process may take to start and print its port: process start-up is not what
+/// these tests check, and a busy shared runner (Windows, thousands of tests in parallel) has
+/// needed more than `WAIT` for it.
+const STARTUP_WAIT: Duration = Duration::from_secs(90);
 
 /// The Node agent process; killed when dropped so a failing test leaves nothing behind.
 struct TsAgent {
@@ -80,7 +84,7 @@ fn spawn_agent(node: &str, example: &str) -> TsAgent {
         for _ in lines {}
     });
     let line = rx
-        .recv_timeout(WAIT)
+        .recv_timeout(STARTUP_WAIT)
         .expect("the TypeScript agent reports its port in time")
         .expect("the TypeScript agent printed a line");
     let url = line

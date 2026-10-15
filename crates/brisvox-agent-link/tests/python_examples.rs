@@ -33,6 +33,9 @@ use brisvox_sim::mock_llm::LlmScript;
 use brisvox_sim::session::SimSession;
 
 const WAIT: Duration = Duration::from_secs(20);
+/// How long the Python process may take to start and print its port: process start-up is not
+/// what these tests check, and a busy shared runner has needed more than `WAIT` for it.
+const STARTUP_WAIT: Duration = Duration::from_secs(90);
 
 /// The Python agent process; killed when dropped so a failing test leaves nothing behind.
 struct PythonAgent {
@@ -68,7 +71,7 @@ fn spawn_agent(python: &str) -> PythonAgent {
         for _ in lines {}
     });
     let line = rx
-        .recv_timeout(WAIT)
+        .recv_timeout(STARTUP_WAIT)
         .expect("the booking agent reports its port in time")
         .expect("the booking agent printed a line");
     let url = line
