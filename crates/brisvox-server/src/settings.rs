@@ -4,7 +4,7 @@
 //!
 //! | Variable | Default | Meaning |
 //! |---|---|---|
-//! | `BRISVOX_MAX_SESSIONS` | 256 | sessions live or reserved at once |
+//! | `BRISVOX_MAX_SESSIONS` | 256 per core (at least 256) | sessions live or reserved at once |
 //! | `BRISVOX_HEALTH_ADDR` | `0.0.0.0:8081` | `/healthz` + `/readyz` listener; `off` disables it; `${PORT}` stands for the `PORT` variable |
 //! | `BRISVOX_METRICS_TOKEN` | unset | bearer token for `/metrics` when the health address is not loopback; without it `/metrics` is off there |
 //! | `BRISVOX_INSECURE_LISTENERS` | `false` | accept listeners without authentication on non-loopback addresses (logged loudly) |
@@ -69,7 +69,7 @@ pub struct ServerSettings {
 impl Default for ServerSettings {
     fn default() -> Self {
         Self {
-            manager: ManagerConfig::default(),
+            manager: ManagerConfig::for_this_machine(),
             health_addr: DEFAULT_HEALTH_ADDR.parse().ok(),
             metrics_token: None,
             insecure_listeners: false,
@@ -282,7 +282,15 @@ mod tests {
         assert!(!s.insecure_listeners);
         assert_eq!(s.health_addr, Some("0.0.0.0:8081".parse().unwrap()));
         assert_eq!(s.shutdown, ShutdownPolicy::default());
-        assert_eq!(s.manager.max_sessions, ManagerConfig::DEFAULT_MAX_SESSIONS);
+        assert_eq!(s.manager, ManagerConfig::for_this_machine());
+        assert!(s.manager.max_sessions >= ManagerConfig::DEFAULT_MAX_SESSIONS);
+        assert_eq!(ManagerConfig::for_cores(1).max_sessions, 256);
+        assert_eq!(ManagerConfig::for_cores(4).max_sessions, 1_024);
+        assert_eq!(ManagerConfig::for_cores(32).max_sessions, 8_192);
+        assert_eq!(
+            ManagerConfig::for_cores(10_000).max_sessions,
+            ManagerConfig::MAX_SESSIONS
+        );
     }
 
     #[test]

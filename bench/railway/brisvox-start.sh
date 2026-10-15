@@ -15,6 +15,11 @@ sed "s/127.0.0.1:8443/$FAKES:8443/g" /etc/bench/agent.fakes.toml > /tmp/agent.fa
 
 brisvox-bench container-stats --bind '[::]:9100' &
 
+# Optional tuning of the load process, from Railway variables (empty: the server's defaults).
+LOAD_TUNING=()
+[ -n "${LOAD_SMART_TURN_THREADS:-}" ] && LOAD_TUNING+=("BRISVOX_SMART_TURN_THREADS=$LOAD_SMART_TURN_THREADS")
+[ -n "${LOAD_MAX_SESSIONS:-}" ] && LOAD_TUNING+=("BRISVOX_MAX_SESSIONS=$LOAD_MAX_SESSIONS")
+
 env -i PATH="$PATH" HOME=/tmp \
   BRISVOX_AGENT_FILE=/tmp/agent.fakes.toml \
   FAKE_PROVIDERS_API_KEY=fake \
@@ -23,9 +28,9 @@ env -i PATH="$PATH" HOME=/tmp \
   BRISVOX_WS_ADDR='[::]:9000' \
   BRISVOX_WS_TOKEN="$LOAD_TOKEN" \
   BRISVOX_HEALTH_ADDR=off \
-  BRISVOX_MAX_SESSIONS=1000 \
   BRISVOX_LOG_FORMAT=json \
   RUST_LOG=warn \
+  "${LOAD_TUNING[@]}" \
   brisvox-server &
 
 BRISVOX_AGENT_FILE=/etc/bench/agent.real.toml \

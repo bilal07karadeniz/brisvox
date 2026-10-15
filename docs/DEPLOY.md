@@ -188,9 +188,11 @@ and are open for probes, but should not be public either; `/metrics` on them nee
 
 ## Sizing
 
-- **Calls per container** are bounded by `BRISVOX_MAX_SESSIONS` (default 256) and, before
-  that, by CPU: the inference pool takes half the cores the container can use, and admission
-  refuses new calls when it falls behind (`BRISVOX_OVERLOAD_*`, docs/OPERATIONS.md). Rust
+- **Calls per container** are bounded by CPU: the inference pool takes half the cores the
+  container can use, and admission refuses new calls when it (or the Smart Turn executor) falls
+  behind, learning a ceiling of held calls as it goes (`BRISVOX_OVERLOAD_*`,
+  docs/OPERATIONS.md). `BRISVOX_MAX_SESSIONS` (default 256 per core) is a hard upper bound
+  above that. Rust
   reads cgroup CPU quotas, so `cpus: 4` gives a pool of two threads. Load-test with your agent
   (docs/LATENCY.md) and set `BRISVOX_MAX_SESSIONS` and `BRISVOX_PROVIDER_LIMITS` from the
   result; scale out with more containers rather than a larger limit.

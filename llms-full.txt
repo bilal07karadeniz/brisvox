@@ -1439,7 +1439,7 @@ exit status 1 and a message naming the variable.
 
 | Variable | Default | Meaning |
 |---|---|---|
-| `BRISVOX_MAX_SESSIONS` | `256` | Sessions live or reserved at once (1 to 100000); more are refused, never queued. |
+| `BRISVOX_MAX_SESSIONS` | 256 per core (at least 256) | Sessions live or reserved at once (1 to 100000); more are refused, never queued. The default follows the cores the process may use (a container's CPU quota counts): about four times what a core serves, so on any machine the pool pressure and the learned ceiling (below) refuse first and this only bounds memory and the queues sized from it. Set it lower to promise a fixed maximum. |
 | `BRISVOX_OVERLOAD_QUEUE_PER_THREAD` | `4` | Jobs queued per inference-pool thread at or above which new calls are refused (overloaded). `0` ignores the queue depth. |
 | `BRISVOX_OVERLOAD_RESUME_QUEUE_PER_THREAD` | half of the above | Queued jobs per thread at or below which the server may recover (must be below the above). |
 | `BRISVOX_OVERLOAD_CEILING` | `true` | Learn a ceiling of held calls from pool pressure: when the pool turns hot hold at most 90% of the calls held then, when it is calm again at most the calls held at that moment (one hot spell at most halves the cap), and raise the cap by 10% (at least one call) per calm window spent at it. The pressure signals lag the calls (a call loads the pool when its caller speaks), so without it a fast ramp is admitted far past capacity. `false`: each admission is judged on the pool alone. |
@@ -5533,9 +5533,11 @@ and are open for probes, but should not be public either; `/metrics` on them nee
 
 ## Sizing
 
-- **Calls per container** are bounded by `BRISVOX_MAX_SESSIONS` (default 256) and, before
-  that, by CPU: the inference pool takes half the cores the container can use, and admission
-  refuses new calls when it falls behind (`BRISVOX_OVERLOAD_*`, docs/OPERATIONS.md). Rust
+- **Calls per container** are bounded by CPU: the inference pool takes half the cores the
+  container can use, and admission refuses new calls when it (or the Smart Turn executor) falls
+  behind, learning a ceiling of held calls as it goes (`BRISVOX_OVERLOAD_*`,
+  docs/OPERATIONS.md). `BRISVOX_MAX_SESSIONS` (default 256 per core) is a hard upper bound
+  above that. Rust
   reads cgroup CPU quotas, so `cpus: 4` gives a pool of two threads. Load-test with your agent
   (docs/LATENCY.md) and set `BRISVOX_MAX_SESSIONS` and `BRISVOX_PROVIDER_LIMITS` from the
   result; scale out with more containers rather than a larger limit.

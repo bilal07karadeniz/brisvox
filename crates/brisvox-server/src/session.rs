@@ -305,9 +305,33 @@ pub struct ManagerConfig {
 }
 
 impl ManagerConfig {
-    /// Default limit (`BRISVOX_MAX_SESSIONS` overrides it). The pool-pressure and provider-budget
-    /// rules of [`AdmissionPolicy`] refuse earlier than this when they apply.
+    /// The limit of [`ManagerConfig::default`], and the least of [`Self::for_this_machine`].
+    /// The pool-pressure and provider-budget rules of [`AdmissionPolicy`] refuse earlier than
+    /// the limit when they apply.
     pub const DEFAULT_MAX_SESSIONS: usize = 256;
+
+    /// Sessions per core of [`Self::for_this_machine`]: three to four times what a core serves
+    /// with the real models and the provider path (60 to 75 calls on Railway, 2026-10-15), so
+    /// on any machine the pool pressure and the learned ceiling are what refuse first; the
+    /// limit only bounds memory and the socket and queue sizes derived from it.
+    pub const SESSIONS_PER_CORE: usize = 256;
+
+    /// The server's default: [`Self::SESSIONS_PER_CORE`] for every core this process may use
+    /// (`std::thread::available_parallelism`, which honours a container's CPU quota), at least
+    /// [`Self::DEFAULT_MAX_SESSIONS`], at most [`Self::MAX_SESSIONS`].
+    pub fn for_this_machine() -> Self {
+        let cores = std::thread::available_parallelism().map_or(1, std::num::NonZero::get);
+        Self::for_cores(cores)
+    }
+
+    /// [`Self::for_this_machine`] for `cores` cores.
+    pub fn for_cores(cores: usize) -> Self {
+        Self {
+            max_sessions: cores
+                .saturating_mul(Self::SESSIONS_PER_CORE)
+                .clamp(Self::DEFAULT_MAX_SESSIONS, Self::MAX_SESSIONS),
+        }
+    }
 
     /// The largest accepted limit: far above what one process serves, and small enough that the
     /// limits derived from it (the hosted transports' socket bounds, twice this) stay valid.
