@@ -593,7 +593,7 @@ impl SessionManager {
             });
         }
         if let Some(window) = self.inner.policy.ceiling_window() {
-            update_ceiling(&mut reg, overloaded, now, window);
+            update_ceiling(&mut reg, overloaded, now, window, self.inner.max_sessions);
         }
         let over_ceiling = reg.ceiling.is_some_and(|(cap, _)| reg.outstanding() >= cap);
         if overloaded || over_ceiling {
@@ -739,7 +739,16 @@ impl SessionManager {
     /// The admission policy's state now: the pressure verdict (sampling the pool) and each
     /// limited provider's budget. Empty without a policy.
     pub fn admission_snapshot(&self) -> AdmissionSnapshot {
-        self.inner.policy.snapshot(self.inner.clock.now())
+        let mut snapshot = self.inner.policy.snapshot(self.inner.clock.now());
+        // At the learned ceiling new calls are refused as overloaded: report it, so a load
+        // balancer that polls `/readyz` sends them elsewhere.
+        let reg = self.inner.lock();
+        let at_ceiling = reg.ceiling.is_some_and(|(cap, _)| reg.outstanding() >= cap);
+        drop(reg);
+        if let Some(pressure) = snapshot.pressure.as_mut() {
+            pressure.overloaded |= at_ceiling;
+        }
+        snapshot
     }
 
     /// Attaches the process's [`Observability`]: the health listener then serves `GET /metrics`
@@ -840,35 +849,68 @@ struct Registry {
     ceiling_hot: bool,
     /// The pool was seen hot at least once: the ceiling is learned, the cautious start is over.
     ceiling_learned: bool,
+    /// The cap when the current (or last) hot spell began: one spell at most halves it.
+    ceiling_spell_from: usize,
+    /// When the ceiling last saw a verdict (a transition needs a fresh previous verdict).
+    ceiling_seen: Option<Instant>,
 }
 
-/// Calls a fresh server admits before its cautious start first doubles (see `update_ceiling`).
+/// Calls a fresh server admits before its cautious start first doubles, and the least a learned
+/// cap goes down to (see `update_ceiling`).
 const SLOW_START_CALLS: usize = 16;
 
-/// The learned ceiling (see `admission.rs`). When the pool turns hot, cap the held calls at 90%
-/// of what is held then; when it is calm again, the calls held at that moment are what it
-/// serves well, so the cap is not above them, but one hot spell at most halves it (calls that
-/// all ended during the spell must not collapse it); on a calm sample at the cap, raise it by 10% (at
-/// least one call) once per `window`. The cap is never lowered during a hot spell: calls that
-/// end while the pool drains say nothing about what it can serve.
-fn update_ceiling(reg: &mut Registry, overloaded: bool, now: Instant, window: Duration) {
+/// The learned ceiling (see `admission.rs`), updated on every admission attempt:
+///
+/// - **cautious start** (until the pool was first seen hot): the cap starts at 16 calls and
+///   doubles for every calm window spent at it;
+/// - **the pool turns hot**: the cap goes to 90% of the calls held, but one hot spell at most
+///   halves the cap it started from (a hot moment with few calls held must not collapse it);
+/// - **the pool is calm again**: the calls held then are what it served well, so the cap is not
+///   above them, within the same halving bound;
+/// - **calm at the cap**: +10% (at least one call) per `window`.
+///
+/// The cap is never below 16 (or `max`) and never above `max`. A previous verdict older than two
+/// windows is no transition: after an idle spell the pool's state then says nothing now.
+fn update_ceiling(
+    reg: &mut Registry,
+    overloaded: bool,
+    now: Instant,
+    window: Duration,
+    max: usize,
+) {
     let held = reg.outstanding();
-    let was_hot = reg.ceiling_hot;
+    let floor = SLOW_START_CALLS.min(max).max(1);
+    // The pool recovers only after a whole calm window, so a recovery's previous verdict is about
+    // one window old; one older than two windows is an idle spell, not a recovery.
+    let fresh = reg
+        .ceiling_seen
+        .is_some_and(|seen| now.saturating_duration_since(seen) < window.saturating_mul(2));
+    let was_hot = reg.ceiling_hot && fresh;
     reg.ceiling_hot = overloaded;
+    reg.ceiling_seen = Some(now);
+    let bound = |cap: usize| cap.clamp(floor, max.max(floor));
     if overloaded {
         if !was_hot {
-            let cap = (held.saturating_mul(9) / 10).max(1);
+            let from = reg.ceiling.map_or(usize::MAX, |(cap, _)| cap);
+            let cap = (held.saturating_mul(9) / 10).max(from / 2);
+            // The halving bound counts from a learned cap; the cautious start's cap was never
+            // measured, so the first spell counts from the cap it learns now.
+            reg.ceiling_spell_from = if reg.ceiling_learned {
+                from
+            } else {
+                cap.min(from)
+            };
             if !reg.ceiling_learned {
                 reg.ceiling_learned = true;
                 tracing::warn!(
                     target: "brisvox::server",
                     held,
-                    cap,
-                    "pool under pressure: holding at most {cap} calls from now on (learned ceiling)"
+                    cap = bound(cap),
+                    "pool under pressure: holding at most this many calls from now on (learned ceiling)"
                 );
             }
-            if reg.ceiling.is_none_or(|(old, _)| cap < old) {
-                reg.ceiling = Some((cap, now));
+            if cap < from {
+                reg.ceiling = Some((bound(cap), now));
             }
         }
         return;
@@ -879,9 +921,9 @@ fn update_ceiling(reg: &mut Registry, overloaded: bool, now: Instant, window: Du
     // the first hot sample (on 4 vCPU: 300-350 calls for a capacity of about 250).
     if !reg.ceiling_learned {
         match reg.ceiling {
-            None => reg.ceiling = Some((held.max(SLOW_START_CALLS), now)),
+            None => reg.ceiling = Some((bound(held.max(SLOW_START_CALLS)), now)),
             Some((cap, since)) if held >= cap && now.saturating_duration_since(since) >= window => {
-                let doubled = cap.saturating_mul(2);
+                let doubled = bound(cap.saturating_mul(2));
                 tracing::debug!(target: "brisvox::server", cap = doubled, "cautious start: doubled");
                 reg.ceiling = Some((doubled, now));
             }
@@ -893,11 +935,12 @@ fn update_ceiling(reg: &mut Registry, overloaded: bool, now: Instant, window: Du
         return;
     };
     if was_hot {
-        let served = held.max(1);
-        tracing::debug!(target: "brisvox::server", held, "learned ceiling: the pool recovered");
-        reg.ceiling = Some((served.clamp((cap / 2).max(1), cap), now));
+        let lowest = (reg.ceiling_spell_from / 2).min(cap);
+        let served = held.clamp(lowest, cap);
+        tracing::debug!(target: "brisvox::server", held, cap = served, "learned ceiling: the pool recovered");
+        reg.ceiling = Some((bound(served), now));
     } else if held >= cap && now.saturating_duration_since(since) >= window {
-        let raised = cap.saturating_add((cap / 10).max(1));
+        let raised = bound(cap.saturating_add((cap / 10).max(1)));
         tracing::debug!(target: "brisvox::server", cap = raised, "learned ceiling raised");
         reg.ceiling = Some((raised, now));
     }
@@ -927,6 +970,8 @@ impl Default for Registry {
             ceiling: None,
             ceiling_hot: false,
             ceiling_learned: false,
+            ceiling_spell_from: usize::MAX,
+            ceiling_seen: None,
         }
     }
 }

@@ -379,17 +379,33 @@ fn serve(tools: Option<Arc<dyn AppTools>>) -> ExitCode {
         Ok(agent) => agent,
         Err(e) => return ExitCode::from(failed(&e)),
     };
+    // One model file serves the process (`BRISVOX_SMART_TURN_MODEL`): an adaptive websocket
+    // agent shares the main agent's model, and loads it only when the main agent has none.
     let websocket_smart_turn = match websocket_agent.as_ref() {
-        None => None,
-        Some(ws) => match smart_turn.clone() {
-            Some(model) => load_smart_turn(&ProcessEnv, ws).map(|own| own.map(|_| model)),
-            None => load_smart_turn(&ProcessEnv, ws),
+        Some(ws)
+            if matches!(
+                ws.engine().turn,
+                brisvox_agent::turn::TurnPolicy::Adaptive { .. }
+            ) =>
+        {
+            match smart_turn.clone() {
+                Some(model) => Some(model),
+                None => match load_smart_turn(&ProcessEnv, ws) {
+                    Ok(model) => model,
+                    Err(e) => return ExitCode::from(failed(&e)),
+                },
+            }
         }
-        .unwrap_or_else(|e| {
-            tracing::error!(error = %e, "the websocket agent's Smart Turn model");
-            None
-        }),
+        _ => None,
     };
+    if let Some(ws) = &websocket_agent
+        && ws.recording() != crate::privacy::RecordingFileSettings::default()
+    {
+        tracing::warn!(
+            agent = ws.name(),
+            "the websocket agent's [recording] table is ignored: recording is set by the main agent and the environment"
+        );
+    }
     let runtime = match tokio::runtime::Builder::new_multi_thread()
         .enable_all()
         .thread_name("brisvox-server")
@@ -540,7 +556,7 @@ async fn start_hosting(
     // The Smart Turn analyses (20-25 ms each) run on threads of their own, so they never hold a
     // thread another call's VAD window is waiting for.
     // Read (and validated) only for an agent that has a model to run.
-    let turn_threads = if smart_turn.is_some() {
+    let turn_threads = if smart_turn.is_some() || websocket_smart_turn.is_some() {
         crate::runner::smart_turn_threads(&ProcessEnv, pool_config.threads)?
     } else {
         0
@@ -575,7 +591,17 @@ async fn start_hosting(
     }
     // Admission control: shed on pool pressure, and hold a permit of each limited
     // provider the agent runs on for the life of a call.
-    for name in admission.restrict_to(&agent_providers(&agent)) {
+    // With a websocket agent, the limits cover the providers of both agents, and every call
+    // holds a permit of each (admission happens before the listener's agent is known).
+    let mut used = agent_providers(&agent);
+    if let Some(ws) = &websocket_agent {
+        for name in agent_providers(ws) {
+            if !used.contains(&name) {
+                used.push(name);
+            }
+        }
+    }
+    for name in admission.restrict_to(&used) {
         tracing::warn!(
             provider = %name,
             "BRISVOX_PROVIDER_LIMITS names a provider the agent does not use; the limit is ignored"

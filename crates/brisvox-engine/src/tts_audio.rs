@@ -119,10 +119,15 @@ impl OutputFramer {
             Err(error) if crate::offload::is_busy(&error) => {
                 tracing::debug!(target: "brisvox::engine", %error, "resampler: pool busy, building it off the pool");
                 tokio::time::timeout(RESAMPLER_FALLBACK_TIMEOUT, async move {
-                    let _permit = RESAMPLER_FALLBACK.acquire().await.ok()?;
-                    tokio::task::spawn_blocking(move || Self::build_resampler(from, to))
-                        .await
-                        .ok()
+                    // The permit moves into the build: a build that outlives the timeout still
+                    // holds it, so at most two run at once.
+                    let permit = RESAMPLER_FALLBACK.acquire().await.ok()?;
+                    tokio::task::spawn_blocking(move || {
+                        let _permit = permit;
+                        Self::build_resampler(from, to)
+                    })
+                    .await
+                    .ok()
                 })
                 .await
                 .ok()

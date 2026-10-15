@@ -12,7 +12,7 @@ use brisvox_core::{SharedClock, SimClock, SystemClock};
 use brisvox_server::{
     AdmissionError, AdmissionPolicy, AdmissionSettings, Error, LoadProbe, LoadSample,
     ManagerConfig, OverloadConfig, Readiness, ReadyStatus, SessionContext, SessionEnded,
-    SessionManager, ShutdownPolicy,
+    SessionHandle, SessionManager, ShutdownPolicy,
 };
 use tokio::sync::oneshot;
 
@@ -364,87 +364,113 @@ fn dropping_the_runtime_gives_the_permits_back() {
     drop(handles);
 }
 
-/// The learned ceiling: the pool turns hot while 20 calls are held, so the manager holds at most
-/// 18; calls ending during the hot spell do not lower it; the pool recovers with 15 held, which
-/// becomes the cap; the cap grows by 10% (one call here) per calm window spent at it; running
-/// calls are never touched.
-#[tokio::test(start_paused = true)]
-async fn a_hot_pool_teaches_a_ceiling_that_holds_and_then_grows_by_calm_windows() {
-    let clock = sim();
-    let pool = Pool::shared();
-    let mgr = manager_with_overload(
-        100,
-        Arc::clone(&clock),
-        Some(&pool),
+fn learning(pool: &Arc<Pool>, clock: SharedClock) -> SessionManager {
+    manager_with_overload(
+        1_000,
+        clock,
+        Some(pool),
         &[],
         OverloadConfig {
             learn_ceiling: true,
             ..overload()
         },
-    );
-    // The cautious start admits 16, then doubles after a calm window.
-    let mut calls: Vec<_> = (0..16).map(|_| mgr.start(hold).unwrap()).collect();
-    tokio::time::advance(Duration::from_millis(2_100)).await;
-    calls.extend((0..4).map(|_| mgr.start(hold).unwrap()));
-    assert_eq!(
-        mgr.admission_ceiling(),
-        Some(32),
-        "cautious start, not learned yet"
-    );
+    )
+}
 
-    // Hot with 20 held: refused, and the cap is 18.
-    pool.depth(8);
-    assert_eq!(mgr.try_admit().unwrap_err(), AdmissionError::Overloaded);
-    assert_eq!(mgr.admission_ceiling(), Some(18));
-    assert_eq!(mgr.active(), 20, "running calls are never touched");
+/// Admits until `held` calls run, letting the cautious start double as often as it needs.
+async fn ramp_to(mgr: &SessionManager, calls: &mut Vec<SessionHandle>, held: usize) {
+    while calls.len() < held {
+        match mgr.try_admit() {
+            Ok(slot) => calls.push(slot.spawn(hold)),
+            Err(_) => tokio::time::advance(Duration::from_millis(2_100)).await,
+        }
+    }
+}
 
-    // Calls end while the pool stays hot: the cap stays.
-    for call in calls.drain(..5) {
+async fn end(calls: &mut Vec<SessionHandle>, n: usize) {
+    for call in calls.drain(..n) {
         call.cancel();
         call.ended().await;
     }
-    assert_eq!(mgr.try_admit().unwrap_err(), AdmissionError::Overloaded);
-    assert_eq!(mgr.admission_ceiling(), Some(18));
+}
 
-    // Calm again with 15 held (after the pool's own calm window): that is the cap now.
+/// The learned ceiling: the pool turns hot at 200 held (cap 90%: 180); calls ending during the
+/// spell do not lower it; it recovers at the calls held then (140); it grows 10% per calm window
+/// at the cap; running calls are never touched.
+#[tokio::test(start_paused = true)]
+async fn a_hot_pool_teaches_a_ceiling_that_holds_and_then_grows_by_calm_windows() {
+    let clock = sim();
+    let pool = Pool::shared();
+    let mgr = learning(&pool, Arc::clone(&clock));
+    let mut calls = Vec::new();
+    ramp_to(&mgr, &mut calls, 200).await;
+    assert_eq!(
+        mgr.admission_ceiling(),
+        Some(256),
+        "cautious start: 16 doubled four times"
+    );
+
+    pool.depth(8);
+    assert_eq!(mgr.try_admit().unwrap_err(), AdmissionError::Overloaded);
+    assert_eq!(mgr.admission_ceiling(), Some(180));
+    assert_eq!(mgr.active(), 200, "running calls are never touched");
+    end(&mut calls, 60).await;
+    assert_eq!(mgr.try_admit().unwrap_err(), AdmissionError::Overloaded);
+    assert_eq!(
+        mgr.admission_ceiling(),
+        Some(180),
+        "not lowered during the spell"
+    );
+
+    // Calm again with 140 held: that is the cap; then +10% per calm window at it.
     pool.depth(0);
     let _ = mgr.try_admit();
     tokio::time::advance(Duration::from_millis(2_100)).await;
     assert_eq!(mgr.try_admit().unwrap_err(), AdmissionError::Overloaded);
-    assert_eq!(mgr.admission_ceiling(), Some(15));
-    // One calm window at the cap: +1 (10% of 15, at least one).
+    assert_eq!(mgr.admission_ceiling(), Some(140));
     tokio::time::advance(Duration::from_millis(2_000)).await;
     let slot = mgr.try_admit().expect("the cap grew past the calls held");
-    assert_eq!(mgr.admission_ceiling(), Some(16));
+    assert_eq!(mgr.admission_ceiling(), Some(154));
     drop(slot);
-
-    // Below the cap, calls are admitted without waiting, and it does not grow.
-    for call in calls.drain(..5) {
-        call.cancel();
+    mgr.cancel_all();
+    for call in calls {
         call.ended().await;
     }
-    let slot = mgr.try_admit().expect("under the cap");
-    drop(slot);
-    assert_eq!(
-        mgr.admission_ceiling(),
-        Some(16),
-        "no growth while under the cap"
-    );
+}
 
-    // A second hot spell with 10 held caps at 9; nearly every call ends during it (1 left at
-    // recovery): one spell at most halves the cap, so it is 4, not 1.
+/// A hot moment with few calls held halves the cap at most (154 -> 77, not 9), also when nearly
+/// every call ended by the recovery; and an idle spell is no recovery (no halving after it).
+#[tokio::test(start_paused = true)]
+async fn one_hot_spell_at_most_halves_the_cap_and_an_idle_spell_changes_nothing() {
+    let clock = sim();
+    let pool = Pool::shared();
+    let mgr = learning(&pool, Arc::clone(&clock));
+    let mut calls = Vec::new();
+    ramp_to(&mgr, &mut calls, 200).await;
     pool.depth(8);
-    assert_eq!(mgr.try_admit().unwrap_err(), AdmissionError::Overloaded);
-    assert_eq!(mgr.admission_ceiling(), Some(9));
-    for call in calls.drain(..9) {
-        call.cancel();
-        call.ended().await;
-    }
+    let _ = mgr.try_admit();
+    assert_eq!(mgr.admission_ceiling(), Some(180));
     pool.depth(0);
+    end(&mut calls, 190).await;
     let _ = mgr.try_admit();
     tokio::time::advance(Duration::from_millis(2_100)).await;
-    let slot = mgr.try_admit().expect("1 held, cap 4");
-    assert_eq!(mgr.admission_ceiling(), Some(4));
+    let _ = mgr.try_admit();
+    assert_eq!(
+        mgr.admission_ceiling(),
+        Some(90),
+        "recovered with 10 held: halved, not 10"
+    );
+
+    // A hot moment with 10 held: 90 -> 45 at most, not 9.
+    pool.depth(8);
+    let _ = mgr.try_admit();
+    assert_eq!(mgr.admission_ceiling(), Some(45));
+    // Hot at its last sample, then an hour without a call: the first dial afterwards finds a
+    // calm pool and is no recovery step (no further halving).
+    pool.depth(0);
+    tokio::time::advance(Duration::from_secs(3_600)).await;
+    let slot = mgr.try_admit().expect("calm after an idle hour");
+    assert_eq!(mgr.admission_ceiling(), Some(45));
     drop(slot);
     mgr.cancel_all();
     for call in calls {
@@ -478,6 +504,10 @@ async fn a_fresh_server_starts_cautiously_and_doubles_per_calm_window() {
     admit_all(&mut calls);
     assert_eq!(calls.len(), 16);
     assert_eq!(mgr.admission_ceiling(), Some(16));
+    assert!(
+        mgr.admission_snapshot().overloaded(),
+        "at the cap /readyz says overloaded, so a balancer sends calls elsewhere"
+    );
     // Not doubled before a whole window has passed.
     tokio::time::advance(Duration::from_millis(1_900)).await;
     admit_all(&mut calls);

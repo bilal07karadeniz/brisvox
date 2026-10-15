@@ -635,8 +635,19 @@ impl AdmissionPolicy {
 
     /// The pressure verdict (sampling the pool at `now`) and the budgets.
     pub fn snapshot(&self, now: Instant) -> AdmissionSnapshot {
+        // The numbers are the primary pool's; the verdict is any watched pool's, as admission
+        // judges it (a hot Smart Turn executor refuses calls, so the server is not ready).
+        // Every gauge is observed (each sample advances its hysteresis): no short circuit.
+        let mut secondary_hot = false;
+        for gauge in &self.secondary {
+            secondary_hot |= gauge.observe(now).overloaded;
+        }
         AdmissionSnapshot {
-            pressure: self.gauge.as_ref().map(|g| g.observe(now)),
+            pressure: self.gauge.as_ref().map(|g| {
+                let mut stats = g.observe(now);
+                stats.overloaded |= secondary_hot;
+                stats
+            }),
             providers: self
                 .budgets
                 .iter()
@@ -953,6 +964,18 @@ mod tests {
         // The resume limit follows the shed limit when only that is set.
         let s = AdmissionSettings::from_env(&env(&[(ENV_OVERLOAD_QUEUE_PER_THREAD, "9")])).unwrap();
         assert_eq!(s.overload.unwrap().resume_queue_per_thread, 4);
+    }
+
+    #[test]
+    fn the_ceiling_switch_takes_true_or_false_only() {
+        for on in ["1", "true", "YES", " on "] {
+            let s = AdmissionSettings::from_env(&env(&[(ENV_OVERLOAD_CEILING, on)])).unwrap();
+            assert!(s.overload.unwrap().learn_ceiling, "{on}");
+        }
+        let err =
+            AdmissionSettings::from_env(&env(&[(ENV_OVERLOAD_CEILING, "maybe")])).unwrap_err();
+        assert!(err.to_string().contains(ENV_OVERLOAD_CEILING), "{err}");
+        assert!(AdmissionSettings::default().overload.unwrap().learn_ceiling);
     }
 
     #[test]
