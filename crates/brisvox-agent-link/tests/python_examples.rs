@@ -32,7 +32,6 @@ use brisvox_engine::{
 use brisvox_sim::mock_llm::LlmScript;
 use brisvox_sim::session::SimSession;
 
-const WAIT: Duration = Duration::from_secs(20);
 /// How long the Python process may take to start and print its port: process start-up is not
 /// what these tests check, and a busy shared runner has needed more than `WAIT` for it.
 const STARTUP_WAIT: Duration = Duration::from_secs(90);
