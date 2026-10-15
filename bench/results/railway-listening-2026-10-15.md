@@ -1,7 +1,8 @@
 # Listening-test load steps on Railway, 2026-10-15
 
 Setup: `bench/railway/README.md`. Railway, region europe-west4. Each server container limited to
-4 vCPU / 4 GB (cgroup `cpu.max` 4.0, `memory.max` 3.73 GiB as read inside the container). The
+4 vCPU / 4 GB (cgroup `cpu.max` 4.0, `memory.max` 3.73 GiB as read inside the container) on
+AMD EPYC 9655P (`/proc/cpuinfo`: avx2, avx512f, avx512_vnni, avx_vnni). The
 synthetic calls run the real provider client code of each system against the fake providers over
 TLS (Deepgram live STT, OpenAI-compatible chat, Deepgram Aura), the real Silero VAD and Smart Turn
 v3.2 models, the agent `bench/fake_providers/agent.fakes.toml` (adaptive turns, 3 s fallback

@@ -191,7 +191,9 @@ async fn one_call(
     placement: Arc<Placement>,
     turn: Arc<SlowTurn>,
     fixture: Arc<Fixture>,
+    start_after: Duration,
 ) -> StageCounters {
+    clock.sleep(start_after).await;
     let sim = SimSession::new(clock.clone());
     for utterance in fixture.utterances() {
         sim.stt.push(utterance);
@@ -297,8 +299,12 @@ async fn run_load() -> Gaps {
         .await;
     assert_eq!(report.ok, POOL_THREADS, "{report:?}");
     let probe = GapProbe::start(&clock);
+    // Callers arrive 25 ms apart (0.475 s for all 20; each call lasts about 13 s, so all 20 run
+    // together). Built in the same instant, the 20 call setups of a debug build starved the
+    // first call's paced sender on a 4-vCPU runner: it caught up in a burst (gap resets,
+    // dropped tee frames) and one oversized VAD batch missed its 250 ms budget.
     let calls: Vec<_> = (0..SESSIONS)
-        .map(|_| {
+        .map(|i| {
             tokio::spawn(one_call(
                 clock.clone(),
                 pool.handle(),
@@ -306,6 +312,7 @@ async fn run_load() -> Gaps {
                 Arc::clone(&placement),
                 Arc::clone(&turn),
                 Arc::clone(&fixture),
+                25 * MS * u32::try_from(i).unwrap(),
             ))
         })
         .collect();
