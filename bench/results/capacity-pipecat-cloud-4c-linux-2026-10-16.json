@@ -1,0 +1,57 @@
+{
+  "schema": "brisvox-bench/capacity-summary/1",
+  "system": "pipecat-cloud-4c",
+  "date": "2026-10-16",
+  "label": "pipecat 4 vCPU / 4 GB, cloud (AMD EPYC 9655P)",
+  "environment": {
+    "os": "linux",
+    "arch": "x86_64",
+    "logical_cores": 8,
+    "release_build": true,
+    "not_linux_run": false,
+    "banner": null
+  },
+  "note": "cloud containers (AMD EPYC 9655P, Linux), server limits 4 vCPU / 4 GB (cgroup cpu.max and memory.max, checked from the samples); the fake providers and this load generator ran in containers of their own; server CPU and memory per step from the server container's cgroup samples every 2 s (steps[].target)",
+  "runs": [
+    {
+      "file": "capacity-pipecat-cloud-4c-linux-2026-10-16-run1.json",
+      "max_concurrent": 1,
+      "first_failure": 5,
+      "limit": "found",
+      "failure_reason": "p95 V2V 1130 ms is above the limit 1110 ms (floor 860 ms + 250 ms)",
+      "p95_v2v_ms": 1075,
+      "p50_v2v_ms": 1004,
+      "server_cpu_cores": 0.2,
+      "mcores_per_call": 197.06,
+      "rss_peak_mb": 1120,
+      "generator_cpu_cores": 0.01,
+      "max_send_lateness_ms": 5,
+      "pss_peak_mb": 937
+    },
+    {
+      "file": "capacity-pipecat-cloud-4c-linux-2026-10-16-run2.json",
+      "max_concurrent": 1,
+      "first_failure": 5,
+      "limit": "found",
+      "failure_reason": "p95 V2V 1121 ms is above the limit 1110 ms (floor 860 ms + 250 ms)",
+      "p95_v2v_ms": 1070,
+      "p50_v2v_ms": 996,
+      "server_cpu_cores": 0.18,
+      "mcores_per_call": 176.18,
+      "rss_peak_mb": 1054,
+      "generator_cpu_cores": 0.01,
+      "max_send_lateness_ms": 10,
+      "pss_peak_mb": 873
+    },
+    {
+      "file": "capacity-pipecat-cloud-4c-linux-2026-10-16-run3.json",
+      "max_concurrent": null,
+      "first_failure": 1,
+      "limit": "first_step_failed",
+      "failure_reason": "p95 V2V 1113 ms is above the limit 1110 ms (floor 860 ms + 250 ms)"
+    }
+  ],
+  "median_max_concurrent": 1,
+  "min_max_concurrent": 0,
+  "max_max_concurrent": 1
+}

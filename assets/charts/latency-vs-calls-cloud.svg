@@ -1,0 +1,89 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 720 560" width="720" height="560" role="img" aria-labelledby="latency-cloud-t latency-cloud-d">
+<title id="latency-cloud-t">Latency as the load grows, 8 vCPU / 8 GB</title>
+<desc id="latency-cloud-d">Line chart, latency versus concurrent calls (linear axis): brisvox from 1 to 800 calls, p95 869 ms to 3754 ms; Pipecat 1.12 from 1 to 20 calls, p95 1117 ms to 1539 ms</desc>
+<style>
+text{font-family:system-ui,-apple-system,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif}
+.bg{fill:#fcfcfb}.t1{fill:#0b0b0b}.t2{fill:#52514e}.grid{stroke:#e3e2de}.axis{stroke:#8a8983}
+.ring{stroke:#fcfcfb}.surf{fill:#fcfcfb}.ink{fill:#0b0b0b}.slo{stroke:#d03b3b}.slot{fill:#d03b3b}
+@media (prefers-color-scheme:dark){.bg{fill:#1a1a19}.t1{fill:#ffffff}.t2{fill:#c3c2b7}.grid{stroke:#383835}
+.axis{stroke:#7b7a74}.ring{stroke:#1a1a19}.surf{fill:#1a1a19}.ink{fill:#ffffff}.slo{stroke:#ec835a}.slot{fill:#ec835a}}
+.f-brisvox{fill:#2a78d6}.s-brisvox{stroke:#2a78d6}
+@media (prefers-color-scheme:dark){.f-brisvox{fill:#3987e5}.s-brisvox{stroke:#3987e5}}
+.f-pipecat{fill:#eb6834}.s-pipecat{stroke:#eb6834}
+@media (prefers-color-scheme:dark){.f-pipecat{fill:#d95926}.s-pipecat{stroke:#d95926}}
+</style>
+<rect class="bg" x="0" y="0" width="720" height="560" rx="10"/>
+<text x="24" y="30" class="t1" font-size="17" font-weight="700">Latency as the load grows, 8 vCPU / 8 GB</text>
+<text x="24" y="49" class="t2" font-size="13">Voice-to-voice latency at each load step of the max ramp (8 vCPU / 8 GB; each system's own provider</text>
+<text x="24" y="68" class="t2" font-size="13">client code against protocol-faithful fake STT, LLM and TTS servers over TLS, the real Silero VAD and</text>
+<text x="24" y="87" class="t2" font-size="13">Smart Turn models on every call, AMD EPYC 9655P cloud containers). Solid: p95, dashed: p50. Filled</text>
+<text x="24" y="106" class="t2" font-size="13">marker: no failed call or lost turn and p95 within the SLO; hollow: missed either (the p95 is over the</text>
+<text x="24" y="125" class="t2" font-size="13">turns that were answered). A step beyond the axis is drawn at the top. Label: the most calls within the</text>
+<text x="24" y="144" class="t2" font-size="13">SLO in that run.</text>
+<rect x="24" y="162" width="12" height="12" rx="3" class="f-brisvox"/>
+<text x="42" y="172" class="t1" font-size="13">brisvox</text>
+<rect x="112.96000000000001" y="162" width="12" height="12" rx="3" class="f-pipecat"/>
+<text x="130.96" y="172" class="t1" font-size="13">Pipecat 1.12</text>
+<line x1="72" x2="580" y1="462" y2="462" class="grid" stroke-width="1"/>
+<text x="64" y="466" class="t2" font-size="12" text-anchor="end">800</text>
+<line x1="72" x2="580" y1="423.4" y2="423.4" class="grid" stroke-width="1"/>
+<text x="64" y="427.4" class="t2" font-size="12" text-anchor="end">1000</text>
+<line x1="72" x2="580" y1="384.9" y2="384.9" class="grid" stroke-width="1"/>
+<text x="64" y="388.9" class="t2" font-size="12" text-anchor="end">1200</text>
+<line x1="72" x2="580" y1="346.3" y2="346.3" class="grid" stroke-width="1"/>
+<text x="64" y="350.3" class="t2" font-size="12" text-anchor="end">1400</text>
+<line x1="72" x2="580" y1="307.7" y2="307.7" class="grid" stroke-width="1"/>
+<text x="64" y="311.7" class="t2" font-size="12" text-anchor="end">1600</text>
+<line x1="72" x2="580" y1="269.1" y2="269.1" class="grid" stroke-width="1"/>
+<text x="64" y="273.1" class="t2" font-size="12" text-anchor="end">1800</text>
+<line x1="72" x2="580" y1="230.6" y2="230.6" class="grid" stroke-width="1"/>
+<text x="64" y="234.6" class="t2" font-size="12" text-anchor="end">2000</text>
+<line x1="72" x2="580" y1="192" y2="192" class="grid" stroke-width="1"/>
+<text x="64" y="196" class="t2" font-size="12" text-anchor="end">2200</text>
+<line x1="72" x2="580" y1="462" y2="462" class="axis" stroke-width="1"/>
+<text x="72" y="480" class="t2" font-size="12" text-anchor="middle">0</text>
+<line x1="72" x2="72" y1="462" y2="466" class="axis" stroke-width="1"/>
+<text x="199" y="480" class="t2" font-size="12" text-anchor="middle">200</text>
+<line x1="199" x2="199" y1="462" y2="466" class="axis" stroke-width="1"/>
+<text x="326" y="480" class="t2" font-size="12" text-anchor="middle">400</text>
+<line x1="326" x2="326" y1="462" y2="466" class="axis" stroke-width="1"/>
+<text x="453" y="480" class="t2" font-size="12" text-anchor="middle">600</text>
+<line x1="453" x2="453" y1="462" y2="466" class="axis" stroke-width="1"/>
+<text x="580" y="480" class="t2" font-size="12" text-anchor="middle">800</text>
+<line x1="580" x2="580" y1="462" y2="466" class="axis" stroke-width="1"/>
+<text x="326" y="500" class="t2" font-size="12" text-anchor="middle">concurrent calls</text>
+<text transform="translate(16 327) rotate(-90)" class="t2" font-size="12" text-anchor="middle">voice-to-voice latency (ms)</text>
+<line x1="72" x2="580" y1="402.2" y2="402.2" class="slo" stroke-width="1.5" stroke-dasharray="2 4"/>
+<text x="586" y="406.2" class="slot" font-size="12">SLO 1110 ms</text>
+<path d="M72.6 448.9 L75.2 449.1 L78.3 449.1 L84.7 449.1 L97.4 449.2 L122.8 449.2 L148.2 449.3 L173.6 449.3 L224.4 449.3 L275.2 449.3 L326 449.1 L376.8 444.8 L427.6 414.3 L478.4 383.4 L529.2 239.4 L554.6 200.7 L567.3 192 L573.7 192 L580 192" class="s-brisvox" fill="none" stroke-width="1.5" stroke-dasharray="5 4" stroke-linejoin="round"/>
+<path d="M72.6 448.7 L75.2 448.6 L78.3 448.3 L84.7 448.7 L97.4 448.6 L122.8 448.6 L148.2 448.8 L173.6 448.9 L224.4 448.8 L275.2 448.5 L326 448.4 L376.8 423.6 L427.6 314 L478.4 192 L529.2 192 L554.6 192 L567.3 192 L573.7 192 L580 192" class="s-brisvox" fill="none" stroke-width="2.5" stroke-linejoin="round"/>
+<circle cx="72.6" cy="448.7" r="4.5" class="f-brisvox ring" stroke-width="2"/>
+<circle cx="75.2" cy="448.6" r="4.5" class="f-brisvox ring" stroke-width="2"/>
+<circle cx="78.3" cy="448.3" r="4.5" class="f-brisvox ring" stroke-width="2"/>
+<circle cx="84.7" cy="448.7" r="4.5" class="f-brisvox ring" stroke-width="2"/>
+<circle cx="97.4" cy="448.6" r="4.5" class="f-brisvox ring" stroke-width="2"/>
+<circle cx="122.8" cy="448.6" r="4.5" class="f-brisvox ring" stroke-width="2"/>
+<circle cx="148.2" cy="448.8" r="4.5" class="f-brisvox ring" stroke-width="2"/>
+<circle cx="173.6" cy="448.9" r="4.5" class="f-brisvox ring" stroke-width="2"/>
+<circle cx="224.4" cy="448.8" r="4.5" class="f-brisvox ring" stroke-width="2"/>
+<circle cx="275.2" cy="448.5" r="4.5" class="f-brisvox ring" stroke-width="2"/>
+<circle cx="326" cy="448.4" r="4.5" class="f-brisvox ring" stroke-width="2"/>
+<circle cx="376.8" cy="423.6" r="4.5" class="f-brisvox ring" stroke-width="2"/>
+<circle cx="427.6" cy="314" r="4.5" class="surf s-brisvox" stroke-width="2"/>
+<path d="M478.4 187L483.4 196H473.4Z" class="f-brisvox ring" stroke-width="1.5"/>
+<path d="M529.2 187L534.2 196H524.2Z" class="f-brisvox ring" stroke-width="1.5"/>
+<path d="M554.6 187L559.6 196H549.6Z" class="f-brisvox ring" stroke-width="1.5"/>
+<path d="M567.3 187L572.3 196H562.3Z" class="f-brisvox ring" stroke-width="1.5"/>
+<path d="M573.7 187L578.7 196H568.7Z" class="f-brisvox ring" stroke-width="1.5"/>
+<path d="M580 187L585 196H575Z" class="f-brisvox ring" stroke-width="1.5"/>
+<text x="589" y="196" class="t1" font-size="12" font-weight="600">brisvox: 480</text>
+<path d="M72.6 427.9 L75.2 424.6 L78.3 419.6 L84.7 398.1" class="s-pipecat" fill="none" stroke-width="1.5" stroke-dasharray="5 4" stroke-linejoin="round"/>
+<path d="M72.6 400.9 L75.2 409 L78.3 399.1 L84.7 319.4" class="s-pipecat" fill="none" stroke-width="2.5" stroke-linejoin="round"/>
+<circle cx="72.6" cy="400.9" r="4.5" class="surf s-pipecat" stroke-width="2"/>
+<circle cx="75.2" cy="409" r="4.5" class="f-pipecat ring" stroke-width="2"/>
+<circle cx="78.3" cy="399.1" r="4.5" class="surf s-pipecat" stroke-width="2"/>
+<circle cx="84.7" cy="319.4" r="4.5" class="surf s-pipecat" stroke-width="2"/>
+<text x="93.7" y="323.4" class="t1" font-size="12" font-weight="600">Pipecat: 5</text>
+<text x="24" y="530" class="t2" font-size="12">Source: bench/results/{capacity-brisvox-cloud-8c-max-linux-2026-10-16-run2.json,</text>
+<text x="24" y="546" class="t2" font-size="12">capacity-pipecat-cloud-8c-max-linux-2026-10-16-run1.json} (steps[].v2v of the run with the median maximum).</text>
+</svg>

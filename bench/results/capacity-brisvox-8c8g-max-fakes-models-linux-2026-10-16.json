@@ -1,0 +1,65 @@
+{
+  "schema": "brisvox-bench/capacity-summary/1",
+  "system": "brisvox-8c8g-max-fakes-models",
+  "date": "2026-10-16",
+  "label": "brisvox-8c8g-max-fakes-models (8 CPUs, 8g, Linux)",
+  "environment": {
+    "os": "linux",
+    "arch": "x86_64",
+    "logical_cores": 8,
+    "release_build": true,
+    "not_linux_run": false,
+    "banner": null
+  },
+  "note": "quiet gate passed after 15s: no cargo/rustc/link.exe on Windows, WSL load1 1.48 (< 1.5); real provider clients against bench/fake_providers over TLS (cores 16-19, outside the limits); brisvox-server, admission control off; Linux kernel 6.6.87.2-microsoft-standard-WSL2; container --cpus=8 --cpuset-cpus=0-7 --memory=8g --memory-swap=8g --ulimit nofile=1048576:1048576 --network host, server cores 0-7, generator cores 8-15 (bench/capacity_linux.sh)",
+  "runs": [
+    {
+      "file": "capacity-brisvox-8c8g-max-fakes-models-linux-2026-10-16-run1.json",
+      "max_concurrent": 740,
+      "first_failure": 750,
+      "limit": "found",
+      "failure_reason": "15 of 3000 turns lost or not clean (15 talked over, 0 no response, 0 bot speaking; allowed 0.0 %)",
+      "p95_v2v_ms": 3660,
+      "p50_v2v_ms": 2233,
+      "server_cpu_cores": 6.26,
+      "mcores_per_call": 8.45,
+      "rss_peak_mb": 1242,
+      "generator_cpu_cores": 0.57,
+      "max_send_lateness_ms": 2,
+      "pss_peak_mb": 1243
+    },
+    {
+      "file": "capacity-brisvox-8c8g-max-fakes-models-linux-2026-10-16-run2.json",
+      "max_concurrent": 812,
+      "first_failure": 818,
+      "limit": "found",
+      "failure_reason": "2 of 3272 turns lost or not clean (2 talked over, 0 no response, 0 bot speaking; allowed 0.0 %)",
+      "p95_v2v_ms": 3705,
+      "p50_v2v_ms": 2467,
+      "server_cpu_cores": 6.25,
+      "mcores_per_call": 7.69,
+      "rss_peak_mb": 1314,
+      "generator_cpu_cores": 0.59,
+      "max_send_lateness_ms": 3,
+      "pss_peak_mb": 1315
+    },
+    {
+      "file": "capacity-brisvox-8c8g-max-fakes-models-linux-2026-10-16-run3.json",
+      "max_concurrent": 750,
+      "first_failure": 760,
+      "limit": "found",
+      "failure_reason": "34 of 3040 turns lost or not clean (34 talked over, 0 no response, 0 bot speaking; allowed 0.0 %)",
+      "p95_v2v_ms": 3658,
+      "p50_v2v_ms": 2286,
+      "server_cpu_cores": 6.28,
+      "mcores_per_call": 8.37,
+      "rss_peak_mb": 1256,
+      "generator_cpu_cores": 0.56,
+      "max_send_lateness_ms": 3,
+      "pss_peak_mb": 1257
+    }
+  ],
+  "median_max_concurrent": 750,
+  "min_max_concurrent": 740,
+  "max_max_concurrent": 812
+}

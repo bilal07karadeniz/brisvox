@@ -1,0 +1,65 @@
+{
+  "schema": "brisvox-bench/capacity-summary/1",
+  "system": "pipecat-max-fakes-models",
+  "date": "2026-10-16",
+  "label": "pipecat-max-fakes-models (4 CPUs, 4g, Linux)",
+  "environment": {
+    "os": "linux",
+    "arch": "x86_64",
+    "logical_cores": 8,
+    "release_build": true,
+    "not_linux_run": false,
+    "banner": null
+  },
+  "note": "quiet gate passed after 80s: no cargo/rustc/link.exe on Windows, WSL load1 1.48 (< 1.5); 4 Pipecat process(es); real provider clients against bench/fake_providers over TLS (cores 12-15, outside the limits); Linux kernel 6.6.87.2-microsoft-standard-WSL2; container --cpus=4 --cpuset-cpus=0-3 --memory=4g --memory-swap=4g --ulimit nofile=1048576:1048576 --network host, server cores 0-3, generator cores 4-11 (bench/capacity_linux.sh)",
+  "runs": [
+    {
+      "file": "capacity-pipecat-max-fakes-models-linux-2026-10-16-run1.json",
+      "max_concurrent": 20,
+      "first_failure": 30,
+      "limit": "found",
+      "failure_reason": "11 of 60 calls failed; 47 of 120 turns lost or not clean (21 talked over, 3 no response, 1 bot speaking; allowed 0.0 %)",
+      "p95_v2v_ms": 1113,
+      "p50_v2v_ms": 963,
+      "server_cpu_cores": 1.39,
+      "mcores_per_call": 69.28,
+      "rss_peak_mb": 3918,
+      "generator_cpu_cores": 0.07,
+      "max_send_lateness_ms": 2,
+      "pss_peak_mb": 3761
+    },
+    {
+      "file": "capacity-pipecat-max-fakes-models-linux-2026-10-16-run2.json",
+      "max_concurrent": 20,
+      "first_failure": 30,
+      "limit": "found",
+      "failure_reason": "10 of 60 calls failed; 21 of 120 turns lost or not clean (0 talked over, 1 no response, 0 bot speaking; allowed 0.0 %)",
+      "p95_v2v_ms": 990,
+      "p50_v2v_ms": 964,
+      "server_cpu_cores": 1.37,
+      "mcores_per_call": 68.33,
+      "rss_peak_mb": 3943,
+      "generator_cpu_cores": 0.06,
+      "max_send_lateness_ms": 2,
+      "pss_peak_mb": 3793
+    },
+    {
+      "file": "capacity-pipecat-max-fakes-models-linux-2026-10-16-run3.json",
+      "max_concurrent": 10,
+      "first_failure": 20,
+      "limit": "found",
+      "failure_reason": "2 of 80 turns lost or not clean (0 talked over, 2 no response, 0 bot speaking; allowed 0.0 %)",
+      "p95_v2v_ms": 983,
+      "p50_v2v_ms": 961,
+      "server_cpu_cores": 0.72,
+      "mcores_per_call": 72.46,
+      "rss_peak_mb": 1837,
+      "generator_cpu_cores": 0.04,
+      "max_send_lateness_ms": 2,
+      "pss_peak_mb": 1682
+    }
+  ],
+  "median_max_concurrent": 20,
+  "min_max_concurrent": 10,
+  "max_max_concurrent": 20
+}

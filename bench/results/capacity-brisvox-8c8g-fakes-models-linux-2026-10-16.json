@@ -1,0 +1,65 @@
+{
+  "schema": "brisvox-bench/capacity-summary/1",
+  "system": "brisvox-8c8g-fakes-models",
+  "date": "2026-10-16",
+  "label": "brisvox-8c8g-fakes-models (8 CPUs, 8g, Linux)",
+  "environment": {
+    "os": "linux",
+    "arch": "x86_64",
+    "logical_cores": 8,
+    "release_build": true,
+    "not_linux_run": false,
+    "banner": null
+  },
+  "note": "quiet gate passed after 0s: no cargo/rustc/link.exe on Windows, WSL load1 1.12 (< 1.5); real provider clients against bench/fake_providers over TLS (cores 16-19, outside the limits); brisvox-server, admission control off; Linux kernel 6.6.87.2-microsoft-standard-WSL2; container --cpus=8 --cpuset-cpus=0-7 --memory=8g --memory-swap=8g --ulimit nofile=1048576:1048576 --network host, server cores 0-7, generator cores 8-15 (bench/capacity_linux.sh)",
+  "runs": [
+    {
+      "file": "capacity-brisvox-8c8g-fakes-models-linux-2026-10-16-run1.json",
+      "max_concurrent": 440,
+      "first_failure": 450,
+      "limit": "found",
+      "failure_reason": "p95 V2V 1273 ms is above the limit 1110 ms (floor 860 ms + 250 ms)",
+      "p95_v2v_ms": 1051,
+      "p50_v2v_ms": 879,
+      "server_cpu_cores": 4.64,
+      "mcores_per_call": 10.53,
+      "rss_peak_mb": 875,
+      "generator_cpu_cores": 0.41,
+      "max_send_lateness_ms": 3,
+      "pss_peak_mb": 876
+    },
+    {
+      "file": "capacity-brisvox-8c8g-fakes-models-linux-2026-10-16-run2.json",
+      "max_concurrent": 440,
+      "first_failure": 450,
+      "limit": "found",
+      "failure_reason": "p95 V2V 1199 ms is above the limit 1110 ms (floor 860 ms + 250 ms)",
+      "p95_v2v_ms": 1101,
+      "p50_v2v_ms": 880,
+      "server_cpu_cores": 4.8,
+      "mcores_per_call": 10.91,
+      "rss_peak_mb": 874,
+      "generator_cpu_cores": 0.41,
+      "max_send_lateness_ms": 3,
+      "pss_peak_mb": 874
+    },
+    {
+      "file": "capacity-brisvox-8c8g-fakes-models-linux-2026-10-16-run3.json",
+      "max_concurrent": 430,
+      "first_failure": 440,
+      "limit": "found",
+      "failure_reason": "p95 V2V 1151 ms is above the limit 1110 ms (floor 860 ms + 250 ms)",
+      "p95_v2v_ms": 1001,
+      "p50_v2v_ms": 879,
+      "server_cpu_cores": 4.68,
+      "mcores_per_call": 10.89,
+      "rss_peak_mb": 860,
+      "generator_cpu_cores": 0.42,
+      "max_send_lateness_ms": 3,
+      "pss_peak_mb": 861
+    }
+  ],
+  "median_max_concurrent": 440,
+  "min_max_concurrent": 430,
+  "max_max_concurrent": 440
+}

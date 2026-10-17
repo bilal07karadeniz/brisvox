@@ -8,6 +8,15 @@ named plain `brisvox` on crates.io, PyPI and npm, are released together under on
 
 ## [Unreleased]
 
+### Changed
+
+- **Benchmarks**: the capacity numbers in the README and the book now come from cloud containers
+  (AMD EPYC 9655P, 4 vCPU / 4 GB and 8 vCPU / 8 GB) with every call going through each system's own
+  provider client code to protocol-faithful fake providers over TLS, and the real Silero VAD and
+  Smart Turn models: brisvox 250 and 470 calls within the latency SLO against 1 and 10 for
+  Pipecat 1.12.0, and 430 and 780 without a failed call or lost turn against 10 and 10. The local
+  harness runs the same comparison: `PROVIDERS=fakes MODELS=1 bench/capacity_linux.sh`.
+
 ## [0.1.1] - 2026-10-15
 
 ### Added

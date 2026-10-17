@@ -1,0 +1,65 @@
+{
+  "schema": "brisvox-bench/capacity-summary/1",
+  "system": "brisvox-cloud-8c-max",
+  "date": "2026-10-16",
+  "label": "brisvox 8 vCPU / 8 GB, cloud (AMD EPYC 9655P), max ramp",
+  "environment": {
+    "os": "linux",
+    "arch": "x86_64",
+    "logical_cores": 8,
+    "release_build": true,
+    "not_linux_run": false,
+    "banner": null
+  },
+  "note": "cloud containers (AMD EPYC 9655P, Linux), server limits 8 vCPU / 8 GB (cgroup cpu.max and memory.max, checked from the samples); the fake providers and this load generator ran in containers of their own; server CPU and memory per step from the server container's cgroup samples every 2 s (steps[].target)",
+  "runs": [
+    {
+      "file": "capacity-brisvox-cloud-8c-max-linux-2026-10-16-run1.json",
+      "max_concurrent": 740,
+      "first_failure": 750,
+      "limit": "found",
+      "failure_reason": "13 of 3000 turns lost or not clean (13 talked over, 0 no response, 0 bot speaking; allowed 0.0 %)",
+      "p95_v2v_ms": 3735,
+      "p50_v2v_ms": 2406,
+      "server_cpu_cores": 5.96,
+      "mcores_per_call": 8.05,
+      "rss_peak_mb": 1254,
+      "generator_cpu_cores": 0.66,
+      "max_send_lateness_ms": 5,
+      "pss_peak_mb": 1245
+    },
+    {
+      "file": "capacity-brisvox-cloud-8c-max-linux-2026-10-16-run2.json",
+      "max_concurrent": 780,
+      "first_failure": 790,
+      "limit": "found",
+      "failure_reason": "11 of 3160 turns lost or not clean (11 talked over, 0 no response, 0 bot speaking; allowed 0.0 %)",
+      "p95_v2v_ms": 3738,
+      "p50_v2v_ms": 2265,
+      "server_cpu_cores": 5.75,
+      "mcores_per_call": 7.38,
+      "rss_peak_mb": 1314,
+      "generator_cpu_cores": 0.77,
+      "max_send_lateness_ms": 10,
+      "pss_peak_mb": 1305
+    },
+    {
+      "file": "capacity-brisvox-cloud-8c-max-linux-2026-10-16-run3.json",
+      "max_concurrent": 800,
+      "first_failure": 806,
+      "limit": "found",
+      "failure_reason": "18 of 3224 turns lost or not clean (18 talked over, 0 no response, 0 bot speaking; allowed 0.0 %)",
+      "p95_v2v_ms": 3729,
+      "p50_v2v_ms": 2242,
+      "server_cpu_cores": 5.94,
+      "mcores_per_call": 7.42,
+      "rss_peak_mb": 1335,
+      "generator_cpu_cores": 0.72,
+      "max_send_lateness_ms": 10,
+      "pss_peak_mb": 1325
+    }
+  ],
+  "median_max_concurrent": 780,
+  "min_max_concurrent": 740,
+  "max_max_concurrent": 800
+}

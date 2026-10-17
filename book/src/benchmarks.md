@@ -12,31 +12,29 @@ its top.
   (STT final 150 ms, LLM first token 350 ms, TTS first byte 150 ms). They show how much time the
   *engine* adds on top of providers. They do not show what a live call over real providers
   feels like.
-- **Linux numbers exist for two things** (WSL2, kernel 6.6, Docker, over mocks, 2026-10-13):
-  the load simulation confined to 4 cores (`sim-baseline-linux.md`: 500 calls, overhead p99
-  0.185 ms; the saturation sweep passes 10 ms of wake p99 at 10000 calls) and the capacity
-  ramp of both systems in equal 4-CPU containers (below). The rest of this chapter is
-  Windows: timers tick at about 15.6 ms and coalesce wake-ups, so those files say that figures
-  for comparisons "come from a Linux run".
-- **Capacity with the real models comes first, and it is much lower.** With the Silero VAD and
-  Smart Turn running on every call in both systems (`MODELS=1 bench/capacity_linux.sh`,
-  `docs/LATENCY.md`, "Capacity with the models"), the same 4-CPU / 4 GiB Linux container on a quiet
-  host carried **325** concurrent calls within the SLO for brisvox (3 runs: 325 each; ~425 MB, RSS of its one process = PSS)
-  against **20** for Pipecat 1.12.0 with its own models, tuned (20, 15, 20, and 20, 20, 15 on a re-run; memory-bound, ~4.0-4.2 GB
-  PSS at 20 calls, its workers killed at the 4 GiB limit around 25): about 16 times the calls.
-  LiveKit Agents 1.8.7 in the same container with its own turn detector carried **23** (22, 23, 25)
-  with that detector's threshold lowered, and none with its defaults (the detector waited its
-  2.5 s maximum on about 45 % of the benchmark's turns); its failing steps were job-start bursts
-  with CPU and memory to spare, so 23 is a lower bound under this arrival pattern
-  (`bench/livekit_baseline/README.md`). Memory is PSS (shared pages split between processes) for
-  all three systems, so the figures are comparable (`docs/LATENCY.md`, "Memory counted alike").
-- **The comparison with Pipecat below is the framework alone, over mock providers.** The
-  harness (`bench/pipecat_baseline`: a Pipecat bot that speaks the same websocket protocol,
-  measured with the same client and the same definition of voice-to-voice) gave, with the same
-  4-CPU container, 2100 concurrent calls within the SLO for brisvox against 90 (tuned) or 70
-  (defaults) for Pipecat 1.12.0 (`docs/LATENCY.md`, "Capacity benchmark, Linux"). That is the
-  framework cost **without models** (an energy VAD and a fixed Smart Turn answer) and without
-  real providers.
+- **Linux numbers exist for two things**: the load simulation confined to 4 cores (WSL2, kernel
+  6.6, Docker, over mocks, 2026-10-13; `sim-baseline-linux.md`: 500 calls, overhead p99 0.185 ms;
+  the saturation sweep passes 10 ms of wake p99 at 10000 calls) and the capacity comparison below.
+  The rest of this chapter is Windows: timers tick at about 15.6 ms and coalesce wake-ups, so
+  those files say that figures for comparisons "come from a Linux run".
+- **Capacity: the real provider path and the real models, on cloud hardware.** Every call went
+  through each system's own provider client code (brisvox's Rust adapters; Pipecat's Deepgram,
+  OpenAI and Deepgram Aura services) over TLS to protocol-faithful fake providers with fixed
+  latencies (`bench/fake_providers`), with the Silero VAD and Smart Turn on every call, in Linux
+  containers on AMD EPYC 9655P, one system at a time, 3 runs each on a fresh container
+  (2026-10-16/17, `bench/results/capacity-*-cloud-*`). Within the SLO (p95 voice-to-voice at most
+  1110 ms, the providers' 860 ms plus 250 ms): 4 vCPU / 4 GB **250** calls for brisvox (260, 250,
+  220) against **1** for Pipecat 1.12.0 (1, 1, 0); 8 vCPU / 8 GB **470** (480, 460, 470) against
+  **10** (10, 5, 10). Without a failed call or a lost turn, at any latency: **430** against **10**,
+  and **780** against **10**. Pipecat is memory-bound in 4 GB (workers killed at 20 calls) and at
+  8 GB lost turns at 20 calls in two of three runs; brisvox is CPU-bound and scaled about 1.9 times
+  with twice the container. Memory at the maximum (PSS summed over the container's processes):
+  753 MB at 430 calls against 2.4 GB at 10 (4 vCPU / 4 GB). brisvox's admission control was off
+  for the ramp. The same run on local Docker: `PROVIDERS=fakes MODELS=1 bench/capacity_linux.sh`
+  (`docs/LATENCY.md`, "Capacity with the real provider path").
+- **Earlier comparisons over in-process mocks** (desktop, 2026-10-13/14, kept in `docs/LATENCY.md`
+  "Capacity benchmark, Linux" and "Capacity with the models", including LiveKit Agents) measured
+  the frameworks without the provider clients; the cloud run above replaces them.
 - **Live providers.** The same agent file on both systems: Deepgram nova-3, OpenRouter
   `openai/gpt-6-luna` with reasoning effort `none` pinned to one upstream, Deepgram Aura voice; 5
   concurrent calls, 100 turns per system in strictly alternating blocks on one Windows machine over

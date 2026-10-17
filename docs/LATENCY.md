@@ -1439,6 +1439,60 @@ before the turn ends, so `turn_end_to_llm_request` has no sample for those turns
 `turn_end_to_first_audio` is shorter than the provider time it lists; the report says so
 under the floors.
 
+## Capacity with the real provider path (measured 2026-10-16/17, cloud)
+
+The numbers the README shows. Every call goes through each system's own provider client code to
+`bench/fake_providers` (Deepgram live STT, an OpenAI-compatible chat endpoint and Deepgram Aura, over
+TLS, with the agent file `bench/fake_providers/agent.fakes.toml`: STT final 150 ms after 300 ms of
+endpointing, LLM first token 350 ms, TTS first audio 150 ms, a floor of about 860 ms), with the real
+Silero VAD and Smart Turn v3.2 models on every call. brisvox: `brisvox-server` (features
+`all-providers,smart-turn-ort`) with admission control off for the ramp
+(`BRISVOX_OVERLOAD_QUEUE_PER_THREAD=0`, `BRISVOX_OVERLOAD_QUEUE_WAIT=0`). Pipecat 1.12.0:
+`bench/pipecat_baseline/bot.py --agent agent.fakes.toml` with one uvicorn worker per vCPU, its
+`DeepgramSTTService`, `OpenAILLMService` and `DeepgramTTSService`. The fake providers and the load
+generator (`brisvox-bench capacity`, 8 workers) ran in containers of their own.
+
+Server containers: Linux on AMD EPYC 9655P (Zen 5) with cgroup limits of 4 vCPU / 4 GB and
+8 vCPU / 8 GB (decimal GB). The platform places a deployment on any of its host types, so each run
+first read the server container's CPU model and was redeployed until it got the EPYC 9655P; the
+container's own CPU and memory limits were checked in its samples afterwards. Three runs per cell,
+each on a freshly started container, one system at a time. SLO: p95 voice-to-voice at most 1110 ms
+(floor 860 + 250), no failed call, no lost turn. The "max" ramp drops the latency limit: the most
+calls with no failed call and no lost turn. Server CPU and memory per step come from the server
+container's cgroup samples every 2 s (`steps[].target` in the run files; memory is PSS summed over
+its processes).
+
+| | brisvox | Pipecat 1.12.0 |
+|---|---|---|
+| 4 vCPU / 4 GB, within the SLO | **250** (260, 250, 220) | **1** (1, 1, 0) |
+| 4 vCPU / 4 GB, max | **430** (430, 480, 400); 753 MB, 1.8 MB and 0.007 cores per call | **10** (10, 10, 10); 2.4 GB, 240 MB and 0.14 cores per call |
+| 8 vCPU / 8 GB, within the SLO | **470** (480, 460, 470) | **10** (10, 5, 10) |
+| 8 vCPU / 8 GB, max | **780** (740, 780, 800); 1.3 GB | **10** (10, 20, 10); 3.3 GB |
+
+Files: `bench/results/capacity-{brisvox,pipecat}-cloud-{4,8}c[-max]-linux-2026-10-16*` (summary and
+`-run<N>` files).
+
+- **Pipecat at one call.** On these cores a single Pipecat call answers at p95 1.05 to 1.12 s,
+  about 200 ms above the providers' floor (brisvox: 10 to 30 ms), so its SLO result is decided by
+  per-turn latency: run 3 at 4 vCPU missed the 1110 ms limit at one call by 4 ms.
+- **What stops each system.** Pipecat at 4 GB: memory; its workers are killed at 20 calls (3.9 GB
+  peak) and their calls drop. At 8 GB it lost turns at 20 calls in two runs (no response, 4.4 to
+  5.4 GB) and the third reached the 8 GB limit at 30. brisvox: CPU; at its maximum the container's CPU
+  peaked at its quota (mean about 2.4 of 4 cores over the step: the load comes in waves as turns end
+  together), and twice the container gave about 1.9 times the calls within the SLO
+  (250 to 470) and 1.8 times the max (430 to 780). Past its maximum brisvox's p95 sits at about
+  3.7 s: turns whose Smart Turn verdict comes too late end on the 3 s fallback silence.
+- **Memory bandwidth.** The Smart Turn model (int8 ONNX, 8.7 MB) moves about 200 MB through memory
+  per analysis: it converts to fp32 around nearly every operator, and the GELU of each layer runs as
+  separate passes over a 400 x 1536 tensor. On a machine with little memory bandwidth the analyses
+  stop scaling with cores: on a desktop with one DDR5 channel (about 35 GB/s) the whole machine
+  topped out at about 150 to 175 analyses a second whatever the core count, thread count, process
+  count, session sharing or precision (the fp32 export was slower), and a memory-copy probe on
+  another core dropped from 38.7 to 12.7 GB/s while four analyses ran (pure compute left it at
+  38.3). Batching analyses costs more per item (22 ms CPU at batch 1, 26 to 28 ms at batch 8 to 16),
+  and there is about one analysis per user turn, so neither helps. Size capacity on server
+  hardware, or measure it on the target host.
+
 ## Capacity benchmark, Linux with equal container limits (measured 2026-10-13)
 
 *Measured before the pacer phase was turned off by default: the production pacer still delayed the first frame of every call by its phase (0-19 ms), as in every capacity table of this document dated 2026-10-13 and 2026-10-14. The effect on the maximum is not measurable (A/B in "Pacer phase: Linux measurements", 350 and 300 calls without the phase, 325 and 350 with it); the p95 columns at low load carry about 16-18 ms of it. The Pipecat and LiveKit rows have no such offset.*

@@ -8,6 +8,10 @@
 #   MODELS=1 bench/capacity_linux.sh        # the real Silero VAD + Smart Turn models
 #                                           # (needs models/ from scripts/models/fetch_models.py;
 #                                           # result files get the suffix -models)
+#   PROVIDERS=fakes MODELS=1 bench/capacity_linux.sh
+#                                           # the real provider client code of each system
+#                                           # against bench/fake_providers over TLS (suffix
+#                                           # -fakes-models; see "PROVIDERS=fakes" below)
 #
 # Needs Docker on a Linux host with at least CPUS + 4 cores (the load generator runs on the host,
 # pinned away from the server's cores). Results go to bench/results/capacity-<system>-linux-
@@ -48,7 +52,29 @@ PORT=${PORT:-8080}
 # the models dir, and its Smart Turn v3 analyzer). The prebuilt static ONNX Runtime needs glibc
 # >= 2.38 (the Dockerfile builds on trixie for the same reason), so the Rust and run images
 # default to trixie. The models directory (scripts/models/fetch_models.py) is mounted read-only.
+# PROVIDERS=fakes: each system runs its production server with its real provider clients
+# (brisvox: `brisvox-server` and its Deepgram, OpenAI-compatible and Aura adapters; Pipecat:
+# `bot.py` with DeepgramSTTService, OpenAILLMService and DeepgramTTSService), all pointed at
+# bench/fake_providers/agent.fakes.toml: the fake providers speak the real wire protocols over
+# TLS with fixed latencies. The fakes run in their own container on their own cores, outside
+# the server's limits (FAKES_CORES). The floor is the fakes' latency sum (FLOOR_MS, 860 ms:
+# bench/fake_providers/README.md), the SLO stays floor + 250 ms. brisvox-server's admission
+# control is switched off for the ramp (pressure shedding and the learned ceiling): the ramp
+# measures what the engine serves, as for Pipecat, which has none; in production the server
+# refuses calls past that point instead of degrading the running ones (docs/OPERATIONS.md).
+PROVIDERS=${PROVIDERS:-mock}
 MODELS=${MODELS:-0}
+if [[ $PROVIDERS == fakes ]]; then
+  [[ $MODELS == 1 ]] || { echo "PROVIDERS=fakes runs the production servers: set MODELS=1" >&2; exit 2; }
+  NAME_SUFFIX="${NAME_SUFFIX}-fakes"
+  FLOOR_MS=${FLOOR_MS:-860}
+elif [[ $PROVIDERS != mock ]]; then
+  echo "PROVIDERS is mock or fakes, not $PROVIDERS" >&2; exit 2
+fi
+FLOOR_MS=${FLOOR_MS:-950}
+# The SLO is floor + SLO_OVER_FLOOR_MS (250). A large value (e.g. 60000) turns the ramp into "the most
+# calls with no failed call and no lost turn, at any latency" (use a NAME_SUFFIX such as -max).
+SLO_OVER_FLOOR_MS=${SLO_OVER_FLOOR_MS:-250}
 MODELS_DIR=${MODELS_DIR:-$(cd "$(dirname "$0")/.." && pwd)/models}
 if [[ $MODELS == 1 ]]; then
   [[ -f $MODELS_DIR/smart-turn-v3.2-cpu.onnx ]] || {
@@ -81,7 +107,7 @@ echo ">> building brisvox-bench $BENCH_FEATURES for Linux ($RUST_IMAGE)"
 docker run --rm -v "$ROOT":/src -w /src -e CARGO_TARGET_DIR=/src/target/$TARGET_SUBDIR \
   -e CARGO_BUILD_JOBS="$BUILD_JOBS" -v brisvox-cargo-registry:/usr/local/cargo/registry \
   "$RUST_IMAGE" sh -c \
-  "apt-get update -qq && apt-get install -y -qq --no-install-recommends build-essential cmake pkg-config ca-certificates >/dev/null && cargo build --release -p brisvox-bench $BENCH_FEATURES"
+  "apt-get update -qq && apt-get install -y -qq --no-install-recommends build-essential cmake pkg-config ca-certificates >/dev/null && cargo build --release -p brisvox-bench $BENCH_FEATURES$([[ $PROVIDERS == fakes ]] && echo ' && cargo build --release -p brisvox-server --features all-providers,smart-turn-ort && cargo build --release -p brisvox-fake-providers')"
 
 if [[ " $SYSTEMS " == *" pipecat "* ]]; then
   echo ">> installing the pinned Pipecat lock into the volume brisvox-pcvenv ($PYTHON_IMAGE)"
@@ -90,8 +116,9 @@ if [[ " $SYSTEMS " == *" pipecat "* ]]; then
 fi
 
 name=brisvox-capacity-server
+fakes=brisvox-capacity-fakes
 cleanup() { docker rm -f "$name" >/dev/null 2>&1 || true; }
-trap cleanup EXIT
+trap 'cleanup; docker rm -f "$fakes" >/dev/null 2>&1 || true' EXIT
 KERNEL=$(uname -r)
 # One socket per open call on the generator side: raise the soft limit to the hard one.
 ulimit -n "$(ulimit -Hn)" 2>/dev/null || true
@@ -104,6 +131,22 @@ NET=(--network host)
 # run no cargo.exe / rustc.exe / link.exe may be running there and the VM's 1-minute load average
 # must be below QUIET_LOAD (the build above and the previous run's own load decay first). The
 # result is printed and goes into the run's note ("quiet gate: ...").
+# The fake providers (PROVIDERS=fakes): one container for the whole series, on cores of their own
+# after the generator's (FAKES_CORES), plain listener on 8090 (8080 is the server's). Their CA
+# goes to PKI and is mounted read-only into the server containers.
+if [[ $PROVIDERS == fakes ]]; then
+  FAKES_CORES=${FAKES_CORES:-$((CPUS + CLIENT_WORKERS))-$((CPUS + CLIENT_WORKERS + 3))}
+  PKI=$(mktemp -d)
+  docker rm -f "$fakes" >/dev/null 2>&1 || true
+  docker run -d --name "$fakes" --network host --cpuset-cpus="$FAKES_CORES" \
+    --ulimit nofile="$NOFILE:$NOFILE" -v "$ROOT":/src:ro -v "$PKI":/pki "$RUN_IMAGE" \
+    /src/target/$TARGET_SUBDIR/release/brisvox-fake-providers --fixtures-dir /src/fixtures \
+    --ca-dir /pki --tls-addr 127.0.0.1:8443 --plain-addr 127.0.0.1:8090 >/dev/null
+  for _ in $(seq 1 60); do [[ -s $PKI/ca.pem ]] && break; sleep 1; done
+  [[ -s $PKI/ca.pem ]] || { echo "the fake providers did not start" >&2; docker logs --tail 40 "$fakes" >&2; exit 1; }
+  echo ">> fake providers up on cores $FAKES_CORES (CA $PKI/ca.pem)"
+fi
+
 GATE_NOTE=""
 quiet_gate() {
   GATE_NOTE=""
@@ -131,8 +174,27 @@ quiet_gate() {
 
 start_server() {
   # shellcheck disable=SC2086 # SERVER_ENV is a list of docker flags
-  case "$1" in
-    brisvox)
+  case "$PROVIDERS:$1" in
+    fakes:brisvox)
+      docker run -d --name "$name" "${LIMITS[@]}" "${NET[@]}" $SERVER_ENV -v "$ROOT":/src:ro \
+        -v "$MODELS_DIR":/models:ro -v "$PKI":/pki:ro \
+        -e FAKE_PROVIDERS_API_KEY=fake -e BRISVOX_EXTRA_CA_FILE=/pki/ca.pem \
+        -e BRISVOX_AGENT_FILE=/src/bench/fake_providers/agent.fakes.toml \
+        -e BRISVOX_MODELS_DIR=/models -e BRISVOX_WS_ADDR="127.0.0.1:$PORT" \
+        -e BRISVOX_HEALTH_ADDR=off -e BRISVOX_MAX_SESSIONS="$MAX_CALLS" \
+        -e BRISVOX_OVERLOAD_QUEUE_PER_THREAD=0 -e BRISVOX_OVERLOAD_QUEUE_WAIT=0 \
+        -e RUST_LOG=warn "$RUN_IMAGE" /src/target/$TARGET_SUBDIR/release/brisvox-server >/dev/null
+      ;;
+    fakes:pipecat)
+      docker run -d --name "$name" "${LIMITS[@]}" "${NET[@]}" $SERVER_ENV \
+        -v "$ROOT":/src:ro -v brisvox-pcvenv:/venv:ro -v "$MODELS_DIR":/models:ro -v "$PKI":/pki:ro \
+        -e FAKE_PROVIDERS_API_KEY=fake -e SSL_CERT_FILE=/pki/ca.pem -e BRISVOX_MODELS_DIR=/models \
+        -w /src/bench/pipecat_baseline "$PYTHON_IMAGE" \
+        /venv/bin/python /src/bench/pipecat_baseline/bot.py \
+        --agent /src/bench/fake_providers/agent.fakes.toml --env-file /dev/null --host 0.0.0.0 \
+        --port "$PORT" --workers "$PIPECAT_WORKERS" --log-level WARNING >/dev/null
+      ;;
+    mock:brisvox)
       local models_args=() models_mount=()
       if [[ $MODELS == 1 ]]; then
         # --stats-every-ms: the pool's busy share and the Smart Turn / VAD split, one line per
@@ -146,7 +208,7 @@ start_server() {
         --bind "0.0.0.0:$PORT" --fixtures-dir /src/fixtures --max-calls "$MAX_CALLS" \
         --pool-threads $((CPUS / 2 > 0 ? CPUS / 2 : 1)) "${models_args[@]}" $ENGINE_ARGS >/dev/null
       ;;
-    pipecat)
+    mock:pipecat)
       local models_args=() models_env=() models_mount=()
       if [[ $MODELS == 1 ]]; then
         models_args=(--mock-models real)
@@ -191,8 +253,12 @@ for system in $SYSTEMS; do
     [[ -n $GATE_NOTE ]] && extra+="; $GATE_NOTE"
     [[ -n $SERVER_ENV ]] && extra+="; server flags: $SERVER_ENV"
     [[ $system == pipecat ]] && extra+="; $PIPECAT_WORKERS Pipecat process(es)"
+    if [[ $PROVIDERS == fakes ]]; then
+      extra+="; real provider clients against bench/fake_providers over TLS (cores $FAKES_CORES, outside the limits)"
+      if [[ $system == brisvox ]]; then extra+="; brisvox-server, admission control off"; fi
+    fi
     taskset -c "$CLIENT_CORES" "$BENCH" capacity --url "ws://127.0.0.1:$PORT/" --pid "$pid" \
-      --floor-ms 950 --label "$system$NAME_SUFFIX (${CPUS} CPUs, ${MEM}, Linux)" \
+      --floor-ms "$FLOOR_MS" --slo-over-floor-ms "$SLO_OVER_FLOOR_MS" --label "$system$NAME_SUFFIX (${CPUS} CPUs, ${MEM}, Linux)" \
       --note "$extra; Linux kernel $KERNEL; container ${LIMITS[*]} --network host, server cores $SERVER_CORES, generator cores $CLIENT_CORES (bench/capacity_linux.sh)" \
       --steps "$STEPS" --fixtures-dir "$ROOT/fixtures" \
       --resolution "$RESOLUTION" --rounds 2 --client-workers "$CLIENT_WORKERS" \

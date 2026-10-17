@@ -1,0 +1,65 @@
+{
+  "schema": "brisvox-bench/capacity-summary/1",
+  "system": "pipecat-cloud-8c",
+  "date": "2026-10-16",
+  "label": "pipecat 8 vCPU / 8 GB, cloud (AMD EPYC 9655P)",
+  "environment": {
+    "os": "linux",
+    "arch": "x86_64",
+    "logical_cores": 8,
+    "release_build": true,
+    "not_linux_run": false,
+    "banner": null
+  },
+  "note": "cloud containers (AMD EPYC 9655P, Linux), server limits 8 vCPU / 8 GB (cgroup cpu.max and memory.max, checked from the samples); the fake providers and this load generator ran in containers of their own; server CPU and memory per step from the server container's cgroup samples every 2 s (steps[].target)",
+  "runs": [
+    {
+      "file": "capacity-pipecat-cloud-8c-linux-2026-10-16-run1.json",
+      "max_concurrent": 10,
+      "first_failure": 20,
+      "limit": "found",
+      "failure_reason": "p95 V2V 1443 ms is above the limit 1110 ms (floor 860 ms + 250 ms)",
+      "p95_v2v_ms": 1046,
+      "p50_v2v_ms": 985,
+      "server_cpu_cores": 1.98,
+      "mcores_per_call": 198.27,
+      "rss_peak_mb": 3345,
+      "generator_cpu_cores": 0.02,
+      "max_send_lateness_ms": 16,
+      "pss_peak_mb": 2974
+    },
+    {
+      "file": "capacity-pipecat-cloud-8c-linux-2026-10-16-run2.json",
+      "max_concurrent": 5,
+      "first_failure": 10,
+      "limit": "found",
+      "failure_reason": "p95 V2V 1111 ms is above the limit 1110 ms (floor 860 ms + 250 ms)",
+      "p95_v2v_ms": 1051,
+      "p50_v2v_ms": 987,
+      "server_cpu_cores": 1.01,
+      "mcores_per_call": 202.32,
+      "rss_peak_mb": 2349,
+      "generator_cpu_cores": 0.01,
+      "max_send_lateness_ms": 5,
+      "pss_peak_mb": 1991
+    },
+    {
+      "file": "capacity-pipecat-cloud-8c-linux-2026-10-16-run3.json",
+      "max_concurrent": 10,
+      "first_failure": 20,
+      "limit": "found",
+      "failure_reason": "1 of 80 turns lost or not clean (0 talked over, 1 no response, 0 bot speaking; allowed 0.0 %); p95 V2V 1673 ms is above the limit 1110 ms (floor 860 ms + 250 ms)",
+      "p95_v2v_ms": 1052,
+      "p50_v2v_ms": 977,
+      "server_cpu_cores": 2.1,
+      "mcores_per_call": 210.34,
+      "rss_peak_mb": 3867,
+      "generator_cpu_cores": 0.02,
+      "max_send_lateness_ms": 5,
+      "pss_peak_mb": 3493
+    }
+  ],
+  "median_max_concurrent": 10,
+  "min_max_concurrent": 5,
+  "max_max_concurrent": 10
+}

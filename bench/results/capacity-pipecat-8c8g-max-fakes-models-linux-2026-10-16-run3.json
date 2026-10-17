@@ -1,0 +1,466 @@
+{
+  "schema": "brisvox-bench/capacity/2",
+  "label": "pipecat-8c8g-max-fakes-models (8 CPUs, 8g, Linux)",
+  "note": "run 3 of 3; quiet gate passed after 50s: no cargo/rustc/link.exe on Windows, WSL load1 1.42 (< 1.5); 8 Pipecat process(es); real provider clients against bench/fake_providers over TLS (cores 16-19, outside the limits); Linux kernel 6.6.87.2-microsoft-standard-WSL2; container --cpus=8 --cpuset-cpus=0-7 --memory=8g --memory-swap=8g --ulimit nofile=1048576:1048576 --network host, server cores 0-7, generator cores 8-15 (bench/capacity_linux.sh)",
+  "url": "ws://127.0.0.1:8080",
+  "environment": {
+    "os": "linux",
+    "arch": "x86_64",
+    "logical_cores": 8,
+    "release_build": true,
+    "not_linux_run": false,
+    "banner": null
+  },
+  "settings": {
+    "fixture": "en_two_utterances",
+    "turns_per_call": 2,
+    "steps": [
+      1,
+      5,
+      10,
+      20,
+      40,
+      80,
+      120,
+      160,
+      240,
+      320,
+      400,
+      480,
+      560,
+      640,
+      800,
+      1000,
+      1200
+    ],
+    "rounds": 2,
+    "warmup_calls": 1,
+    "spread_ms": 4000,
+    "min_gap_ms": 4000,
+    "pause_ms": 200,
+    "cooldown_ms": 3000,
+    "floor_ms": 860,
+    "slo_over_floor_ms": 60000,
+    "slo_limit_ms": 60860,
+    "max_bad_rate": 0.0,
+    "lateness_limit_ms": 100,
+    "late_share_limit": 0.01,
+    "resolution": 10,
+    "keep_going": false,
+    "target_pid": 369887,
+    "target_tree": true
+  },
+  "engine": null,
+  "warmup": {
+    "concurrent": 1,
+    "calls": 1,
+    "calls_failed": 0,
+    "failures": [],
+    "turns_expected": 2,
+    "turns_answered": 2,
+    "talked_over": 0,
+    "bot_speaking": 0,
+    "no_response": 0,
+    "bad_rate": 0.0,
+    "v2v": {
+      "count": 2,
+      "p50_us": 941131,
+      "p90_us": 991491,
+      "p95_us": 991491,
+      "p99_us": 991491,
+      "max_us": 991491
+    },
+    "p95_over_floor_us": 131491,
+    "max_send_lateness_us": 1952,
+    "late_frames": 0,
+    "timed_frames": 732,
+    "wall_ms": 14785,
+    "rss_before_bytes": 1312067584,
+    "pss_before_bytes": 1016268800,
+    "target": {
+      "cpu_cores": 0.13021099104831108,
+      "rss_peak_bytes": 1381797888,
+      "pss_peak_bytes": 1085886464,
+      "processes": 10,
+      "readings": 30
+    },
+    "client": {
+      "cpu_cores": 0.020675075432890388,
+      "rss_peak_bytes": 14942208,
+      "pss_peak_bytes": 12833792,
+      "processes": 1,
+      "readings": 30
+    },
+    "verdict": "pass",
+    "reasons": []
+  },
+  "steps": [
+    {
+      "concurrent": 1,
+      "calls": 2,
+      "calls_failed": 0,
+      "failures": [],
+      "turns_expected": 4,
+      "turns_answered": 4,
+      "talked_over": 0,
+      "bot_speaking": 0,
+      "no_response": 0,
+      "bad_rate": 0.0,
+      "v2v": {
+        "count": 4,
+        "p50_us": 941355,
+        "p90_us": 984523,
+        "p95_us": 984523,
+        "p99_us": 984523,
+        "max_us": 984523
+      },
+      "p95_over_floor_us": 124523,
+      "max_send_lateness_us": 1613,
+      "late_frames": 0,
+      "timed_frames": 1464,
+      "wall_ms": 29738,
+      "rss_before_bytes": 1381797888,
+      "pss_before_bytes": 1085788160,
+      "target": {
+        "cpu_cores": 0.13220826945398692,
+        "rss_peak_bytes": 1502121984,
+        "pss_peak_bytes": 1202256896,
+        "processes": 10,
+        "readings": 59
+      },
+      "client": {
+        "cpu_cores": 0.02066325647436043,
+        "rss_peak_bytes": 15990784,
+        "pss_peak_bytes": 14074880,
+        "processes": 1,
+        "readings": 60
+      },
+      "verdict": "pass",
+      "reasons": []
+    },
+    {
+      "concurrent": 5,
+      "calls": 10,
+      "calls_failed": 0,
+      "failures": [],
+      "turns_expected": 20,
+      "turns_answered": 20,
+      "talked_over": 0,
+      "bot_speaking": 0,
+      "no_response": 0,
+      "bad_rate": 0.0,
+      "v2v": {
+        "count": 20,
+        "p50_us": 944351,
+        "p90_us": 963122,
+        "p95_us": 964040,
+        "p99_us": 964289,
+        "max_us": 964289
+      },
+      "p95_over_floor_us": 104040,
+      "max_send_lateness_us": 2064,
+      "late_frames": 0,
+      "timed_frames": 7320,
+      "wall_ms": 32924,
+      "rss_before_bytes": 1502121984,
+      "pss_before_bytes": 1202188288,
+      "target": {
+        "cpu_cores": 0.5424966506837158,
+        "rss_peak_bytes": 1932869632,
+        "pss_peak_bytes": 1632276480,
+        "processes": 10,
+        "readings": 65
+      },
+      "client": {
+        "cpu_cores": 0.03259175247205108,
+        "rss_peak_bytes": 16515072,
+        "pss_peak_bytes": 14984192,
+        "processes": 1,
+        "readings": 66
+      },
+      "verdict": "pass",
+      "reasons": []
+    },
+    {
+      "concurrent": 10,
+      "calls": 20,
+      "calls_failed": 0,
+      "failures": [],
+      "turns_expected": 40,
+      "turns_answered": 40,
+      "talked_over": 0,
+      "bot_speaking": 0,
+      "no_response": 0,
+      "bad_rate": 0.0,
+      "v2v": {
+        "count": 40,
+        "p50_us": 961418,
+        "p90_us": 966747,
+        "p95_us": 982410,
+        "p99_us": 1058475,
+        "max_us": 1058475
+      },
+      "p95_over_floor_us": 122410,
+      "max_send_lateness_us": 1939,
+      "late_frames": 0,
+      "timed_frames": 14640,
+      "wall_ms": 33315,
+      "rss_before_bytes": 1932869632,
+      "pss_before_bytes": 1632153600,
+      "target": {
+        "cpu_cores": 1.0330764089843585,
+        "rss_peak_bytes": 2491449344,
+        "pss_peak_bytes": 2188086272,
+        "processes": 10,
+        "readings": 66
+      },
+      "client": {
+        "cpu_cores": 0.04572362138940417,
+        "rss_peak_bytes": 17563648,
+        "pss_peak_bytes": 16249856,
+        "processes": 1,
+        "readings": 67
+      },
+      "verdict": "pass",
+      "reasons": []
+    },
+    {
+      "concurrent": 20,
+      "calls": 40,
+      "calls_failed": 0,
+      "failures": [],
+      "turns_expected": 80,
+      "turns_answered": 80,
+      "talked_over": 0,
+      "bot_speaking": 0,
+      "no_response": 0,
+      "bad_rate": 0.0,
+      "v2v": {
+        "count": 80,
+        "p50_us": 961791,
+        "p90_us": 969302,
+        "p95_us": 975243,
+        "p99_us": 1153616,
+        "max_us": 1153616
+      },
+      "p95_over_floor_us": 115243,
+      "max_send_lateness_us": 2167,
+      "late_frames": 0,
+      "timed_frames": 29280,
+      "wall_ms": 33535,
+      "rss_before_bytes": 2491449344,
+      "pss_before_bytes": 2187865088,
+      "target": {
+        "cpu_cores": 2.016060956377097,
+        "rss_peak_bytes": 4385570816,
+        "pss_peak_bytes": 4080110592,
+        "processes": 10,
+        "readings": 66
+      },
+      "client": {
+        "cpu_cores": 0.07874302201373538,
+        "rss_peak_bytes": 19660800,
+        "pss_peak_bytes": 18355200,
+        "processes": 1,
+        "readings": 68
+      },
+      "verdict": "pass",
+      "reasons": []
+    },
+    {
+      "concurrent": 40,
+      "calls": 80,
+      "calls_failed": 0,
+      "failures": [],
+      "turns_expected": 160,
+      "turns_answered": 160,
+      "talked_over": 0,
+      "bot_speaking": 0,
+      "no_response": 0,
+      "bad_rate": 0.0,
+      "v2v": {
+        "count": 160,
+        "p50_us": 968774,
+        "p90_us": 1042287,
+        "p95_us": 1134170,
+        "p99_us": 1264724,
+        "max_us": 1349384
+      },
+      "p95_over_floor_us": 274170,
+      "max_send_lateness_us": 2185,
+      "late_frames": 0,
+      "timed_frames": 58560,
+      "wall_ms": 33675,
+      "rss_before_bytes": 4385570816,
+      "pss_before_bytes": 4079643648,
+      "target": {
+        "cpu_cores": 3.7187631648730033,
+        "rss_peak_bytes": 8201768960,
+        "pss_peak_bytes": 7881764864,
+        "processes": 10,
+        "readings": 65
+      },
+      "client": {
+        "cpu_cores": 0.126463851464696,
+        "rss_peak_bytes": 22978560,
+        "pss_peak_bytes": 21894144,
+        "processes": 1,
+        "readings": 68
+      },
+      "verdict": "pass",
+      "reasons": []
+    },
+    {
+      "concurrent": 50,
+      "calls": 100,
+      "calls_failed": 11,
+      "failures": [
+        "the connection broke: IO error: Connection reset by peer (os error 104)"
+      ],
+      "turns_expected": 200,
+      "turns_answered": 173,
+      "talked_over": 0,
+      "bot_speaking": 0,
+      "no_response": 5,
+      "bad_rate": 0.135,
+      "v2v": {
+        "count": 173,
+        "p50_us": 973921,
+        "p90_us": 1109178,
+        "p95_us": 1217526,
+        "p99_us": 1520031,
+        "max_us": 1527893
+      },
+      "p95_over_floor_us": 357526,
+      "max_send_lateness_us": 2176,
+      "late_frames": 0,
+      "timed_frames": 72109,
+      "wall_ms": 43257,
+      "rss_before_bytes": 6766440448,
+      "pss_before_bytes": 6447820800,
+      "target": {
+        "cpu_cores": 0.0,
+        "rss_peak_bytes": 8897363968,
+        "pss_peak_bytes": 8573151232,
+        "processes": 11,
+        "readings": 82
+      },
+      "client": {
+        "cpu_cores": 0.1424209561524513,
+        "rss_peak_bytes": 30396416,
+        "pss_peak_bytes": 29184000,
+        "processes": 1,
+        "readings": 87
+      },
+      "verdict": "fail",
+      "reasons": [
+        "11 of 100 calls failed",
+        "27 of 200 turns lost or not clean (0 talked over, 5 no response, 0 bot speaking; allowed 0.0 %)"
+      ]
+    },
+    {
+      "concurrent": 60,
+      "calls": 120,
+      "calls_failed": 16,
+      "failures": [
+        "the connection broke: IO error: Connection reset by peer (os error 104)",
+        "a write failed: IO error: Connection reset by peer (os error 104)"
+      ],
+      "turns_expected": 240,
+      "turns_answered": 197,
+      "talked_over": 2,
+      "bot_speaking": 0,
+      "no_response": 9,
+      "bad_rate": 0.17916666666666667,
+      "v2v": {
+        "count": 197,
+        "p50_us": 1021177,
+        "p90_us": 1665049,
+        "p95_us": 2160526,
+        "p99_us": 5791453,
+        "max_us": 5967271
+      },
+      "p95_over_floor_us": 1300526,
+      "max_send_lateness_us": 2193,
+      "late_frames": 0,
+      "timed_frames": 82933,
+      "wall_ms": 43507,
+      "rss_before_bytes": 7114936320,
+      "pss_before_bytes": 6794729472,
+      "target": {
+        "cpu_cores": 0.0,
+        "rss_peak_bytes": 8830660608,
+        "pss_peak_bytes": 8506993664,
+        "processes": 10,
+        "readings": 83
+      },
+      "client": {
+        "cpu_cores": 0.15101274402080828,
+        "rss_peak_bytes": 30351360,
+        "pss_peak_bytes": 29184000,
+        "processes": 1,
+        "readings": 87
+      },
+      "verdict": "fail",
+      "reasons": [
+        "16 of 120 calls failed",
+        "43 of 240 turns lost or not clean (2 talked over, 9 no response, 0 bot speaking; allowed 0.0 %)"
+      ]
+    },
+    {
+      "concurrent": 80,
+      "calls": 160,
+      "calls_failed": 38,
+      "failures": [
+        "the connection broke: IO error: Connection reset by peer (os error 104)",
+        "call: before started: IO error: Connection reset by peer (os error 104)",
+        "call: before started: WebSocket protocol error: Connection reset without closing handshake"
+      ],
+      "turns_expected": 320,
+      "turns_answered": 223,
+      "talked_over": 9,
+      "bot_speaking": 0,
+      "no_response": 12,
+      "bad_rate": 0.303125,
+      "v2v": {
+        "count": 223,
+        "p50_us": 1038903,
+        "p90_us": 1579756,
+        "p95_us": 2002088,
+        "p99_us": 2793698,
+        "max_us": 6075940
+      },
+      "p95_over_floor_us": 1142088,
+      "max_send_lateness_us": 2171,
+      "late_frames": 0,
+      "timed_frames": 102145,
+      "wall_ms": 44237,
+      "rss_before_bytes": 8201768960,
+      "pss_before_bytes": 7880540160,
+      "target": {
+        "cpu_cores": 0.0,
+        "rss_peak_bytes": 8919416832,
+        "pss_peak_bytes": 8568500224,
+        "processes": 10,
+        "readings": 85
+      },
+      "client": {
+        "cpu_cores": 0.14939877683305705,
+        "rss_peak_bytes": 32653312,
+        "pss_peak_bytes": 31444992,
+        "processes": 1,
+        "readings": 89
+      },
+      "verdict": "fail",
+      "reasons": [
+        "38 of 160 calls failed",
+        "97 of 320 turns lost or not clean (9 talked over, 12 no response, 0 bot speaking; allowed 0.0 %)"
+      ]
+    }
+  ],
+  "conclusion": {
+    "max_concurrent": 40,
+    "first_failure": 50,
+    "limit": "found"
+  }
+}

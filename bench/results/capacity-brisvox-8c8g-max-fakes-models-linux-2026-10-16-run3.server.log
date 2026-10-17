@@ -1,0 +1,2 @@
+[2m2026-10-16T03:51:09.983845Z[0m [33m WARN[0m [2mbrisvox_providers::net[0m[2m:[0m BRISVOX_EXTRA_CA_FILE is set: provider connections also trust this CA (meant for tests and benchmarks) [3mfile[0m[2m=[0m/pki/ca.pem
+[2m2026-10-16T03:59:34.854982Z[0m [31mERROR[0m [2mbrisvox_core::pipeline[0m[2m:[0m processor failed [3mpipeline[0m[2m=[0m"transport.out" [3mstage[0m[2m=[0m"pacer" [3merror[0m[2m=[0mchannel closed: inbox

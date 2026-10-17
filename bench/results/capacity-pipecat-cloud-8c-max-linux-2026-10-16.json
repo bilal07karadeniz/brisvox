@@ -1,0 +1,65 @@
+{
+  "schema": "brisvox-bench/capacity-summary/1",
+  "system": "pipecat-cloud-8c-max",
+  "date": "2026-10-16",
+  "label": "pipecat 8 vCPU / 8 GB, cloud (AMD EPYC 9655P), max ramp",
+  "environment": {
+    "os": "linux",
+    "arch": "x86_64",
+    "logical_cores": 8,
+    "release_build": true,
+    "not_linux_run": false,
+    "banner": null
+  },
+  "note": "cloud containers (AMD EPYC 9655P, Linux), server limits 8 vCPU / 8 GB (cgroup cpu.max and memory.max, checked from the samples); the fake providers and this load generator ran in containers of their own; server CPU and memory per step from the server container's cgroup samples every 2 s (steps[].target)",
+  "runs": [
+    {
+      "file": "capacity-pipecat-cloud-8c-max-linux-2026-10-16-run1.json",
+      "max_concurrent": 10,
+      "first_failure": 20,
+      "limit": "found",
+      "failure_reason": "3 of 80 turns lost or not clean (0 talked over, 3 no response, 0 bot speaking; allowed 0.0 %)",
+      "p95_v2v_ms": 1126,
+      "p50_v2v_ms": 1020,
+      "server_cpu_cores": 1.95,
+      "mcores_per_call": 194.64,
+      "rss_peak_mb": 3623,
+      "generator_cpu_cores": 0.02,
+      "max_send_lateness_ms": 6,
+      "pss_peak_mb": 3289
+    },
+    {
+      "file": "capacity-pipecat-cloud-8c-max-linux-2026-10-16-run2.json",
+      "max_concurrent": 20,
+      "first_failure": 30,
+      "limit": "found",
+      "failure_reason": "2 of 60 calls failed; 14 of 120 turns lost or not clean (7 talked over, 3 no response, 0 bot speaking; allowed 0.0 %)",
+      "p95_v2v_ms": 1268,
+      "p50_v2v_ms": 1068,
+      "server_cpu_cores": 3.55,
+      "mcores_per_call": 177.54,
+      "rss_peak_mb": 5910,
+      "generator_cpu_cores": 0.03,
+      "max_send_lateness_ms": 8,
+      "pss_peak_mb": 5537
+    },
+    {
+      "file": "capacity-pipecat-cloud-8c-max-linux-2026-10-16-run3.json",
+      "max_concurrent": 10,
+      "first_failure": 20,
+      "limit": "found",
+      "failure_reason": "1 of 80 turns lost or not clean (0 talked over, 1 no response, 0 bot speaking; allowed 0.0 %)",
+      "p95_v2v_ms": 1109,
+      "p50_v2v_ms": 1007,
+      "server_cpu_cores": 2.16,
+      "mcores_per_call": 216.28,
+      "rss_peak_mb": 2938,
+      "generator_cpu_cores": 0.02,
+      "max_send_lateness_ms": 7,
+      "pss_peak_mb": 2577
+    }
+  ],
+  "median_max_concurrent": 10,
+  "min_max_concurrent": 10,
+  "max_max_concurrent": 20
+}

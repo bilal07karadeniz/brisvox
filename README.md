@@ -23,13 +23,14 @@ moment. Open source, one process, hundreds of isolated calls per container.**
 Built to beat Pipecat on three axes with the same speech and language providers: latency, density
 and correctness.
 
-- **Density.** With the real Silero VAD and Smart Turn models running on every call, one 4-CPU /
-  4 GiB container carried **325 concurrent calls** within the latency SLO against **23** for
-  LiveKit Agents 1.8 (tuned; its defaults passed none) and **20** for Pipecat 1.12.0, each with
-  its own VAD and turn model: about **14 to 16 times** the calls in this harness, with much less
-  memory at the maximum (about 430 MB against about 3 GB and 4 GB; how each was counted is under
-  "How to read the numbers"). Each call is an isolated session; a panic or a provider failure in
-  one cannot touch another.
+- **Density.** Every call through each system's own provider client code (Deepgram live STT, an
+  OpenAI-compatible LLM and Deepgram Aura over TLS, against protocol-faithful fake servers) with the
+  real Silero VAD and Smart Turn models on every call: one 4 vCPU / 4 GB cloud container carried
+  **250 concurrent calls** within the latency SLO and **430** without a failed call or a lost turn,
+  against **1** and **10** for Pipecat 1.12.0. At 8 vCPU / 8 GB brisvox nearly doubled to **470**
+  and **780**; Pipecat stayed at **10**. At its maximum brisvox used about 1.8 MB of memory and
+  0.007 cores per call, Pipecat about 240 MB and 0.14 cores. Each call is an isolated session; a
+  panic or a provider failure in one cannot touch another.
 - **Latency.** The engine's own added time is tens of microseconds per stage (0.089 ms at p95 from
   end of turn to the LLM request, budget 3 ms). On real providers (Deepgram, OpenRouter pinned to
   one upstream, Deepgram Aura voice), 5 concurrent calls, 100 turns per system, the median
@@ -52,33 +53,30 @@ and correctness.
 
 ### Capacity
 
-<p align="center"><img src="assets/charts/capacity-models.svg" alt="Bar chart: concurrent calls per 4-CPU / 4 GiB container with the real models, brisvox 325, Pipecat 20, LiveKit Agents 23 tuned and 0 with its defaults" width="720"></p>
+<p align="center"><img src="assets/charts/capacity-cloud.svg" alt="Bar chart: concurrent calls within the latency SLO on AMD EPYC 9655P cloud containers, 4 vCPU / 4 GB: brisvox 250, Pipecat 1; 8 vCPU / 8 GB: brisvox 470, Pipecat 10" width="720"></p>
 
-The same container, the same SLO (p95 voice-to-voice at most 1200 ms), mock providers so that only
-the framework and its models are measured, three runs each. Pipecat (four worker processes, the
-models loaded in each) is memory-bound: its workers are killed at the 4 GiB limit around 25 calls.
-LiveKit Agents (one process per call) stopped with headroom left (about 2.1 of 4 cores, about 3 of
-4 GiB): the failing steps were calls that got no agent within 10 s when a whole round of calls
-started at once, so 23 is a lower bound under this arrival pattern, not a resource ceiling (an
-unverified explanation; LiveKit's own test ran 30 agents on 4 cores). Its media also crosses a
-LiveKit server (the SFU, outside the 4-CPU budget) and its one-call latency sits about 180 ms over
-the others' floor, leaving it less of the SLO's margin. With its default settings LiveKit Agents
-passed no step at all: its turn detector scored the benchmark's utterances just under its
-end-of-turn threshold and waited its 2.5 s maximum delay on about 45 % of turns, so even one call
-missed the SLO. The tuned run lowers that threshold (the model still runs on every turn) and is
-the number shown ([methodology](bench/livekit_baseline/README.md)).
+The same SLO for both (p95 voice-to-voice at most 1110 ms: the fake providers' own 860 ms plus
+250 ms), three runs each on a fresh container, one system at a time, on one CPU model (AMD EPYC
+9655P; deployments the cloud placed on other CPUs were redeployed) with the container limits
+checked in its own samples. On these cores a single Pipecat call already sits near the limit (p95
+about 1.05 to 1.1 s at one call, about 200 ms above the providers' floor, against 10 to 30 ms for
+brisvox), so its SLO number is decided by per-turn latency more than by load. The next chart drops
+the latency limit and shows how many calls each system holds without failing:
 
-<p align="center"><img src="assets/charts/memory-models.svg" alt="Bar chart: memory at the maximum load with the real models, PSS for all three, brisvox 427 MB at 325 calls, Pipecat 4.0 GB at 20 calls, LiveKit Agents 3.0 GB at 23 calls" width="720"></p>
+<p align="center"><img src="assets/charts/capacity-cloud-max.svg" alt="Bar chart: most concurrent calls without a failed call or a lost turn, 4 vCPU / 4 GB: brisvox 430, Pipecat 10; 8 vCPU / 8 GB: brisvox 780, Pipecat 10" width="720"></p>
 
-Without the models (an energy VAD and a fixed Smart Turn answer) the framework cost alone is:
+Pipecat (one worker process per vCPU, Silero and Smart Turn loaded in each) runs out of memory at
+20 calls in 4 GB: workers are killed and their calls drop. With 8 GB it lost turns at 20 calls in
+two of three runs (no response); the third held 20 and reached the 8 GB limit at 30, where calls
+dropped. So the extra cores and memory did not raise its median. brisvox is bound by CPU: twice
+the container gave about 1.9 times the calls.
 
-<p align="center"><img src="assets/charts/capacity-framework.svg" alt="Bar chart: concurrent calls per container, framework only, brisvox 2100, Pipecat tuned 90, Pipecat defaults 70" width="720"></p>
+<p align="center"><img src="assets/charts/memory-cloud.svg" alt="Bar chart: server memory at the maximum load, 4 vCPU / 4 GB: brisvox 753 MB at 430 calls, Pipecat 2.4 GB at 10 calls; 8 vCPU / 8 GB: brisvox 1.3 GB at 780 calls, Pipecat 3.3 GB at 10 calls" width="720"></p>
 
-<p align="center"><img src="assets/charts/latency-vs-calls-models.svg" alt="Line chart: p50 and p95 voice-to-voice latency against concurrent calls with the real models; each system stays flat until its capacity, then crosses the 1200 ms SLO" width="720"></p>
+<p align="center"><img src="assets/charts/latency-vs-calls-cloud.svg" alt="Line chart: p50 and p95 voice-to-voice latency against concurrent calls at 8 vCPU / 8 GB; brisvox stays at the providers' floor up to about 480 calls, Pipecat crosses the SLO within 20 calls" width="720"></p>
 
-Latency stays flat until a system runs out of CPU or memory, then crosses the SLO within a step or
-two: the number that matters is where that happens
-([framework-only version](assets/charts/latency-vs-calls-framework.svg)).
+Latency stays at the providers' floor until a system runs out of CPU or memory, then crosses the
+SLO within a step or two: the number that matters is where that happens.
 
 ### Latency
 
@@ -104,28 +102,25 @@ earlier Cartesia runs are in the "Live comparison with real providers" section o
 
 ### How to read the numbers
 
-- **Capacity and memory** are **Linux** runs (WSL2, kernel 6.6, Docker) in equal `--cpus=4
-  --memory=4g` containers, 2026-10-13 (brisvox, Pipecat) and 2026-10-14 (LiveKit Agents), release
-  builds, one system at a time (never two at once, so they never share the CPU), over **mock
-  providers** with the same latencies for all three systems
-  (STT final 150 ms, LLM first token 350 ms, TTS first byte 150 ms). They say how much the
-  framework and its models cost, not what a deployment with real STT, LLM and TTS carries. The
-  Pipecat side is `bench/pipecat_baseline`: a Pipecat 1.12.0 bot speaking the same websocket
-  protocol, measured by the same client with the same definition of voice-to-voice. The LiveKit
-  side is `bench/livekit_baseline`: a LiveKit Agents 1.8.7 worker with the same mock latencies,
-  measured by a LiveKit room client with the same fixtures and definition, searched to a 2-call
-  resolution (the others used coarser steps, which slightly favours LiveKit). brisvox's 325 is the
-  quiet-host rerun of its final build; runs of the same day on a busy host gave 125 to 250
-  (`docs/LATENCY.md`, "Capacity with the models").
-- **Memory is counted the same way for all three: PSS** (proportional set size, read from
-  `/proc/<pid>/smaps_rollup`: a page shared by several processes is split between them), summed
-  over every process of the server. A plain RSS sum counts shared pages once per process: it
-  overstates Pipecat by about 4 % (4.34 GB RSS vs 4.19 GB PSS at 20 calls) and LiveKit by a
-  factor of 6 (18 GB vs 2.9 GB at 22 calls: its job processes are forked from a parent that
-  preloaded the models). brisvox is one process, where the two agree (432 MB RSS, 429 MB PSS at
-  350 calls in the 2026-10-14 cross-check). Pipecat was re-measured for this on 2026-10-14
-  (3 runs, same steps, container and mocks: 20, 20, 15 calls, median 20, as on 2026-10-13 with
-  20, 15, 20).
+- **Capacity and memory** are cloud runs of 2026-10-16/17: Linux containers on AMD EPYC 9655P
+  (Zen 5) limited to 4 vCPU / 4 GB and 8 vCPU / 8 GB, release builds, one system at a time. Every
+  call goes through each system's own provider clients (brisvox's Rust adapters; Pipecat's
+  `DeepgramSTTService`, `OpenAILLMService` and `DeepgramTTSService`) to fake providers that speak
+  the real Deepgram and OpenAI-compatible protocols over TLS with fixed latencies (STT final 150 ms
+  after 300 ms of endpointing, LLM first token 350 ms, TTS first audio 150 ms;
+  [`bench/fake_providers`](bench/fake_providers/README.md)), in a container of their own, like the
+  load generator. So the numbers include the provider client code, TLS and both models, not the
+  providers' own variance. The Pipecat side is `bench/pipecat_baseline`: a Pipecat 1.12.0 bot
+  speaking the same websocket protocol with the same agent file, measured by the same client with
+  the same definition of voice-to-voice. brisvox's admission control was off for the ramp; in
+  production it refuses calls past its capacity instead of degrading the running ones. LiveKit
+  Agents was not part of this run.
+- **Memory is PSS** (proportional set size: a page shared by several processes is split between
+  them) summed over the server container's processes, from its cgroup samples every 2 s.
+- The same comparison runs locally with `PROVIDERS=fakes MODELS=1 bench/capacity_linux.sh` (Docker
+  containers with the same limits). The Smart Turn model is memory-bandwidth heavy (about 200 MB of
+  memory traffic per analysis), so on a desktop with little memory bandwidth it can stop brisvox
+  from scaling with cores before the CPU does; the cloud host above does not.
 - **Live voice-to-voice** is **Windows** on a shared development machine over the public internet,
   one evening (100 turns per system, 5 concurrent calls, alternating blocks; Cartesia's plan allows
   only 2 concurrent generations, hence the Aura voice); absolute numbers carry noise. **Engine overhead** is the Windows run over mocks.
@@ -139,10 +134,7 @@ earlier Cartesia runs are in the "Live comparison with real providers" section o
 
 Two kinds of rows. **Measured** rows come from this repository's own benchmark harness (files named
 in the last column; the table is generated from them); "not measured" means this repository has
-no such run for that system yet. LiveKit Agents runs over its own WebRTC SFU (a LiveKit server in
-a separate container, not counted in the 4-CPU budget: about 0.45 cores and 290 MB at the maximum,
-reported in `bench/results/capacity-livekit-sfu-2026-10-14.md`); the other two run over a
-websocket. **Documented** rows are what each project's own documentation and
+no such run for that system yet. **Documented** rows are what each project's own documentation and
 repository say, fetched 2026-10-14, not benchmarks; the bracketed tags are source ids listed in
 [`docs/research/frameworks-2026-10-14.md`](docs/research/frameworks-2026-10-14.md), where every
 fact carries its URL and what is inferred or not stated is marked as such.
@@ -151,9 +143,13 @@ fact carries its URL and what is inferred or not stated is marked as such.
 
 | Measured here | brisvox | LiveKit Agents | Pipecat 1.12 | Source |
 |---|---|---|---|---|
-| Concurrent calls within the latency SLO, **real VAD and turn-detection models on every call** (Silero + Smart Turn; LiveKit: Silero + its own turn detector), one 4-CPU / 4 GiB container, mock providers (median, runs in brackets) | **325** (325, 325, 325) | **23** (22, 23, 25) tuned; **0** (0, 0, 0) defaults | **20** (20, 20, 15) | `bench/results/capacity-*-models-linux-*` |
-| Concurrent calls, **framework only** (energy VAD, fixed turn answer), same 4-CPU / 4 GiB container | **2100** (2100, 2100, 2200) | not measured | **90** (70, 90, 90) tuned; **70** (70, 70, 70) defaults | `bench/results/capacity-*-linux-*` |
-| Memory at that maximum (real models; PSS summed over the server's processes for all three; brisvox is one process, PSS = RSS) | 427 MB at 325 calls | 3.0 GB at 23 calls tuned | 4.0 GB at 20 calls | same files |
+| Concurrent calls within the latency SLO (p95 voice-to-voice at most 1110 ms), **4 vCPU / 4 GB** (median, runs in brackets) | **250** (260, 250, 220) | not measured | **1** (1, 1, 0) | `bench/results/capacity-*-cloud-4c-linux-*` |
+| Most concurrent calls with no failed call and no lost turn (any latency), **4 vCPU / 4 GB** | **430** (430, 480, 400) | not measured | **10** (10, 10, 10) | `bench/results/capacity-*-cloud-4c-max-linux-*` |
+| Server memory at that maximum, 4 vCPU / 4 GB (PSS summed over the container's processes) | 753 MB at 430 calls | not measured | 2.4 GB at 10 calls | same files |
+| Concurrent calls within the latency SLO (p95 voice-to-voice at most 1110 ms), **8 vCPU / 8 GB** (median, runs in brackets) | **470** (480, 460, 470) | not measured | **10** (10, 5, 10) | `bench/results/capacity-*-cloud-8c-linux-*` |
+| Most concurrent calls with no failed call and no lost turn (any latency), **8 vCPU / 8 GB** | **780** (740, 780, 800) | not measured | **10** (10, 20, 10) | `bench/results/capacity-*-cloud-8c-max-linux-*` |
+| Server memory at that maximum, 8 vCPU / 8 GB (PSS summed over the container's processes) | 1.3 GB at 780 calls | not measured | 3.3 GB at 10 calls | same files |
+| Per call at that maximum, 4 vCPU / 4 GB: memory and CPU (idle baseline included) | 1.8 MB, 0.007 cores | not measured | 239.9 MB, 0.137 cores | same files |
 | Voice-to-voice on real providers, English, p50 / p95 (5 concurrent calls, 100 turns, Deepgram Aura voice; Windows, public internet) | 1.85 s / 2.88 s (100 turns) | not measured | 1.97 s / 4.35 s (100 turns) | `bench/results/v2v-live-*-windows-*` |
 
 <!-- measured:end -->
@@ -165,7 +161,7 @@ fact carries its URL and what is inferred or not stated is marked as such.
 | Runtime model | one process, one isolated async session per call, models on a dedicated thread pool | one OS process per job, "each in its own process for isolation" [L7] | documented as one session per process or container [P5] |
 | Needs a media server | no: WebSocket, Twilio and Telnyx built in; WebRTC and SIP are cargo features | yes: a LiveKit server (Cloud or self-hosted), the agent joins a room [L6] | no for WebSocket and SmallWebRTC; the Daily and LiveKit transports use those vendors' infrastructure [P7] |
 | Telephony | Twilio and Telnyx media streams, SIP trunk listener, DTMF, transfer | LiveKit SIP service: Twilio, Telnyx, Plivo and others, DTMF, cold and warm transfer [L12] | Twilio, Telnyx, Plivo, Exotel serializers [P7]; no SIP stack of its own found in the pages read (inferred) |
-| Turn detection | Smart Turn v3.2 (ONNX, on device) with an adaptive policy | own turn-detector models: a text model (396 MB on disk, about 50-160 ms per turn on CPU) and the audio model `v1-mini` (the one the capacity run used; its size and cost are not stated) [L8] | Smart Turn v3 (8 MB int8) [P8][P10] |
+| Turn detection | Smart Turn v3.2 (ONNX, on device) with an adaptive policy | own turn-detector models: a text model (396 MB on disk, about 50-160 ms per turn on CPU) and the audio model `v1-mini` (its size and cost are not stated) [L8] | Smart Turn v3 (8 MB int8) [P8][P10] |
 | Turkish | first class ([`docs/TURKISH.md`](docs/TURKISH.md)) | listed by both turn detectors [L8] | listed by Smart Turn [P10] |
 | Interruptions | turn epochs; context keeps only the text actually played | adaptive mode separates interruptions from backchannel, resumes after a false one [L13] | cancels LLM and TTS, flushes audio, commits only the played text; a minimum-words turn-start strategy and a Krisp backchannel filter [P12] |
 | Tools | `read_only` / `side_effect` kinds, idempotency keys, never speculative; written in Rust, Python or TypeScript | function tools, async tools, handoff, MCP (Python), provider-side tools; parallel calls not stated on the page read [L15] | parallel calls by default, async tools, per-tool timeouts, cancel on interruption; MCP not checked [P13] |

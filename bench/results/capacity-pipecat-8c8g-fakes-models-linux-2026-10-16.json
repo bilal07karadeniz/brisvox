@@ -1,0 +1,65 @@
+{
+  "schema": "brisvox-bench/capacity-summary/1",
+  "system": "pipecat-8c8g-fakes-models",
+  "date": "2026-10-16",
+  "label": "pipecat-8c8g-fakes-models (8 CPUs, 8g, Linux)",
+  "environment": {
+    "os": "linux",
+    "arch": "x86_64",
+    "logical_cores": 8,
+    "release_build": true,
+    "not_linux_run": false,
+    "banner": null
+  },
+  "note": "quiet gate passed after 90s: no cargo/rustc/link.exe on Windows, WSL load1 1.42 (< 1.5); 8 Pipecat process(es); real provider clients against bench/fake_providers over TLS (cores 16-19, outside the limits); Linux kernel 6.6.87.2-microsoft-standard-WSL2; container --cpus=8 --cpuset-cpus=0-7 --memory=8g --memory-swap=8g --ulimit nofile=1048576:1048576 --network host, server cores 0-7, generator cores 8-15 (bench/capacity_linux.sh)",
+  "runs": [
+    {
+      "file": "capacity-pipecat-8c8g-fakes-models-linux-2026-10-16-run1.json",
+      "max_concurrent": 40,
+      "first_failure": 50,
+      "limit": "found",
+      "failure_reason": "14 of 100 calls failed; 75 of 200 turns lost or not clean (38 talked over, 7 no response, 2 bot speaking; allowed 0.0 %); p95 V2V 7018 ms is above the limit 1110 ms (floor 860 ms + 250 ms)",
+      "p95_v2v_ms": 1072,
+      "p50_v2v_ms": 968,
+      "server_cpu_cores": 3.84,
+      "mcores_per_call": 96.06,
+      "rss_peak_mb": 8436,
+      "generator_cpu_cores": 0.13,
+      "max_send_lateness_ms": 2,
+      "pss_peak_mb": 8116
+    },
+    {
+      "file": "capacity-pipecat-8c8g-fakes-models-linux-2026-10-16-run2.json",
+      "max_concurrent": 20,
+      "first_failure": 30,
+      "limit": "found",
+      "failure_reason": "16 of 60 calls failed; 35 of 120 turns lost or not clean (0 talked over, 3 no response, 0 bot speaking; allowed 0.0 %)",
+      "p95_v2v_ms": 994,
+      "p50_v2v_ms": 961,
+      "server_cpu_cores": 2.01,
+      "mcores_per_call": 100.44,
+      "rss_peak_mb": 4103,
+      "generator_cpu_cores": 0.08,
+      "max_send_lateness_ms": 2,
+      "pss_peak_mb": 3792
+    },
+    {
+      "file": "capacity-pipecat-8c8g-fakes-models-linux-2026-10-16-run3.json",
+      "max_concurrent": 20,
+      "first_failure": 30,
+      "limit": "found",
+      "failure_reason": "23 of 60 calls failed; 51 of 120 turns lost or not clean (0 talked over, 5 no response, 0 bot speaking; allowed 0.0 %); p95 V2V 1805 ms is above the limit 1110 ms (floor 860 ms + 250 ms)",
+      "p95_v2v_ms": 992,
+      "p50_v2v_ms": 962,
+      "server_cpu_cores": 2.01,
+      "mcores_per_call": 100.36,
+      "rss_peak_mb": 4122,
+      "generator_cpu_cores": 0.07,
+      "max_send_lateness_ms": 2,
+      "pss_peak_mb": 3812
+    }
+  ],
+  "median_max_concurrent": 20,
+  "min_max_concurrent": 20,
+  "max_max_concurrent": 40
+}

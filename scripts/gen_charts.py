@@ -9,12 +9,23 @@ Standard library only, deterministic (no timestamps), so the staleness check is 
 verify.sh runs --check. Every number in a chart is read from a file in bench/results/; the chart's
 own caption names the files. Which file feeds which chart:
 
-  capacity-models.svg              capacity, real models      capacity-<system>-...-models-linux-<date>.json
-  capacity-framework.svg           capacity, framework only   capacity-<system>-linux-<date>.json
-  memory-models.svg                PSS at the maximum load    the same files as capacity-models.svg
-  latency-vs-calls-models.svg      p50/p95 V2V per step       the run files named by those summaries
-  latency-vs-calls-framework.svg   p50/p95 V2V per step       the run files named by capacity-framework
+  capacity-cloud.svg               capacity within the SLO    capacity-<system>-cloud-<N>c-linux-<date>.json
+  capacity-cloud-max.svg           most calls, no failure     capacity-<system>-cloud-<N>c-max-linux-<date>.json
+  memory-cloud.svg                 PSS at the maximum load    the same files as capacity-cloud-max.svg
+  latency-vs-calls-cloud.svg       p50/p95 V2V per step       the 8c max run files named by those summaries
   v2v-live.svg                     live V2V, real providers   v2v-live-<system>[-tr]-<platform>-<date>.json
+  engine-overhead.svg              engine time per stage      v2v-sim.json (engine_stages)
+
+A chart is skipped (and its file must not exist) when none of its inputs exist.
+
+The measured rows of the README comparison table (between the `measured:begin` / `measured:end`
+comments) are generated from the same files; a system without files shows "not measured".
+
+Adding a system: write its result files with the same schema under these names and the next run of
+this script adds it to every chart, no code change (the colour is fixed per system in COLORS):
+
+  capacity                capacity-livekit-cloud-<N>c[-max]-linux-<date>.json  (+ the -run<N>.json files)
+  live V2V, real providers   v2v-live-<system>[-tr]-<platform>-<date>.json
   engine-overhead.svg              engine time per stage      v2v-sim.json (engine_stages)
 
 A chart is skipped (and its file must not exist) when none of its inputs exist.
@@ -47,20 +58,26 @@ RESULTS = ROOT / "bench" / "results"
 OUT = ROOT / "assets" / "charts"
 
 # --- which result files feed the capacity charts ---------------------------------------------
-# (system id, legend label, glob in bench/results). Only files with the capacity-summary schema
-# match (the -run<N> files share the glob and are skipped); the latest date wins.
-MODELS_SERIES = [
-    ("brisvox", "brisvox", "capacity-brisvox-q-turnexec-r*-models-linux-*.json"),
-    ("pipecat", "Pipecat 1.12 (tuned)", "capacity-pipecat-q-tuned-models-linux-*.json"),
-    ("livekit", "LiveKit Agents 1.8 (tuned)", "capacity-livekit-models-linux-*.json"),
-    ("livekit-default", "LiveKit Agents 1.8 (defaults)", "capacity-livekit-default-models-linux-*.json"),
-]
-FRAMEWORK_SERIES = [
-    ("brisvox", "brisvox", "capacity-brisvox-linux-*.json"),
-    ("pipecat", "Pipecat 1.12 (tuned)", "capacity-pipecat-tuned-linux-*.json"),
-    ("pipecat-default", "Pipecat 1.12 (defaults)", "capacity-pipecat-linux-*.json"),
-    ("livekit", "LiveKit Agents", "capacity-livekit-linux-*.json"),
-]
+# The cloud runs: each system's real provider client code against bench/fake_providers over TLS,
+# the real Silero VAD and Smart Turn models, server containers on AMD EPYC 9655P with 4 vCPU / 4 GB
+# and 8 vCPU / 8 GB limits. Two ramps per size: within the SLO, and "max" (no failed call and no
+# lost turn, at any latency). (system id, legend label, glob in bench/results); only files with
+# the capacity-summary schema match (the -run<N> files share the glob and are skipped); the latest
+# date wins.
+CLOUD_SIZES = [("4", "4 vCPU / 4 GB"), ("8", "8 vCPU / 8 GB")]
+CLOUD_SYSTEMS = [("brisvox", "brisvox"), ("pipecat", "Pipecat 1.12"), ("livekit", "LiveKit Agents")]
+
+
+def cloud_series(size: str, mode: str) -> list[tuple[str, str, str]]:
+    suffix = "-max" if mode == "max" else ""
+    return [(sid, label, f"capacity-{sid}-cloud-{size}c{suffix}-linux-*.json") for sid, label in CLOUD_SYSTEMS]
+
+
+CLOUD_SLO_MS = 1110  # floor 860 ms (the fake providers' latency sum) + 250 ms
+CLOUD_SETUP = (
+    "each system's own provider client code against protocol-faithful fake STT, LLM and TTS servers "
+    "over TLS, the real Silero VAD and Smart Turn models on every call, AMD EPYC 9655P cloud containers"
+)
 LIVE_SYSTEMS = {"brisvox": "brisvox", "pipecat": "Pipecat 1.12", "livekit": "LiveKit Agents"}
 # The charts and the README show the English comparison; the Turkish files stay in bench/results.
 LIVE_LANGS = [("en", "English")]
@@ -146,26 +163,6 @@ def load_capacity(series_def) -> list[dict]:
                 runs.append({"row": r, "doc": doc})
         out.append({"id": sid, "label": label, "files": files, "runs": runs})
     return out
-
-
-def container_text(series: list[dict]) -> str:
-    for s in series:
-        for r in s["runs"]:
-            note = (r["doc"] or {}).get("note", "")
-            cpus = re.search(r"--cpus=(\d+)", note)
-            mem = re.search(r"--memory=(\d+)g", note)
-            if cpus and mem:
-                return f"{cpus.group(1)}-CPU / {mem.group(1)} GiB container"
-    return "equal container"
-
-
-def slo_text(series: list[dict]) -> tuple[str, float]:
-    for s in series:
-        for r in s["runs"]:
-            st = (r["doc"] or {}).get("settings", {})
-            if "slo_limit_ms" in st:
-                return f"p95 voice-to-voice <= {st['slo_limit_ms']} ms", float(st["slo_limit_ms"])
-    return "p95 voice-to-voice within the SLO", 0.0
 
 
 def color_css(ids: list[str]) -> str:
@@ -348,72 +345,87 @@ def ratio_text(series: list[dict], key=lambda s: statistics.median(r["row"]["max
     return "brisvox carries about " + " and ".join(parts) + "." if parts else ""
 
 
-def chart_capacity(series: list[dict], uid: str, title: str, what: str) -> str:
-    cont = container_text(series)
-    slo, _ = slo_text(series)
-    groups = []
-    for s in series:
-        vals = [r["row"]["max_concurrent"] for r in s["runs"]]
-        med = statistics.median(vals)
-        groups.append(
-            {
-                "label": s["label"],
-                "sub": ["runs: " + ", ".join(str(v) for v in vals)],
-                "bars": [{"series": s["id"], "value": med, "text": f"{med:.0f}", "runs": vals}],
-            }
-        )
-    ratio = ratio_text(series)
-    sub = f"Concurrent calls within the SLO ({slo}), median of the runs (dots), one {cont}, mock providers. {ratio}"
-    desc = (
-        f"Bar chart, {what}: "
-        + "; ".join(f"{g['label']} {g['bars'][0]['text']} calls ({g['sub'][0]})" for g in groups)
-        + f". {ratio}"
-    )
-    doc = Doc(uid, title, sub, desc, [s["id"] for s in series])
+def median_calls(s: dict) -> float:
+    return statistics.median(r["row"]["max_concurrent"] for r in s["runs"])
+
+
+def chart_cloud_capacity(mode: str) -> str | None:
+    """Grouped bars: one group per container size, one bar per system (median, runs as dots)."""
+    groups, ids, files, desc_parts = [], [], [], []
+    for size, size_label in CLOUD_SIZES:
+        series = load_capacity(cloud_series(size, mode))
+        if not series:
+            continue
+        bars = []
+        for s in series:
+            vals = [r["row"]["max_concurrent"] for r in s["runs"]]
+            med = statistics.median(vals)
+            bars.append({"series": s["id"], "value": med, "text": f"{med:.0f}", "runs": vals})
+            ids.append(s["id"])
+            desc_parts.append(f"{size_label} {s['label']} {med:.0f} (runs {', '.join(map(str, vals))})")
+        files.extend(f for s in series for f in s["files"])
+        # The ratio only on the max ramp: within the SLO a one-call result is decided by milliseconds of
+        # per-turn latency, which a ratio would overstate as capacity.
+        ratio = ratio_text(series) if mode == "max" else ""
+        groups.append({"label": size_label, "sub": [ratio.removeprefix("brisvox carries about ").rstrip(".")] if ratio else [], "bars": bars})
+    if not groups:
+        return None
+    ids = list(dict.fromkeys(ids))
+    labels = dict(CLOUD_SYSTEMS)
+    if mode == "max":
+        uid, title = "capacity-cloud-max", "Most concurrent calls without a failed call or a lost turn"
+        what = "The highest step in which no call failed and no turn was lost, at any latency"
+    else:
+        uid, title = "capacity-cloud", "Concurrent calls within the latency SLO"
+        what = f"P95 voice-to-voice at most {CLOUD_SLO_MS} ms (the providers' floor 860 ms + 250 ms), no failed call, no lost turn"
+    sub = f"{what}; {CLOUD_SETUP}. Median of 3 runs (dots), each on a fresh container."
+    desc = f"Bar chart, {title.lower()}: " + "; ".join(desc_parts)
+    doc = Doc(uid, title, sub, desc, ids)
+    doc.legend([(sid, labels.get(sid, sid)) for sid in ids])
     grouped_bars(doc, groups, "concurrent calls")
-    return doc.finish(srcs(series) + ". Linux (WSL2, Docker), per-system run lists as in the file names.")
+    return doc.finish(files_text(files) + ".")
 
 
 def mem_mb(row: dict) -> float | None:
-    """Memory of a run at its maximum, MB, the same way for every system: PSS (proportional set size:
-    a page shared by N processes counts 1/N in each) summed over the server's processes.
-
-    The 2026-10-14 Pipecat and LiveKit files carry `pss_peak_mb`. The brisvox files of 2026-10-13
-    are one process, which shares nothing, so there its RSS is its PSS; the PSS cross-check run
-    (capacity-brisvox-q-pss-crosscheck-models-linux-*) measures both for brisvox."""
+    """Memory of a run at its maximum, MB: PSS (proportional set size: a page shared by N
+    processes counts 1/N in each) summed over the server container's processes."""
     return row.get("pss_peak_mb", row.get("rss_peak_mb"))
 
 
-def chart_memory(series: list[dict]) -> str:
-    cont = container_text(series)
-    groups = []
-    for s in series:
-        if not any(r["row"]["max_concurrent"] for r in s["runs"]):
-            continue  # nothing carried within the SLO: no "memory at the maximum"
-        passed = [r["row"] for r in s["runs"] if r["row"]["max_concurrent"] and mem_mb(r["row"])]
-        rss = [mem_mb(row) for row in passed]
-        calls = [row["max_concurrent"] for row in passed]
-        med = statistics.median(rss)
-        per = statistics.median(m / c for m, c in zip(rss, calls))
-        groups.append(
-            {
-                "label": s["label"],
-                "sub": [f"{statistics.median(calls):.0f} calls", f"{per:.1f} MB per call"],
-                "bars": [{"series": s["id"], "value": med, "text": fmt_mem(med)}],
-            }
-        )
+def chart_cloud_memory() -> str | None:
+    """Memory of the server at the max ramp's maximum, per container size."""
+    groups, ids, files, desc_parts = [], [], [], []
+    for size, size_label in CLOUD_SIZES:
+        series = load_capacity(cloud_series(size, "max"))
+        bars, subs = [], []
+        for s in series:
+            passed = [r["row"] for r in s["runs"] if r["row"]["max_concurrent"] and mem_mb(r["row"])]
+            if not passed:
+                continue
+            mem = statistics.median(mem_mb(row) for row in passed)
+            calls = statistics.median(row["max_concurrent"] for row in passed)
+            per = statistics.median(mem_mb(row) / row["max_concurrent"] for row in passed)
+            bars.append({"series": s["id"], "value": mem, "text": fmt_mem(mem)})
+            subs.append(f"{s['label'].split()[0]}: {calls:.0f} calls, {per:.1f} MB/call")
+            ids.append(s["id"])
+            files.extend(s["files"])
+            desc_parts.append(f"{size_label} {s['label']} {fmt_mem(mem)} at {calls:.0f} calls ({per:.1f} MB per call)")
+        if bars:
+            groups.append({"label": size_label, "sub": subs, "bars": bars})
+    if not groups:
+        return None
+    ids = list(dict.fromkeys(ids))
+    labels = dict(CLOUD_SYSTEMS)
     sub = (
-        f"Memory of the whole server (all its processes) at the highest load that met the SLO, "
-        f"median of the runs, one {cont}, real VAD and turn models. Counted alike for all three: PSS (proportional set size, "
-        f"a page shared by several processes is split between them) summed over the server's processes; brisvox is one process, "
-        f"where PSS and RSS agree within 1 %. Per call = memory / calls, idle baseline included."
+        "Memory of the whole server container at its most calls without a failed call or a lost turn, median of 3 runs. "
+        "PSS (proportional set size: a page shared by several processes is split between them) summed over the "
+        "container's processes, from its cgroup samples every 2 s; per call = memory / calls, idle baseline included."
     )
-    desc = "Bar chart, memory at maximum load with the real models: " + "; ".join(
-        f"{g['label']} {g['bars'][0]['text']} at {g['sub'][0]}, {g['sub'][1]}" for g in groups
-    )
-    doc = Doc("memory-models", "Memory at maximum load", sub, desc, [s["id"] for s in series])
-    grouped_bars(doc, groups, "proportional memory, PSS (MB)")
-    return doc.finish(srcs(series) + " (pss_peak_mb of each run; brisvox: rss_peak_mb of its single process, = PSS).")
+    desc = "Bar chart, server memory at the maximum load: " + "; ".join(desc_parts)
+    doc = Doc("memory-cloud", "Memory at maximum load", sub, desc, ids)
+    doc.legend([(sid, labels.get(sid, sid)) for sid in ids])
+    grouped_bars(doc, groups, "memory, PSS (MB)")
+    return doc.finish(files_text(list(dict.fromkeys(files))) + " (pss_peak_mb of each run).")
 
 
 def run_steps(s: dict) -> list[dict]:
@@ -432,14 +444,14 @@ def run_steps(s: dict) -> list[dict]:
                     "n": st["concurrent"],
                     "p50": v["p50_us"] / 1000,
                     "p95": v["p95_us"] / 1000,
-                    "ok": st.get("verdict") == "pass",
+                    "ok": st.get("verdict") == "pass" and v["p95_us"] <= CLOUD_SLO_MS * 1000,
                 }
             )
     s["_ramp_file"] = pick["row"]["file"]
     return sorted(pts, key=lambda p: p["n"])  # the bisection steps come after the ramp in the file
 
 
-def chart_latency(series: list[dict], uid: str, title: str) -> str | None:
+def chart_latency(series: list[dict], uid: str, title: str, setting: str) -> str | None:
     data = []
     for s in series:
         pts = run_steps(s)
@@ -447,23 +459,21 @@ def chart_latency(series: list[dict], uid: str, title: str) -> str | None:
             data.append((s, pts))
     if not data:
         return None
-    cont = container_text(series)
-    slo_s, slo = slo_text(series)
+    slo = float(CLOUD_SLO_MS)
     ymax_cap = max(slo * 1.9, 1000)
     allp = [p for _, pts in data for p in pts]
     y_lo = max(0.0, math.floor((min(p["p50"] for p in allp) - 60) / 100) * 100)
     y_hi = min(max(p["p95"] for p in allp), ymax_cap)
     y_hi = max(y_hi, slo * 1.15)
     y_hi = math.ceil(y_hi / 200) * 200
-    # A linear axis: the distance between the systems' capacities is the point of the chart (a log
-    # axis drew 20 calls next to 325).
+    # A linear axis: the distance between the systems' capacities is the point of the chart.
     xmax = max(p["n"] for p in allp)
     xstep = next(t for t in (5, 10, 20, 25, 50, 100, 200, 250, 500, 1000, 2000) if xmax / t <= 7)
     xtop = math.ceil(xmax / xstep) * xstep
     sub = (
-        f"Voice-to-voice latency at each load step of the capacity ramp (one {cont}, mock providers, {slo_s}). "
-        "Solid: p95, dashed: p50. Hollow marker: the step missed the SLO, by latency or by failed calls (the p95 is over the "
-        "turns that were answered, so a step that lost calls can show a low p95). A step beyond the axis is drawn at the top."
+        f"Voice-to-voice latency at each load step of the max ramp ({setting}). Solid: p95, dashed: p50. "
+        f"Filled marker: no failed call or lost turn and p95 within the SLO; hollow: missed either (the p95 is over the "
+        "turns that were answered). A step beyond the axis is drawn at the top. Label: the most calls within the SLO in that run."
     )
     desc = "Line chart, latency versus concurrent calls (linear axis): " + "; ".join(
         f"{s['label']} from {pts[0]['n']} to {pts[-1]['n']} calls, p95 {pts[0]['p95']:.0f} ms to {pts[-1]['p95']:.0f} ms"
@@ -501,10 +511,9 @@ def chart_latency(series: list[dict], uid: str, title: str) -> str | None:
         f'<text transform="translate(16 {f1(top + plot_h / 2)}) rotate(-90)" class="t2" font-size="12" '
         'text-anchor="middle">voice-to-voice latency (ms)</text>'
     )
-    if slo:
-        ys = Y(slo)
-        doc.add(f'<line x1="{ML}" x2="{ML + pw}" y1="{f1(ys)}" y2="{f1(ys)}" class="slo" stroke-width="1.5" stroke-dasharray="2 4"/>')
-        doc.add(f'<text x="{ML + pw + 6}" y="{f1(ys + 4)}" class="slot" font-size="12">SLO {slo:.0f} ms</text>')
+    ys = Y(slo)
+    doc.add(f'<line x1="{ML}" x2="{ML + pw}" y1="{f1(ys)}" y2="{f1(ys)}" class="slo" stroke-width="1.5" stroke-dasharray="2 4"/>')
+    doc.add(f'<text x="{ML + pw + 6}" y="{f1(ys + 4)}" class="slot" font-size="12">SLO {slo:.0f} ms</text>')
     label_ys: list[float] = []
     for s, pts in data:
         sid = s["id"]
@@ -525,7 +534,7 @@ def chart_latency(series: list[dict], uid: str, title: str) -> str | None:
                 doc.add(f'<circle cx="{f1(x)}" cy="{f1(y)}" r="4.5" class="surf s-{sid}" stroke-width="2"/>')
         last = pts[-1]
         passed = [p["n"] for p in pts if p["ok"]]
-        cap = f": {max(passed)} calls" if passed else ""
+        cap = f": {max(passed)}" if passed else ""
         ly = Y(last["p95"])
         while any(abs(ly - o) < 15 for o in label_ys):
             ly += 15
@@ -738,29 +747,52 @@ def mem_cell(s: dict) -> str | None:
     return f"{fmt_mem(rss)} at {calls:.0f} calls"
 
 
+def cpu_cell(s: dict) -> str | None:
+    passed = [r["row"] for r in s["runs"] if r["row"]["max_concurrent"] and r["row"].get("mcores_per_call")]
+    if not passed:
+        return None
+    return f"{statistics.median(row['mcores_per_call'] for row in passed) / 1000:.3f} cores"
+
+
+def per_call_mem_cell(s: dict) -> str | None:
+    passed = [r["row"] for r in s["runs"] if r["row"]["max_concurrent"] and mem_mb(r["row"])]
+    if not passed:
+        return None
+    return f"{statistics.median(mem_mb(row) / row['max_concurrent'] for row in passed):.1f} MB"
+
+
 def measured_table() -> str:
-    models = load_capacity(MODELS_SERIES)
-    frame = load_capacity(FRAMEWORK_SERIES)
     live = live_docs()
-    cont = container_text(models or frame)
     rows = []
 
     def row(label: str, cells: list[str], source: str) -> None:
         rows.append(f"| {label} | " + " | ".join(cells) + f" | {source} |")
 
+    for size, size_label in CLOUD_SIZES:
+        slo = load_capacity(cloud_series(size, "slo"))
+        mx = load_capacity(cloud_series(size, "max"))
+        row(
+            f"Concurrent calls within the latency SLO (p95 voice-to-voice at most {CLOUD_SLO_MS} ms), **{size_label}** (median, runs in brackets)",
+            [cap_cell(slo, ids, runs_cell) for _, ids in COLUMNS],
+            f"`bench/results/capacity-*-cloud-{size}c-linux-*`",
+        )
+        row(
+            f"Most concurrent calls with no failed call and no lost turn (any latency), **{size_label}**",
+            [cap_cell(mx, ids, runs_cell) for _, ids in COLUMNS],
+            f"`bench/results/capacity-*-cloud-{size}c-max-linux-*`",
+        )
+        row(
+            f"Server memory at that maximum, {size_label} (PSS summed over the container's processes)",
+            [cap_cell(mx, ids, mem_cell) for _, ids in COLUMNS],
+            "same files",
+        )
+    mx4 = load_capacity(cloud_series("4", "max"))
     row(
-        f"Concurrent calls within the latency SLO, **real VAD and turn-detection models on every call** (Silero + Smart Turn; LiveKit: Silero + its own turn detector), one {cont}, mock providers (median, runs in brackets)",
-        [cap_cell(models, ids, runs_cell) for _, ids in COLUMNS],
-        "`bench/results/capacity-*-models-linux-*`",
-    )
-    row(
-        f"Concurrent calls, **framework only** (energy VAD, fixed turn answer), same {cont}",
-        [cap_cell(frame, ids, runs_cell) for _, ids in COLUMNS],
-        "`bench/results/capacity-*-linux-*`",
-    )
-    row(
-        "Memory at that maximum (real models; PSS summed over the server's processes for all three; brisvox is one process, PSS = RSS)",
-        [cap_cell(models, ids, mem_cell) for _, ids in COLUMNS],
+        "Per call at that maximum, 4 vCPU / 4 GB: memory and CPU (idle baseline included)",
+        [
+            cap_cell(mx4, ids, lambda s: (lambda m, c: f"{m}, {c}" if m and c else None)(per_call_mem_cell(s), cpu_cell(s)))
+            for _, ids in COLUMNS
+        ],
         "same files",
     )
     for lang, lname in LIVE_LANGS:
@@ -790,28 +822,13 @@ def readme_with(table: str) -> str:
 
 def build_all() -> dict[str, str]:
     charts: dict[str, str | None] = {}
-    models = load_capacity(MODELS_SERIES)
-    frame = load_capacity(FRAMEWORK_SERIES)
-    if models:
-        charts["capacity-models.svg"] = chart_capacity(
-            models,
-            "capacity-models",
-            "Concurrent calls per container, with the real models",
-            "with the real Silero VAD and Smart Turn models on every call",
-        )
-        charts["memory-models.svg"] = chart_memory(models)
-        charts["latency-vs-calls-models.svg"] = chart_latency(
-            models, "latency-models", "Latency as the load grows, with the real models"
-        )
-    if frame:
-        charts["capacity-framework.svg"] = chart_capacity(
-            frame,
-            "capacity-framework",
-            "Concurrent calls per container, framework only",
-            "framework only, energy VAD and a fixed turn answer, no models",
-        )
-        charts["latency-vs-calls-framework.svg"] = chart_latency(
-            frame, "latency-framework", "Latency as the load grows, framework only"
+    charts["capacity-cloud.svg"] = chart_cloud_capacity("slo")
+    charts["capacity-cloud-max.svg"] = chart_cloud_capacity("max")
+    charts["memory-cloud.svg"] = chart_cloud_memory()
+    mx8 = load_capacity(cloud_series("8", "max"))
+    if mx8:
+        charts["latency-vs-calls-cloud.svg"] = chart_latency(
+            mx8, "latency-cloud", "Latency as the load grows, 8 vCPU / 8 GB", f"8 vCPU / 8 GB; {CLOUD_SETUP}"
         )
     charts["v2v-live.svg"] = chart_live()
     charts["engine-overhead.svg"] = chart_engine()
