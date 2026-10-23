@@ -8,6 +8,12 @@ named plain `brisvox` on crates.io, PyPI and npm, are released together under on
 
 ## [Unreleased]
 
+### Fixed
+
+- **tokio 1.53.3** in the lock file (RUSTSEC-2026-0386, `AsyncFd::new` and related constructors violate
+  I/O safety). brisvox does not call those constructors; the crates take any tokio 1.x, so their users
+  pick up the fix with `cargo update -p tokio`.
+
 ## [0.1.2] - 2026-10-23
 
 ### Added
