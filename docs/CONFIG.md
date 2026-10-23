@@ -105,6 +105,7 @@ cargo feature is not compiled into this binary, with the feature to turn on), `c
 | an environment variable named by `api_key_env` / `token_env` is not set | warning; an error with `--require-secrets` (use it on the machine or CI job that has the real environment) |
 | a variable is set but empty, or has spaces or control characters inside | error |
 | a tool in `agent.tools` that this binary does not register: the built-in telephony tools need the `call-control` feature and `BRISVOX_CALL_CONTROL` set to a carrier (with both they count as registered; `check` does not verify the carrier's credentials, which the server needs at start), the demo tools the `demo-tools` feature, your own tools `AppTools` (`docs/TOOLS.md`) | **error**: the server refuses to start with it. If it is a Python/TypeScript SDK tool, remove it from `agent.tools`: the SDK agent declares it over the agent link |
+| an MCP server in `[[mcp.servers]]` | not contacted: `check` starts no process and makes no network call, so a server's reachability and the tool names of its allowlist are only checked when the server starts; a binary without the `mcp` feature is an **error**; a variable named by `bearer_env` / `env_from` that is not set is reported like an `api_key_env` one |
 | adaptive turns, and no Smart Turn model: the binary lacks the `smart-turn-ort` feature, or the model file (`BRISVOX_SMART_TURN_MODEL`, default `$BRISVOX_MODELS_DIR/smart-turn-v3.2-cpu.onnx`) does not exist | warning (without the model, turns end at their fallback deadline, or the start fails if the feature is on and the file is missing); `BRISVOX_SMART_TURN_MODEL=off` silences it |
 
 `check` answers for the binary it runs in: a server built with fewer provider features than the
@@ -396,6 +397,60 @@ sends the caller's number, the called number and the carrier's call id to the ag
 `session.start.call` for Twilio, Telnyx and SIP calls (`docs/AGENT_PROTOCOL.md`, "Caller
 identity"). A route has its own `caller_identity` and never inherits the section's or the
 environment's. The numbers are withheld while the server redacts phone numbers (`docs/PRIVACY.md`).
+
+### `[[mcp.servers]]` (optional)
+
+MCP (Model Context Protocol) servers whose tools the agent may call: the tools of a server's
+allowlist are offered to the LLM like the server's own tools. Behaviour, guarantees and security
+notes: `docs/TOOLS.md`, "MCP tools". Needs the `mcp` cargo feature; a build without it refuses a file
+with the table and names the first server. At most 8 servers and 64 MCP tools.
+
+```toml
+[[mcp.servers]]                        # a program the server starts, spoken to over stdin/stdout
+name = "orders"                        # 1-32 letters, digits, _ or -; each once
+command = "orders-mcp"                 # looked up on PATH; exactly one of command / url
+args = ["--read-only-db"]
+env = { LOG_LEVEL = "warn" }           # the program's environment: only these and PATH
+env_from = { ORDERS_TOKEN = "ORDERS_API_TOKEN" }   # CHILD_NAME = "server environment variable"
+tools = ["find_order", "cancel_order"] # the allowlist: required, not empty
+read_only = ["find_order"]             # subset of tools; every other tool has side effects
+confirm = ["cancel_order"]             # subset of tools: held for the user's confirmation
+prefix = true                          # names the LLM sees: "orders_find_order" (or prefix = "o_")
+timeout_ms = 5000                      # default 5000, at most 30000
+filler_after_ms = 700
+
+[[mcp.servers]]                        # a streamable HTTP endpoint
+name = "crm"
+url = "https://crm.example.com/mcp"
+bearer_env = "CRM_TOKEN"               # environment variable holding the bearer token
+tools = ["find_customer"]
+read_only = ["find_customer"]
+prefix = "crm_"
+```
+
+| key | type | notes |
+|---|---|---|
+| `name` | string | 1-32 of `A-Z a-z 0-9 _ -`, each once. Used in logs and errors, and as the prefix with `prefix = true` |
+| `command` | string | stdio transport: the program, looked up on `PATH`. Exactly one of `command` and `url` |
+| `args` | array of strings | stdio only, at most 64 |
+| `env` | table of strings | stdio only: environment variables of the program (a value is not a secret store). The program gets these and `PATH` (on Windows also what the system needs to start a program), not the server's own environment: the provider keys stay out of it |
+| `env_from` | table of names | stdio only: `CHILD_NAME = "SERVER_VARIABLE"` gives the program the value of a variable of the server's environment. The file names the variable, never holds the value; a variable that is not set stops the start. A name cannot be in `env` too |
+| `url` | string | streamable HTTP transport: `https://...`, or `http://` to a host on a private network (loopback, RFC 1918, link-local, `localhost`, `*.internal`, `*.local`, a single-label service name; the rule of `[agent_link]`), or to any host with `allow_insecure = true`. No query, fragment or user info. Exactly one of `command` and `url` |
+| `allow_insecure` | bool | url only: accept a plain `http://` URL to a host outside the private networks. Default `false`: tool arguments and results carry what the caller said, so it is refused with or without a bearer token |
+| `bearer_env` | env var name | url only: the bearer token, sent as `Authorization: Bearer`. A variable that is not set stops the start |
+| `tools` | array of strings | **required, not empty, at most 64**: the server's own names of the tools to offer (letters, digits, `_`, `-`, `.`; at most 128 characters). A name the server does not offer stops the start at its position |
+| `read_only` | array of strings | subset of `tools` that only read: they may run speculatively and are dropped on a barge-in. Every other tool of `tools` is treated as having side effects, whatever the server's annotations say |
+| `confirm` | array of strings | subset of `tools` (not of `read_only`) held for the user's confirmation (`docs/TOOLS.md`, "Confirmation gate") |
+| `prefix` | bool or string | `true`: `<name>_` before every tool name; a string (1-32 of `A-Z a-z 0-9 _ -`): that text. Default none. Characters a tool name cannot have (the `.` of `files.read`) become `_` |
+| `timeout_ms` | 1-30000 | longest wait for a call's result; default 5000 |
+| `filler_after_ms` | 1-30000 | time without a result after which the filler plays (`[filler]`); default 700 |
+| `startup_timeout_ms` | 1000-120000 | longest wait for the server to start and list its tools at startup (and at each restart); default 30000 |
+| `max_in_flight` | 1-256 | most calls in flight to this server at once, over all of the process's calls; one more fails at once with a "busy" tool error and nothing is sent. Default 32 |
+
+The names the LLM sees must be unique and valid tool names (at most 64 characters): a name that
+clashes with another MCP tool, a tool of `agent.tools`, a telephony tool or `confirm_pending` is
+reported at its `tools[i]` entry with the advice to set `prefix`. MCP tools are not listed in
+`agent.tools`: listing them in the server's `tools` is what offers them.
 
 ### `[stt]`, `[llm]`, `[tts]` (required)
 
@@ -694,6 +749,7 @@ from 1 to 65535, the start fails with a message naming both variables.
 | `recording.retention_days` 1 to 3650; `recording.redact_kinds` not empty and not given with `recording.redact = false` | the key |
 | `stt.api_key_env` present (except `sherpa_onnx` and the local dialects); `speaches`/`vllm` have a `model`; a token is never sent over plain `ws://` to another machine | `stt.*` |
 | tool names valid and unique; keyterm/vocabulary lists bounded | the entry |
+| `[[mcp.servers]]`: each server has exactly one of `command` and `url` and only the keys of its transport; a non-empty allowlist; `read_only` and `confirm` are disjoint subsets of `tools`; the names the LLM sees are valid and unique; no plain `http://` URL to a host outside the private networks without `allow_insecure`; no query or fragment in a `url`; the `mcp` feature is compiled in | `mcp.servers[i].*` |
 | `llm.api_key_env` present (except `openai_compatible`); compatible server has a preset or URL+model | `llm.*` |
 | a secondary is checked like a primary (same rules, with the primary's language and rate) | `<stage>.secondary.*` |
 | a secondary sets no `language`, `sample_rate`, `max_tool_rounds`, `context_window_tokens` and has no `secondary` | the key |
@@ -710,6 +766,9 @@ The provider facts behind these rules come from `docs/providers/*.md` (fetched 2
 on by default (light builds); a definition naming a provider whose feature is off is rejected with
 the feature to enable. `SttProviderConfig` / `LlmProviderConfig` / `TtsProviderConfig` have one
 variant per compiled adapter.
+
+The `mcp` feature (MCP tools, `[[mcp.servers]]`) works the same way: a definition with the table is
+refused, at the first server's position, by a build without it.
 
 ## Why TOML is the reference and how YAML is read
 

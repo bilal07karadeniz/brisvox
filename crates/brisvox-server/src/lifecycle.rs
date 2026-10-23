@@ -386,6 +386,9 @@ pub struct Server {
     /// The callback listener, when `BRISVOX_CALLBACK_ADDR` is set.
     #[cfg(feature = "call-control")]
     callbacks: Option<crate::callbacks::CallbackServer>,
+    /// The MCP connections of the agents' tools, closed after the drain.
+    #[cfg(feature = "mcp")]
+    mcp: Vec<std::sync::Arc<crate::mcp::McpHost>>,
 }
 
 impl Server {
@@ -449,7 +452,16 @@ impl Server {
             listeners: None,
             #[cfg(feature = "call-control")]
             callbacks: None,
+            #[cfg(feature = "mcp")]
+            mcp: Vec::new(),
         })
+    }
+
+    /// Closes the MCP connections `mcp` with the server: they serve through the drain (a call
+    /// still draining may use their tools) and close after the transports.
+    #[cfg(feature = "mcp")]
+    pub fn attach_mcp(&mut self, mcp: std::sync::Arc<crate::mcp::McpHost>) {
+        self.mcp.push(mcp);
     }
 
     /// Runs the callback listener `callbacks` with the server: it serves through the drain (a
@@ -585,6 +597,10 @@ impl Server {
             && !callbacks.shutdown(CALLBACK_STOP_TIMEOUT).await
         {
             tracing::warn!(target: "brisvox::server", "callback listener did not stop in time");
+        }
+        #[cfg(feature = "mcp")]
+        for mcp in self.mcp {
+            mcp.shutdown().await;
         }
         if let Some(health) = self.health
             && !health.shutdown(HEALTH_STOP_TIMEOUT).await

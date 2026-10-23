@@ -1,0 +1,175 @@
+# A voice agent you can talk to in the browser with no API key and no cloud: one command.
+#
+#   docker compose -f deploy/local/compose.yaml up
+#   # when it says the stack is ready, open http://localhost:8088/demo?force=ws
+#
+# First start downloads about 6.5 GB and takes a while; later starts take a minute or two.
+# Everything is in deploy/local/README.md.
+#
+#   brisvox-server    the voice engine, serves the browser page on 127.0.0.1:8088
+#   stt               sherpa-onnx streaming speech recognition (English, CPU)
+#   llm / llm-pull    Ollama, and a one-shot job that pulls the language model on the first start
+#   tts               Kokoro-FastAPI text to speech (CPU), speaks the OpenAI speech protocol
+#   net               an empty container that owns the network namespace of the five above
+#
+# Why one shared network namespace (`network_mode: "service:net"`). The language model adapter
+# sends plain http:// only to loopback addresses (docs/providers/openai-compatible.md), and the
+# helper servers have no authentication of their own (sherpa-onnx's streaming_server.py listens
+# on every interface and has no bind flag). Inside one namespace all of them reach each other at
+# 127.0.0.1, exactly as in examples/agents/local/, and nothing but the one published port is
+# reachable from outside: not from the LAN, not from the host, not from other containers.
+# If `net` is recreated, recreate the others with it (`docker compose up -d --force-recreate`);
+# `docker compose down` followed by `up` always does.
+#
+# Settings (environment or a .env file next to this file; all optional):
+#   BRISVOX_IMAGE         the server image (pinned below); see compose.build.yaml to build from source
+#   BRISVOX_LOCAL_AGENT   agents/agent.toml (Qwen2.5 1.5B, default) or agents/agent-quality.toml (Llama 3.2 3B)
+#   BRISVOX_LOCAL_PORT    the port on 127.0.0.1 for the browser page (8088)
+
+name: brisvox-local # containers brisvox-local-stt-1, ...; volume brisvox-local_ollama-models
+
+x-hardened: &hardened
+  restart: unless-stopped
+  security_opt: ["no-new-privileges:true"]
+  pids_limit: 512
+  logging:
+    driver: json-file
+    options: { max-size: "10m", max-file: "3" }
+
+services:
+  net:
+    <<: *hardened
+    cap_drop: [ALL]
+    image: busybox:1.37.0@sha256:bdf57e528e45e4433820e045b29b4597825a1c9e38353532d90a01445013f82e
+    command: ["tail", "-f", "/dev/null"]
+    read_only: true
+    ports:
+      # Loopback only. The page asks for the microphone, which a browser allows on localhost
+      # without HTTPS. To use it from another machine, put TLS and credentials in front first
+      # (docs/DEPLOY.md, docs/SECURITY.md).
+      - "127.0.0.1:${BRISVOX_LOCAL_PORT:-8088}:8088"
+
+  stt:
+    <<: *hardened
+    cap_drop: [ALL]
+    build:
+      context: ./sherpa-onnx
+    image: brisvox-local/sherpa-onnx:1.13.8
+    network_mode: "service:net"
+    depends_on:
+      net: { condition: service_started }
+    read_only: true
+    tmpfs:
+      - /tmp:size=16m,mode=1777
+      - /app/log:size=16m,uid=10002,gid=10002,mode=0755 # the server's own log files
+    # Plain HTTP GET: the server answers it with the (empty) static page and no websocket error.
+    # It listens only after the model is loaded, so a reply means ready.
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - "import urllib.request; urllib.request.urlopen('http://127.0.0.1:6007/', timeout=3)"
+      interval: 10s
+      timeout: 5s
+      start_period: 30s
+      retries: 6
+
+  llm:
+    <<: *hardened
+    image: ollama/ollama:0.40.8@sha256:2b8eecdb85aa6ea67c381c8ecffec04b2658496cf2821a8f88b0485bdff198e8
+    network_mode: "service:net"
+    depends_on:
+      net: { condition: service_started }
+    environment:
+      OLLAMA_KEEP_ALIVE: "-1" # keep the model in memory: the next question is not a reload
+      OLLAMA_NUM_PARALLEL: "1"
+      OLLAMA_MAX_LOADED_MODELS: "1"
+      OLLAMA_NO_CLOUD: "1" # local models only
+    volumes:
+      - ollama-models:/root/.ollama
+    healthcheck:
+      test: ["CMD", "ollama", "list"]
+      interval: 10s
+      timeout: 5s
+      start_period: 20s
+      retries: 6
+
+  # Runs once per start. The first time it downloads the model named in the agent file (about
+  # 1 GB; the volume keeps it), every time it loads the model into memory so that the first
+  # question is not slow. brisvox-server waits for it.
+  llm-pull:
+    image: ollama/ollama:0.40.8@sha256:2b8eecdb85aa6ea67c381c8ecffec04b2658496cf2821a8f88b0485bdff198e8
+    network_mode: "service:net"
+    depends_on:
+      llm: { condition: service_healthy }
+    restart: "no"
+    volumes:
+      - ./agents/${BRISVOX_LOCAL_AGENT:-agent.toml}:/agent.toml:ro
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        set -eu
+        model=$$(sed -n 's/^model *= *"\([^"]*\)".*/\1/p' /agent.toml | head -n 1)
+        [ -n "$$model" ] || { echo "no model = \"...\" line in the agent file" >&2; exit 1; }
+        echo "pulling $$model (nothing to download after the first start)"
+        ollama pull "$$model"
+        echo "loading $$model into memory"
+        timeout 600 ollama run "$$model" "Reply with the single word ready." > /dev/null \
+          || echo "warm-up skipped: the first answer will load the model"
+        echo "ready: $$model"
+
+  tts:
+    <<: *hardened
+    cap_drop: [ALL]
+    image: ghcr.io/remsky/kokoro-fastapi-cpu:v0.9.0@sha256:ee3111d6a2c903ed62f3b4fa19543c6901205ed39fce3c177e895b34a8386b9c
+    network_mode: "service:net"
+    depends_on:
+      net: { condition: service_started }
+    environment:
+      API_LOG_LEVEL: INFO
+    # The model is baked into the image and loaded (and warmed up) before the port opens.
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:8880/health"]
+      interval: 10s
+      timeout: 5s
+      start_period: 60s
+      retries: 12
+
+  brisvox:
+    <<: *hardened
+    cap_drop: [ALL]
+    image: ${BRISVOX_IMAGE:-ghcr.io/bilal07karadeniz/brisvox-server:v0.1.1@sha256:d48d8076a8c66382b9953df0ec9d180770689c3ebddbe23e395c2896ca05da06}
+    network_mode: "service:net"
+    depends_on:
+      net: { condition: service_started }
+      stt: { condition: service_healthy }
+      tts: { condition: service_healthy }
+      llm-pull: { condition: service_completed_successfully }
+    # The server drains on SIGTERM (docs/OPERATIONS.md, "Shutdown").
+    stop_grace_period: 45s
+    init: false
+    read_only: true
+    tmpfs: ["/tmp:size=16m,mode=1777"]
+    environment:
+      BRISVOX_AGENT_FILE: /etc/brisvox/agent.toml
+      BRISVOX_LOG_FORMAT: text
+      # The WebRTC listener hosts the page (/demo) and the WebSocket audio path (/ws) on one TCP
+      # port. Media over UDP cannot cross a Docker port mapping to a browser on the same host
+      # (Chrome offers no loopback candidate), so the call runs over the WebSocket: open the
+      # page with ?force=ws. The UDP socket is bound to a port nobody can reach on purpose.
+      BRISVOX_WEBRTC_ADDR: 0.0.0.0:8088
+      BRISVOX_WEBRTC_UDP_ADDR: 127.0.0.1:0
+      # The listener refuses to start on a non-loopback address without credentials. Inside the
+      # container it must bind 0.0.0.0, and the only way in is the loopback-only mapping on `net`,
+      # so the opt-out is safe here. Delete it, and set BRISVOX_SESSION_SECRET, before you publish
+      # the port beyond this machine (docs/SECURITY.md).
+      BRISVOX_INSECURE_LISTENERS: "1"
+      BRISVOX_MAX_SESSIONS: "4" # a CPU-only stack serves one conversation well, not a crowd
+      BRISVOX_WEBRTC_OFFERS_PER_MINUTE: "30" # reloading the page while testing is not abuse
+    volumes:
+      - ./agents/${BRISVOX_LOCAL_AGENT:-agent.toml}:/etc/brisvox/agent.toml:ro
+    # The image's HEALTHCHECK (GET /healthz on :8081) applies; 8081 is not published.
+
+volumes:
+  ollama-models:

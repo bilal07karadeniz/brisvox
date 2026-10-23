@@ -50,6 +50,9 @@ pub struct AgentFile {
     /// The out-of-process agent the calls of this definition link to.
     #[serde(default)]
     pub agent_link: AgentLinkSection,
+    /// MCP servers whose tools the agent may call (`docs/TOOLS.md`, "MCP tools").
+    #[serde(default)]
+    pub mcp: McpSection,
     /// Speech-to-text provider.
     pub stt: SttSection,
     /// LLM provider and the runner settings.
@@ -375,6 +378,124 @@ pub struct AgentRouteEntry {
     /// section or the environment: a route may be another team's agent, which gets the
     /// caller's number only when its own entry says so. Default `false`.
     pub caller_identity: Option<bool>,
+}
+
+/// `[mcp]`: the MCP (Model Context Protocol) servers whose tools the agent may call
+/// (`docs/TOOLS.md`, "MCP tools"). The server connects to each once at startup; a tool in a
+/// server's `tools` allowlist is offered to the LLM like a tool of the server itself.
+#[derive(Debug, Clone, Default, PartialEq, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+#[serde(deny_unknown_fields)]
+pub struct McpSection {
+    /// The servers, as `[[mcp.servers]]` tables (at most 8).
+    #[serde(default)]
+    pub servers: Vec<McpServerEntry>,
+}
+
+/// `mcp.servers[].prefix`: whether and how the server's tool names are prefixed, to keep two
+/// servers' tools (or a tool and one of the server's own) from clashing.
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+#[serde(untagged)]
+pub enum McpPrefix {
+    /// `true`: the server's `name` and an underscore (`github_`); `false`: no prefix.
+    Flag(bool),
+    /// This text (1-32 letters, digits, `_` or `-`), used as it is.
+    Text(
+        #[cfg_attr(
+            feature = "schema",
+            schemars(regex(pattern = "^[A-Za-z0-9_\\-]{1,32}$"))
+        )]
+        String,
+    ),
+}
+
+/// One `[[mcp.servers]]` entry: an MCP server, reached by `command` (stdio) or `url`
+/// (streamable HTTP), and the tools of it the agent may call.
+#[derive(Debug, Clone, PartialEq, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+#[serde(deny_unknown_fields)]
+pub struct McpServerEntry {
+    /// The server's name (1-32 letters, digits, `_`, `-`; each once): used in logs and errors,
+    /// and as the tool-name prefix with `prefix = true`.
+    #[cfg_attr(
+        feature = "schema",
+        schemars(with = "String", regex(pattern = "^[A-Za-z0-9_\\-]{1,32}$"))
+    )]
+    pub name: Spanned<String>,
+    /// stdio transport: the program to start (looked up on `PATH`). Exactly one of `command`
+    /// and `url`.
+    #[cfg_attr(feature = "schema", schemars(with = "Option<String>"))]
+    pub command: Option<Spanned<String>>,
+    /// stdio only: the program's arguments.
+    #[serde(default)]
+    pub args: Vec<String>,
+    /// stdio only: environment variables for the program, `NAME = "value"`. The program gets
+    /// nothing else from the server's environment but `PATH` (and, on Windows, the variables the
+    /// system needs to start a program): the server's provider keys do not reach it. A value
+    /// is not a secret store: use `env_from` for secrets.
+    #[serde(default)]
+    pub env: std::collections::BTreeMap<String, String>,
+    /// stdio only: environment variables for the program whose value comes from a variable of
+    /// the server's own environment, `CHILD_NAME = "SERVER_VARIABLE"`. The file names the
+    /// variable, never holds the value; a variable that is not set stops the start.
+    #[serde(default)]
+    #[cfg_attr(
+        feature = "schema",
+        schemars(with = "std::collections::BTreeMap<String, EnvVarName>")
+    )]
+    pub env_from: std::collections::BTreeMap<String, Spanned<EnvVarName>>,
+    /// streamable HTTP transport: the server's MCP endpoint, `https://...`, or `http://` to a
+    /// host on a private network (loopback, RFC 1918, link-local, `localhost`, `*.internal`,
+    /// `*.local`, a single-label service name), or to any host with `allow_insecure = true`.
+    /// No query, fragment or user info (the URL is shown in messages). Exactly one of `command`
+    /// and `url`.
+    #[cfg_attr(feature = "schema", schemars(with = "Option<LocalHttpUrl>"))]
+    pub url: Option<Spanned<LocalHttpUrl>>,
+    /// url only: accept a plaintext `http://` URL to a host outside the private networks.
+    /// Default `false`: such a URL is refused at startup, because tool arguments and results
+    /// carry what the caller said, with or without a bearer token.
+    pub allow_insecure: Option<bool>,
+    /// url only: environment variable holding a bearer token, sent as `Authorization: Bearer`.
+    #[cfg_attr(feature = "schema", schemars(with = "Option<EnvVarName>"))]
+    pub bearer_env: Option<Spanned<EnvVarName>>,
+    /// The tools of the server to offer, by the server's own names: the allowlist. Required and
+    /// not empty (a server's other tools are not reachable: fail closed). A name the server does
+    /// not offer stops the start.
+    #[cfg_attr(feature = "schema", schemars(with = "Vec<String>", length(min = 1)))]
+    pub tools: Vec<Spanned<String>>,
+    /// The tools of `tools` that only read (no side effects): they may run speculatively and are
+    /// dropped when the caller interrupts. Every other tool is treated as having side effects
+    /// (never speculative, never run twice for one call). The server's own `readOnlyHint`
+    /// annotation is not trusted: it is logged at debug level only.
+    #[serde(default)]
+    #[cfg_attr(feature = "schema", schemars(with = "Vec<String>"))]
+    pub read_only: Vec<Spanned<String>>,
+    /// The tools of `tools` held for the user's confirmation (`docs/TOOLS.md`, "Confirmation
+    /// gate"). They must not be in `read_only`.
+    #[serde(default)]
+    #[cfg_attr(feature = "schema", schemars(with = "Vec<String>"))]
+    pub confirm: Vec<Spanned<String>>,
+    /// Prefix for the names the LLM sees: `true` for `<name>_`, or a text. Default none. A name
+    /// the LLM cannot use (the rules of a tool name: letters, digits, `_`, `-`; at most 64
+    /// characters) has its other characters replaced by `_` (the `.` of `files.read`).
+    #[cfg_attr(feature = "schema", schemars(with = "Option<McpPrefix>"))]
+    pub prefix: Option<Spanned<McpPrefix>>,
+    /// Longest wait for a result, per call. Default 5000, at most 30000. A tool with side effects
+    /// keeps running after it (the caller is told it is still working) up to 60 s.
+    #[cfg_attr(feature = "schema", schemars(with = "Option<Millis<1, 30_000>>"))]
+    pub timeout_ms: Option<Spanned<Millis<1, 30_000>>>,
+    /// Time without a result after which the filler phrase plays (`[filler]`). Default 700.
+    #[cfg_attr(feature = "schema", schemars(with = "Option<Millis<1, 30_000>>"))]
+    pub filler_after_ms: Option<Spanned<Millis<1, 30_000>>>,
+    /// Longest wait for the server to start and list its tools, at startup. Default 30000.
+    #[cfg_attr(feature = "schema", schemars(with = "Option<Millis<1_000, 120_000>>"))]
+    pub startup_timeout_ms: Option<Spanned<Millis<1_000, 120_000>>>,
+    /// Most calls to this server in flight at once, over all of the server's calls. A call over
+    /// the limit fails at once with a "busy" tool error (a side-effect tool is then not sent at
+    /// all). Default 32, at most 256.
+    #[cfg_attr(feature = "schema", schemars(with = "Option<Count<1, 256>>"))]
+    pub max_in_flight: Option<Spanned<Count<1, 256>>>,
 }
 
 /// `[telephony.voicemail]`: answering-machine handling of calls the carrier's detector

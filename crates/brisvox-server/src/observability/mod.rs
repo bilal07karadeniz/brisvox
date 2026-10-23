@@ -273,3 +273,6 @@ impl ObservabilitySettings {
 
 #[cfg(test)]
 mod tests;
+
+#[cfg(test)]
+mod dashboard_tests;

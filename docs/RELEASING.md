@@ -20,8 +20,8 @@ under one version number.
 Prebuilt targets: `x86_64-unknown-linux-gnu`, `aarch64-unknown-linux-gnu`, `aarch64-apple-darwin`
 and `x86_64-pc-windows-msvc`. The Linux binaries are built on Ubuntu 24.04 and need glibc 2.39 or
 newer (the prebuilt ONNX Runtime needs 2.38). The binaries and the image are built with the feature
-set `all-providers,call-control,smart-turn-ort,webrtc` (every provider adapter, call control, Smart
-Turn on ONNX Runtime, the WebRTC listener); the README says so under "What to build with". The
+set `all-providers,call-control,smart-turn-ort,mcp,webrtc` (every provider adapter, call control, Smart
+Turn on ONNX Runtime, MCP tools, the WebRTC listener); the README says so under "What to build with". The
 Smart Turn model is not inside the binary archives (its licence notice and a checksum-verified
 downloader are); the container image contains it.
 

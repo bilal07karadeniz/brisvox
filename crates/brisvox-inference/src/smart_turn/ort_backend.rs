@@ -44,9 +44,22 @@ fn model_error(e: impl std::fmt::Display) -> Error {
     Error::Model(e.to_string())
 }
 
-/// How a Smart Turn session is configured. Every field changes only scheduling, never
-/// the numbers: the probabilities are bit-identical across settings
+/// Which graph of the pinned model the sessions run.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum SmartTurnGraph {
+    /// The exported graph with each GELU fused into one node ([`super::fuse`]): about 40% less
+    /// memory traffic per analysis; the probabilities differ from [`Self::Original`] only by
+    /// rounding (verdicts matched on 3997 of 4000 test clips, docs/providers/smart-turn.md).
+    #[default]
+    Fused,
+    /// The file exactly as published (the graph the goldens were recorded with).
+    Original,
+}
+
+/// How a Smart Turn session is configured. The thread fields change only scheduling, never
+/// the numbers: the probabilities are bit-identical across them
 /// (`probabilities_are_bit_identical_across_session_configurations` in `tests/smart_turn.rs`).
+/// [`Self::graph`] changes the arithmetic of the GELUs (see [`SmartTurnGraph`]).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct OrtOptions {
     /// Intra-op threads per analysis (at least 1).
@@ -54,6 +67,8 @@ pub struct OrtOptions {
     /// `session.intra_op.allow_spinning`: whether the intra-op worker threads busy-wait for the
     /// next piece of work instead of sleeping. ONNX Runtime's own default is on, and so is ours.
     pub intra_op_spinning: bool,
+    /// The graph to run: fused (default) or the file as published.
+    pub graph: SmartTurnGraph,
 }
 
 impl Default for OrtOptions {
@@ -61,11 +76,22 @@ impl Default for OrtOptions {
         Self {
             intra_threads: DEFAULT_INTRA_THREADS,
             intra_op_spinning: DEFAULT_INTRA_OP_SPINNING,
+            graph: SmartTurnGraph::default(),
         }
     }
 }
 
-fn new_session(path: &Path, options: OrtOptions) -> Result<Session> {
+/// The model bytes the sessions are built from: the file, rewritten when the graph is fused.
+fn model_bytes(path: &Path, graph: SmartTurnGraph) -> Result<Vec<u8>> {
+    let bytes = std::fs::read(path).map_err(|e| model_error(format!("{}: {e}", path.display())))?;
+    check_size(u64::try_from(bytes.len()).unwrap_or(u64::MAX))?;
+    match graph {
+        SmartTurnGraph::Original => Ok(bytes),
+        SmartTurnGraph::Fused => Ok(super::fuse::fuse_gelu(&bytes)?.bytes),
+    }
+}
+
+fn new_session(bytes: &[u8], options: OrtOptions) -> Result<Session> {
     Session::builder()
         .map_err(model_error)?
         .with_intra_threads(options.intra_threads.max(1))
@@ -78,13 +104,17 @@ fn new_session(path: &Path, options: OrtOptions) -> Result<Session> {
         .map_err(model_error)?
         .with_independent_thread_pool()
         .map_err(model_error)?
-        .commit_from_file(path)
+        .commit_from_memory(bytes)
         .map_err(model_error)
 }
 
 /// The pinned model file and its idle ONNX Runtime sessions.
 pub struct SmartTurnOrt {
     model: PathBuf,
+    /// The bytes every session is built from (see [`model_bytes`]): the source of truth for
+    /// every session, kept so a cold start neither re-reads nor re-fuses the file. `model`
+    /// only names the file in debug output and errors.
+    bytes: Vec<u8>,
     idle: Mutex<Vec<Session>>,
     cold_starts: AtomicU64,
     options: OrtOptions,
@@ -150,9 +180,11 @@ impl SmartTurnOrt {
             intra_threads: options.intra_threads.max(1),
             ..options
         };
-        let first = new_session(path, options)?;
+        let bytes = model_bytes(path, options.graph)?;
+        let first = new_session(&bytes, options)?;
         Ok(Arc::new(Self {
             model: path.to_path_buf(),
+            bytes,
             idle: Mutex::new(vec![first]),
             cold_starts: AtomicU64::new(0),
             options,
@@ -238,7 +270,7 @@ impl SmartTurnOrt {
     /// The only way sessions after the first are made: warm and cold-start sessions cannot
     /// drift from the configured thread count.
     fn create_session(&self) -> Result<Session> {
-        new_session(&self.model, self.options)
+        new_session(&self.bytes, self.options)
     }
 }
 

@@ -95,6 +95,7 @@ pub(crate) fn check(
     check_telephony(file, issues);
     check_recording(file, issues);
     check_agent_link(file, issues);
+    super::mcp::check(file, issues);
     check_stt(file, issues, compiled);
     check_llm(file, issues, compiled);
     check_tts(file, issues, compiled);

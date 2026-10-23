@@ -249,6 +249,19 @@ The server does not write the numbers to its own logs or recordings from this pa
 process should treat them like any other caller data: keep them out of its logs and apply your
 retention to whatever it stores.
 
+## MCP servers
+
+An agent file with `[[mcp.servers]]` (`docs/TOOLS.md`, "MCP tools") sends the arguments of every
+tool call the model makes to those servers: whatever the model puts there, such as a name, a phone
+number, an order id or the text of a question, and the engine's idempotency key of the call. The
+results come back and go to the LLM provider as any tool result does. A stdio server is a program on
+your machine; an HTTP server is a service you name, and a public third-party one (the DeepWiki
+example) receives what callers ask. Treat each as a processor of caller data in your data map, name
+only servers you may send that data to, and use `https://` (a plain `http://` URL outside the private
+networks needs `allow_insecure = true`). The server writes no tool arguments or results to its logs
+or recordings from this path; the server process and its logs are yours to govern. The child's
+environment holds none of the server's provider keys.
+
 ## Retention
 
 The sweeper runs at startup and then every `BRISVOX_RECORDING_SWEEP_INTERVAL`. It looks at the

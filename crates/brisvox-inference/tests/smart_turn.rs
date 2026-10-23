@@ -178,8 +178,9 @@ mod ort {
     use std::time::Duration;
 
     use brisvox_core::{Clock, SharedClock, SystemClock};
+    use brisvox_inference::smart_turn::fuse;
     use brisvox_inference::smart_turn::ort_backend::{
-        DEFAULT_INTRA_THREADS, OrtOptions, SmartTurnOrt,
+        DEFAULT_INTRA_THREADS, OrtOptions, SmartTurnGraph, SmartTurnOrt,
     };
     use brisvox_inference::smart_turn::{MODEL_BYTES, SmartTurn, TurnModel};
     use brisvox_inference::{InferencePool, PoolConfig};
@@ -212,17 +213,37 @@ mod ort {
         assert_eq!(std::fs::metadata(model_path()).unwrap().len(), MODEL_BYTES);
     }
 
-    /// The probabilities of every golden case from a bare ONNX Runtime session on the Rust
-    /// extractor's features, in the order of [`cases`]: an oracle for [`SmartTurnOrt`]'s own
-    /// session handling that holds on every machine (same file, same runtime, same CPU).
-    fn bare_session_probabilities() -> Vec<f32> {
+    /// How far the fused graph's probabilities may be from the reference goldens (recorded with
+    /// the published graph); the verdicts must not change. The fused GELU computes the same
+    /// function; its erf rounds slightly differently, and the int8 graph turns that into a
+    /// different quantization step now and then. Measured on the 12 goldens: 9 equal to 6e-8,
+    /// three off by 4.6e-4, 0.025 and 0.096, all with the same verdict: the size the published
+    /// graph itself moves between CPUs (0.096 on the CI's Linux runners). On 4000 clips of the
+    /// Smart Turn v3.2 test set 3997 verdicts matched and the accuracy did not drop
+    /// (docs/providers/smart-turn.md "Fused GELU").
+    const FUSED_TOLERANCE: f32 = 0.12;
+
+    /// The model bytes for `graph`: the published file, or its fused rewrite.
+    fn graph_bytes(graph: SmartTurnGraph) -> Vec<u8> {
+        let bytes = std::fs::read(model_path()).unwrap();
+        match graph {
+            SmartTurnGraph::Original => bytes,
+            SmartTurnGraph::Fused => fuse::fuse_gelu(&bytes).unwrap().bytes,
+        }
+    }
+
+    /// The probabilities of every golden case from a bare ONNX Runtime session on `bytes` and
+    /// the Rust extractor's features, in the order of [`cases`]: an oracle for
+    /// [`SmartTurnOrt`]'s own session handling that holds on every machine (same bytes, same
+    /// runtime, same CPU).
+    fn bare_session_probabilities_of(bytes: &[u8]) -> Vec<f32> {
         use ::ort::session::Session;
         use ::ort::value::TensorRef;
         use brisvox_inference::mel::{FEATURES, FRAMES, N_MELS, WhisperLogMel};
 
         let mut session = Session::builder()
             .unwrap()
-            .commit_from_file(model_path())
+            .commit_from_memory(bytes)
             .unwrap();
         let mut mel = WhisperLogMel::new();
         cases()
@@ -243,14 +264,21 @@ mod ort {
             .collect()
     }
 
-    /// Every golden case through `model`. On every machine the probability must equal a bare
-    /// session's bit for bit. Against the reference's goldens (to their rounding, same verdict)
-    /// it is compared only where those kernels run (`smart_turn_goldens_apply_here`): elsewhere
-    /// the int8 model legitimately answers differently (2 of 12 cases on Linux, 0.007 and 0.096
-    /// off; far more without VNNI, docs/providers/smart-turn.md "Platform dependence").
-    fn check_goldens(model: &Arc<dyn TurnModel>, label: &str) {
+    /// Every golden case through `model` (running `graph`). On every machine the probability
+    /// must equal a bare session's on the same bytes, bit for bit. Against the reference's
+    /// goldens (to their rounding for the published graph, [`FUSED_TOLERANCE`] for the fused one,
+    /// same verdict) it is compared only where those kernels run
+    /// (`smart_turn_goldens_apply_here`): elsewhere the int8 model legitimately answers
+    /// differently (2 of 12 cases on Linux, 0.007 and 0.096 off; far more without VNNI,
+    /// docs/providers/smart-turn.md "Platform dependence").
+    fn check_goldens(model: &Arc<dyn TurnModel>, label: &str, graph: SmartTurnGraph) {
         let reference_kernels = brisvox_sim::platform::smart_turn_goldens_apply_here();
-        let bare = bare_session_probabilities();
+        let bare = bare_session_probabilities_of(&graph_bytes(graph));
+        // Goldens are rounded to 7 decimals.
+        let tolerance = match graph {
+            SmartTurnGraph::Original => 1e-6,
+            SmartTurnGraph::Fused => FUSED_TOLERANCE,
+        };
         let rows = run_cases(model);
         assert_eq!(rows.len(), bare.len());
         let mut worst = 0.0_f32;
@@ -268,9 +296,8 @@ mod ort {
                 "{label} {key}: {got} differs from a bare ONNX Runtime session ({bare})"
             );
             if reference_kernels {
-                // Goldens are rounded to 7 decimals.
                 assert!(
-                    error < 1e-6,
+                    error < tolerance,
                     "{label} {key}: rust {got} vs reference {expected}"
                 );
                 assert_eq!(got > 0.5, expected > 0.5, "{label} {key}: verdict differs");
@@ -286,9 +313,52 @@ mod ort {
         );
     }
 
+    /// Writes the fused graph to `$BRISVOX_DUMP_FUSED` for offline evaluation (the 4000-clip
+    /// comparison in docs/providers/smart-turn.md). Not a check: run it by name.
+    #[test]
+    #[ignore = "writes a file; run by name with BRISVOX_DUMP_FUSED set"]
+    fn dump_the_fused_graph() {
+        let Ok(path) = std::env::var("BRISVOX_DUMP_FUSED") else {
+            return;
+        };
+        std::fs::write(path, graph_bytes(SmartTurnGraph::Fused)).unwrap();
+    }
+
     #[test]
     fn probabilities_match_the_reference_runtime() {
-        check_goldens(&model(), "default");
+        check_goldens(&model(), "default", SmartTurnGraph::Fused);
+    }
+
+    /// The published graph, as before the fusion: the goldens to their rounding.
+    #[test]
+    fn the_original_graph_matches_the_reference_exactly() {
+        let options = OrtOptions {
+            graph: SmartTurnGraph::Original,
+            ..OrtOptions::default()
+        };
+        let model: Arc<dyn TurnModel> =
+            SmartTurnOrt::load_with_options(&model_path(), options).unwrap();
+        check_goldens(&model, "original", SmartTurnGraph::Original);
+    }
+
+    /// The pinned file has exactly 8 exported GELUs and all of them are fused; reading and
+    /// writing the model without a rewrite loses nothing (a field the protobuf types did not
+    /// know would be dropped and change the graph or fail to load).
+    #[test]
+    fn the_pinned_file_fuses_all_8_gelus_and_a_round_trip_changes_nothing() {
+        let bytes = std::fs::read(model_path()).unwrap();
+        let fused = fuse::fuse_gelu(&bytes).unwrap();
+        assert_eq!(fused.gelus, 8);
+        assert_eq!(
+            fuse::fuse_gelu(&bytes).unwrap().bytes,
+            fused.bytes,
+            "deterministic"
+        );
+        let unchanged = fuse::reencode(&bytes).unwrap();
+        let original = bare_session_probabilities_of(&bytes);
+        let round_trip = bare_session_probabilities_of(&unchanged);
+        let bits = |v: &[f32]| v.iter().map(|p| p.to_bits()).collect::<Vec<_>>();
+        assert_eq!(bits(&round_trip), bits(&original));
     }
 
     /// The module doc's claim: the goldens hold at 1, 2 and 4 intra-op threads, through a
@@ -300,7 +370,7 @@ mod ort {
             assert_eq!(model.intra_threads(), threads);
             model.warm(2).unwrap();
             let model: Arc<dyn TurnModel> = model;
-            check_goldens(&model, &format!("{threads} threads"));
+            check_goldens(&model, &format!("{threads} threads"), SmartTurnGraph::Fused);
         }
     }
 
@@ -323,6 +393,7 @@ mod ort {
         let reference = bits(OrtOptions {
             intra_threads: 1,
             intra_op_spinning: true,
+            ..OrtOptions::default()
         });
         assert_eq!(reference.len(), 12);
         for intra_threads in [1, 2, 3, 4] {
@@ -330,6 +401,7 @@ mod ort {
                 let options = OrtOptions {
                     intra_threads,
                     intra_op_spinning,
+                    ..OrtOptions::default()
                 };
                 assert_eq!(bits(options), reference, "{options:?}");
             }

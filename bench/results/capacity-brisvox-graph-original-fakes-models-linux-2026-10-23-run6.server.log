@@ -1,0 +1,1 @@
+[2m2026-10-23T02:28:29.369065Z[0m [33m WARN[0m [2mbrisvox_providers::net[0m[2m:[0m BRISVOX_EXTRA_CA_FILE is set: provider connections also trust this CA (meant for tests and benchmarks) [3mfile[0m[2m=[0m/pki/ca.pem

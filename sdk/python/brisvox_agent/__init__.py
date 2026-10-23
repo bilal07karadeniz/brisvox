@@ -71,7 +71,7 @@ from .protocol import (
 from .schema import SchemaError
 from .tools import Tool, ToolArgumentError, ToolContext, ToolError
 
-__version__ = "0.1.1"
+__version__ = "0.1.2"
 
 __all__ = [
     "Accept",

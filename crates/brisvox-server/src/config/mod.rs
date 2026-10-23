@@ -36,6 +36,7 @@ pub mod error;
 #[cfg(feature = "schema")]
 pub mod json_schema;
 pub mod map;
+pub mod mcp;
 pub mod schema;
 pub mod types;
 mod validate;
@@ -62,6 +63,10 @@ use toml::Spanned;
 use crate::privacy::{PiiKinds, RecordingFileSettings};
 
 pub use error::{ConfigError, Issue};
+pub use mcp::{
+    MAX_MCP_SERVERS, MAX_MCP_TOOLS, McpServerSettings, McpSettings, McpToolSettings,
+    McpTransportSettings, exposed_name,
+};
 pub use schema::VoicemailUnknown;
 use schema::{
     AgentFile, LlmProviderKind, LlmSection, SttProviderKind, SttSection, TtsProviderKind,
@@ -409,7 +414,9 @@ pub fn load_str_as(
     format: Format,
     env: &dyn Env,
 ) -> Result<AgentConfig, ConfigError> {
-    load_with(text, source_name, format, env, &Provider::compiled_in)
+    let agent = load_with(text, source_name, format, env, &Provider::compiled_in)?;
+    mcp::require_compiled(&agent, cfg!(feature = "mcp"))?;
+    Ok(agent)
 }
 
 /// Reads the TOML `text` into an [`AgentFile`]: syntax, types, ranges and unknown keys only (no
@@ -567,6 +574,9 @@ fn load_with(
             .collect(),
     };
 
+    // The MCP servers' secrets (`bearer_env`, `env_from`): a missing variable fails the start.
+    let mcp = mcp::resolve(&file, env, &mut issues);
+
     let engine = map::engine_config(&file);
     if issues.found.is_empty()
         && let Err(e) = engine.validate()
@@ -601,6 +611,7 @@ fn load_with(
         tts_key,
         secondary_keys,
         agent_link,
+        mcp,
         text: text.into(),
         source_name: source_name.to_owned(),
         file,
@@ -661,6 +672,8 @@ pub struct AgentConfig {
     secondary_keys: SecondaryKeys,
     /// The `[agent_link]` section with its tokens.
     agent_link: AgentLinkSettings,
+    /// The `[[mcp.servers]]` with their secrets.
+    mcp: McpSettings,
     /// The file text (positions of later checks such as [`Self::check_tools`]).
     text: Arc<str>,
     /// Where the definition came from.
@@ -975,6 +988,29 @@ impl AgentConfig {
     /// message may pick (empty without the section).
     pub fn agent_link(&self) -> &AgentLinkSettings {
         &self.agent_link
+    }
+
+    /// The `[[mcp.servers]]` of the definition (empty without the section): where the MCP
+    /// servers are and which of their tools to offer (`docs/TOOLS.md`, "MCP tools").
+    pub fn mcp(&self) -> &McpSettings {
+        &self.mcp
+    }
+
+    /// A [`ConfigError`] about the text at `span` of this definition (`key` is the key path),
+    /// for problems that only show when the server starts, such as an MCP server that does not
+    /// offer a tool its allowlist names.
+    pub fn error_at(
+        &self,
+        key: &str,
+        span: std::ops::Range<usize>,
+        message: String,
+    ) -> ConfigError {
+        let mut issues = validate::Issues::new(&self.text);
+        issues.at(key, span, message);
+        ConfigError {
+            source_name: self.source_name.clone(),
+            issues: issues.into_sorted(),
+        }
     }
 
     /// The `[telephony.voicemail]` settings, if the definition has them.
@@ -1384,6 +1420,9 @@ mod secondary_tests;
 mod local_stt_tests;
 #[cfg(test)]
 mod tests;
+// The `[[mcp.servers]]` tables.
+#[cfg(test)]
+mod mcp_tests;
 // The JSON Schema of the agent file.
 #[cfg(all(test, feature = "schema"))]
 mod json_schema_tests;

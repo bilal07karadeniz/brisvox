@@ -889,6 +889,154 @@
       ],
       "type": "object"
     },
+    "McpPrefix": {
+      "anyOf": [
+        {
+          "description": "`true`: the server's `name` and an underscore (`github_`); `false`: no prefix.",
+          "type": "boolean"
+        },
+        {
+          "description": "This text (1-32 letters, digits, `_` or `-`), used as it is.",
+          "pattern": "^[A-Za-z0-9_\\-]{1,32}$",
+          "type": "string"
+        }
+      ],
+      "description": "`mcp.servers[].prefix`: whether and how the server's tool names are prefixed, to keep two\nservers' tools (or a tool and one of the server's own) from clashing."
+    },
+    "McpSection": {
+      "additionalProperties": false,
+      "description": "`[mcp]`: the MCP (Model Context Protocol) servers whose tools the agent may call\n(`docs/TOOLS.md`, \"MCP tools\"). The server connects to each once at startup; a tool in a\nserver's `tools` allowlist is offered to the LLM like a tool of the server itself.",
+      "properties": {
+        "servers": {
+          "description": "The servers, as `[[mcp.servers]]` tables (at most 8).",
+          "items": {
+            "$ref": "#/$defs/McpServerEntry"
+          },
+          "type": "array"
+        }
+      },
+      "type": "object"
+    },
+    "McpServerEntry": {
+      "additionalProperties": false,
+      "description": "One `[[mcp.servers]]` entry: an MCP server, reached by `command` (stdio) or `url`\n(streamable HTTP), and the tools of it the agent may call.",
+      "properties": {
+        "allow_insecure": {
+          "description": "url only: accept a plaintext `http://` URL to a host outside the private networks.\nDefault `false`: such a URL is refused at startup, because tool arguments and results\ncarry what the caller said, with or without a bearer token.",
+          "type": "boolean"
+        },
+        "args": {
+          "default": [],
+          "description": "stdio only: the program's arguments.",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "bearer_env": {
+          "description": "url only: environment variable holding a bearer token, sent as `Authorization: Bearer`.",
+          "examples": [
+            "DEEPGRAM_API_KEY"
+          ],
+          "pattern": "^[A-Za-z_][A-Za-z0-9_]{0,127}$",
+          "type": "string"
+        },
+        "command": {
+          "description": "stdio transport: the program to start (looked up on `PATH`). Exactly one of `command`\nand `url`.",
+          "type": "string"
+        },
+        "confirm": {
+          "default": [],
+          "description": "The tools of `tools` held for the user's confirmation (`docs/TOOLS.md`, \"Confirmation\ngate\"). They must not be in `read_only`.",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "env": {
+          "additionalProperties": {
+            "type": "string"
+          },
+          "default": {},
+          "description": "stdio only: environment variables for the program, `NAME = \"value\"`. The program gets\nnothing else from the server's environment but `PATH` (and, on Windows, the variables the\nsystem needs to start a program): the server's provider keys do not reach it. A value\nis not a secret store: use `env_from` for secrets.",
+          "type": "object"
+        },
+        "env_from": {
+          "additionalProperties": {
+            "examples": [
+              "DEEPGRAM_API_KEY"
+            ],
+            "pattern": "^[A-Za-z_][A-Za-z0-9_]{0,127}$",
+            "type": "string"
+          },
+          "description": "stdio only: environment variables for the program whose value comes from a variable of\nthe server's own environment, `CHILD_NAME = \"SERVER_VARIABLE\"`. The file names the\nvariable, never holds the value; a variable that is not set stops the start.",
+          "type": "object"
+        },
+        "filler_after_ms": {
+          "description": "Time without a result after which the filler phrase plays (`[filler]`). Default 700.",
+          "maximum": 30000,
+          "minimum": 1,
+          "type": "integer"
+        },
+        "max_in_flight": {
+          "description": "Most calls to this server in flight at once, over all of the server's calls. A call over\nthe limit fails at once with a \"busy\" tool error (a side-effect tool is then not sent at\nall). Default 32, at most 256.",
+          "maximum": 256,
+          "minimum": 1,
+          "type": "integer"
+        },
+        "name": {
+          "description": "The server's name (1-32 letters, digits, `_`, `-`; each once): used in logs and errors,\nand as the tool-name prefix with `prefix = true`.",
+          "pattern": "^[A-Za-z0-9_\\-]{1,32}$",
+          "type": "string"
+        },
+        "prefix": {
+          "$ref": "#/$defs/McpPrefix",
+          "description": "Prefix for the names the LLM sees: `true` for `<name>_`, or a text. Default none. A name\nthe LLM cannot use (the rules of a tool name: letters, digits, `_`, `-`; at most 64\ncharacters) has its other characters replaced by `_` (the `.` of `files.read`)."
+        },
+        "read_only": {
+          "default": [],
+          "description": "The tools of `tools` that only read (no side effects): they may run speculatively and are\ndropped when the caller interrupts. Every other tool is treated as having side effects\n(never speculative, never run twice for one call). The server's own `readOnlyHint`\nannotation is not trusted: it is logged at debug level only.",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "startup_timeout_ms": {
+          "description": "Longest wait for the server to start and list its tools, at startup. Default 30000.",
+          "maximum": 120000,
+          "minimum": 1000,
+          "type": "integer"
+        },
+        "timeout_ms": {
+          "description": "Longest wait for a result, per call. Default 5000, at most 30000. A tool with side effects\nkeeps running after it (the caller is told it is still working) up to 60 s.",
+          "maximum": 30000,
+          "minimum": 1,
+          "type": "integer"
+        },
+        "tools": {
+          "description": "The tools of the server to offer, by the server's own names: the allowlist. Required and\nnot empty (a server's other tools are not reachable: fail closed). A name the server does\nnot offer stops the start.",
+          "items": {
+            "type": "string"
+          },
+          "minItems": 1,
+          "type": "array"
+        },
+        "url": {
+          "description": "streamable HTTP transport: the server's MCP endpoint, `https://...`, or `http://` to a\nhost on a private network (loopback, RFC 1918, link-local, `localhost`, `*.internal`,\n`*.local`, a single-label service name), or to any host with `allow_insecure = true`.\nNo query, fragment or user info (the URL is shown in messages). Exactly one of `command`\nand `url`.",
+          "examples": [
+            "http://localhost:8880/v1"
+          ],
+          "maxLength": 2048,
+          "pattern": "^https?://[^\\s\\u0000-\\u001f\\u007f-\\u009f/?#@:][^\\s\\u0000-\\u001f\\u007f-\\u009f/?#@]*([/?#][^\\s\\u0000-\\u001f\\u007f-\\u009f]*)?$",
+          "type": "string"
+        }
+      },
+      "required": [
+        "name",
+        "tools"
+      ],
+      "type": "object"
+    },
     "OpenAiCompatibleOptions": {
       "additionalProperties": false,
       "description": "`[llm.openai_compatible]`: a `preset`, or a `base_url` and a `model`.",
@@ -1717,6 +1865,10 @@
     "llm": {
       "$ref": "#/$defs/LlmSection",
       "description": "LLM provider and the runner settings."
+    },
+    "mcp": {
+      "$ref": "#/$defs/McpSection",
+      "description": "MCP servers whose tools the agent may call (`docs/TOOLS.md`, \"MCP tools\")."
     },
     "recording": {
       "$ref": "#/$defs/RecordingSection",

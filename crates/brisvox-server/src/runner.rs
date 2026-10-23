@@ -161,6 +161,29 @@ pub const ENV_MODELS_DIR: &str = "BRISVOX_MODELS_DIR";
 /// [`brisvox_engine::offload::default_smart_turn_threads`].
 pub const ENV_SMART_TURN_THREADS: &str = "BRISVOX_SMART_TURN_THREADS";
 
+/// `fused` (default) or `original`: the Smart Turn graph the sessions run
+/// (`brisvox_inference::smart_turn::fuse`; docs/OPERATIONS.md).
+pub const ENV_SMART_TURN_GRAPH: &str = "BRISVOX_SMART_TURN_GRAPH";
+
+/// The Smart Turn graph from [`ENV_SMART_TURN_GRAPH`] (default fused).
+///
+/// # Errors
+/// [`Error::Config`] for a value other than `fused` or `original`.
+#[cfg(feature = "smart-turn-ort")]
+pub fn smart_turn_graph(
+    env: &dyn Env,
+) -> Result<brisvox_inference::smart_turn::ort_backend::SmartTurnGraph> {
+    use brisvox_inference::smart_turn::ort_backend::SmartTurnGraph;
+    match var(env, ENV_SMART_TURN_GRAPH)?.as_deref().map(str::trim) {
+        None | Some("") => Ok(SmartTurnGraph::Fused),
+        Some(v) if v.eq_ignore_ascii_case("fused") => Ok(SmartTurnGraph::Fused),
+        Some(v) if v.eq_ignore_ascii_case("original") => Ok(SmartTurnGraph::Original),
+        Some(other) => Err(Error::Config(format!(
+            "{ENV_SMART_TURN_GRAPH}={other:?}: expected fused or original"
+        ))),
+    }
+}
+
 /// The most threads the Smart Turn executor may be given.
 pub const MAX_SMART_TURN_THREADS: usize = 64;
 
@@ -238,7 +261,29 @@ pub fn load_smart_turn(env: &dyn Env, agent: &AgentConfig) -> Result<Option<Arc<
             )
             .join(brisvox_inference::smart_turn::MODEL_FILE),
         };
-        let model = brisvox_inference::smart_turn::ort_backend::SmartTurnOrt::load(&path).map_err(|e| {
+        use brisvox_inference::smart_turn::ort_backend::{
+            OrtOptions, SmartTurnGraph, SmartTurnOrt,
+        };
+        let options = OrtOptions {
+            graph: smart_turn_graph(env)?,
+            ..Default::default()
+        };
+        // A runtime that cannot run the fused graph (an ONNX Runtime build without the contrib
+        // operators) still runs the file as published: a slower turn model, not a dead server.
+        let loaded = SmartTurnOrt::load_with_options(&path, options).or_else(|error| {
+            if options.graph != SmartTurnGraph::Fused {
+                return Err(error);
+            }
+            tracing::warn!(target: "brisvox::server", %error, "the fused Smart Turn graph did not load: running the published graph ({ENV_SMART_TURN_GRAPH}=original)");
+            SmartTurnOrt::load_with_options(
+                &path,
+                OrtOptions {
+                    graph: SmartTurnGraph::Original,
+                    ..options
+                },
+            )
+        });
+        let model = loaded.map_err(|e| {
             Error::Config(format!(
                 "{ENV_SMART_TURN_MODEL}: cannot load the Smart Turn model {}: {e} (fetch it with scripts/models/fetch_models.py, or set {ENV_SMART_TURN_MODEL}=off)",
                 path.display()
@@ -1012,6 +1057,19 @@ mod tests {
             let error = set(bad).unwrap_err().to_string();
             assert!(error.contains(ENV_SMART_TURN_THREADS), "{bad}: {error}");
         }
+    }
+
+    #[cfg(feature = "smart-turn-ort")]
+    #[test]
+    fn the_smart_turn_graph_defaults_to_fused_and_can_be_the_original() {
+        use brisvox_inference::smart_turn::ort_backend::SmartTurnGraph;
+        assert_eq!(smart_turn_graph(&env(&[])).unwrap(), SmartTurnGraph::Fused);
+        let set = |value: &str| smart_turn_graph(&env(&[(ENV_SMART_TURN_GRAPH, value)]));
+        assert_eq!(set("fused").unwrap(), SmartTurnGraph::Fused);
+        assert_eq!(set("Original").unwrap(), SmartTurnGraph::Original);
+        assert_eq!(set(" original ").unwrap(), SmartTurnGraph::Original);
+        let error = set("fast").unwrap_err().to_string();
+        assert!(error.contains(ENV_SMART_TURN_GRAPH), "{error}");
     }
 
     #[test]

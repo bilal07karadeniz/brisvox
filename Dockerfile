@@ -47,9 +47,10 @@ RUN cargo chef prepare --recipe-path recipe.json
 # ---------------------------------------------------------------------------------------------
 FROM chef AS builder
 # What the production agent needs: every provider adapter, the carriers' call control for
-# transfer_call/send_dtmf/end_call and Smart Turn on ONNX Runtime. The server's default
-# features (mimalloc, yaml, silero-tract) stay on. Add `sip` for the SIP trunk listener.
-ARG BRISVOX_FEATURES=all-providers,call-control,smart-turn-ort
+# transfer_call/send_dtmf/end_call, Smart Turn on ONNX Runtime and MCP tools (`[[mcp.servers]]`;
+# a stdio MCP server needs its own runtime in the image, an HTTP one does not). The server's
+# default features (mimalloc, yaml, silero-tract) stay on. Add `sip` for the SIP trunk listener.
+ARG BRISVOX_FEATURES=all-providers,call-control,smart-turn-ort,mcp
 # 1 strips the binary (smaller; panic messages stay, backtrace line tables go); 0 keeps them.
 ARG STRIP_BINARY=1
 # Optional cap on cargo's parallel rustc jobs (empty: one per core). Set it on small build

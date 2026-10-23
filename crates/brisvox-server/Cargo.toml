@@ -56,6 +56,10 @@ otlp = []
 # names X25519 recipients and every recording file is written as `<name>.age`. Off by default (the
 # age crate pulls in a larger crypto tree); the variable set without the feature is a startup error.
 recording-encryption = ["dep:age"]
+# MCP tools for agents (`[[mcp.servers]]` of the agent definition, docs/TOOLS.md "MCP tools"):
+# the server connects to MCP servers over stdio or streamable HTTP and offers their allowlisted
+# tools like its own. Off by default; an agent file with `[mcp]` fails the start without it.
+mcp = ["dep:rmcp", "brisvox-providers/http"]
 # Canned `lookup_order` and `book_appointment` tools so the example agents run without an
 # application (src/tools/demo.rs). Off by default; never ship it to callers.
 demo-tools = []
@@ -101,6 +105,9 @@ brisvox-providers = { workspace = true }
 brisvox-transport = { workspace = true }
 # Optional: age encryption of the recordings (feature `recording-encryption`).
 age = { workspace = true, optional = true }
+# Optional: the MCP client (feature `mcp`): the official SDK, client side only, the stdio child
+# process transport (`which-command` finds `npx` and friends on Windows too) and streamable HTTP.
+rmcp = { workspace = true, optional = true, features = ["client", "transport-child-process", "which-command", "transport-streamable-http-client-reqwest"] }
 # `Bytes` of the audio frames the recording sink queues; already in the workspace.
 bytes = { workspace = true }
 futures = { workspace = true }
@@ -133,6 +140,21 @@ serde_json = { workspace = true }
 # The hosting tests' websocket client; the same crate the transport serves with.
 tokio-tungstenite = { workspace = true }
 tokio = { workspace = true, features = ["fs", "io-util", "macros", "net", "rt", "rt-multi-thread", "signal", "sync", "test-util", "time"] }
+# The MCP tests' servers (`examples/mcp_test_server.rs`, `tests/mcp_tools.rs`): rmcp's server
+# side, written without macros, and axum to serve its streamable HTTP service. Dev-dependencies
+# cannot be conditional on a feature, so a test build compiles them even without `mcp`; a
+# deployed server does not.
+axum = { version = "0.8", default-features = false, features = ["http1", "tokio"] }
+rmcp = { workspace = true, features = ["server", "transport-io", "transport-streamable-http-server"] }
+
+# The stdio MCP server the MCP tests spawn (`tests/mcp_tools.rs`).
+[[example]]
+name = "mcp_test_server"
+required-features = ["mcp"]
+
+[[test]]
+name = "mcp_tools"
+required-features = ["mcp", "provider-deepgram", "provider-openai", "provider-cartesia"]
 
 [lints]
 workspace = true

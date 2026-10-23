@@ -42,7 +42,7 @@ your program):
   `provider-anthropic`, `provider-gemini`, `provider-openai-compatible`, `provider-cartesia`,
   `provider-elevenlabs`, `provider-deepgram-aura`, `provider-openai-speech`.
 * Transports and extras: `webrtc` (browsers; builds libopus, needs cmake and a C compiler), `sip`,
-  `call-control` (telephony tools), `smart-turn-ort` (adaptive turns on ONNX Runtime), `otlp`,
+  `call-control` (telephony tools), `mcp` (MCP tools), `smart-turn-ort` (adaptive turns on ONNX Runtime), `otlp`,
   `recording-encryption`, `schema`, `demo-tools`.
 
 To run the stock server instead of embedding it:

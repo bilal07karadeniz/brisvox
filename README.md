@@ -14,7 +14,7 @@ moment. Open source, one process, hundreds of isolated calls per container.**
 
 <p align="center"><img src="assets/architecture.svg" alt="brisvox architecture: callers reach one brisvox-server process through Twilio, Telnyx, SIP, WebRTC or WebSocket transports; each call is an isolated session running VAD and turn detection, STT, the LLM with tools and TTS, with an inference pool for the models; providers are cloud or local; your agent in Python or TypeScript holds the tools" width="960"></p>
 
-[Install](#install) · [Quickstart](#quickstart) · [Comparison](#brisvox-vs-livekit-agents-vs-pipecat) ·
+[Install](#install) · [Try it without keys](#try-it-without-keys) · [Quickstart](#quickstart) · [Comparison](#brisvox-vs-livekit-agents-vs-pipecat) ·
 [Features](#features) · [For AI coding agents](#for-ai-coding-agents) ·
 [Docs: the book](book/src/introduction.md) · [License](#license)
 
@@ -181,7 +181,7 @@ None of this is an independent benchmark: no third-party density comparison of t
 2.39 or newer.
 
 ```sh
-v=v0.1.1; t=x86_64-unknown-linux-gnu        # pick the release and your platform
+v=v0.1.2; t=x86_64-unknown-linux-gnu        # pick the release and your platform
 curl -fLO https://github.com/bilal07karadeniz/brisvox/releases/download/$v/brisvox-server-$v-$t.tar.gz
 curl -fLO https://github.com/bilal07karadeniz/brisvox/releases/download/$v/SHA256SUMS
 sha256sum --ignore-missing -c SHA256SUMS && tar xzf brisvox-server-$v-$t.tar.gz
@@ -203,13 +203,13 @@ Tags are `vX.Y.Z` and `latest`. Running it with an agent file and your keys:
 **From crates.io.** Needs Rust 1.99 or newer, a C compiler and cmake (libopus, ONNX Runtime):
 
 ```sh
-cargo install brisvox-server --locked --features all-providers,call-control,smart-turn-ort,webrtc
+cargo install brisvox-server --locked --features all-providers,call-control,smart-turn-ort,mcp,webrtc
 ```
 
 **What to build with.** The prebuilt binaries and the image are built with
-`all-providers,call-control,smart-turn-ort,webrtc`: every STT/LLM/TTS adapter, the carriers' call
-control (`transfer_call`, `send_dtmf`, `end_call`), Smart Turn on ONNX Runtime and the WebRTC
-listener. The crate's own default features are deliberately small (no provider adapter): an
+`all-providers,call-control,smart-turn-ort,mcp,webrtc`: every STT/LLM/TTS adapter, the carriers' call
+control (`transfer_call`, `send_dtmf`, `end_call`), Smart Turn on ONNX Runtime, MCP tools and the
+WebRTC listener. The crate's own default features are deliberately small (no provider adapter): an
 application that only needs some of them names just those, for example
 `--features provider-deepgram,provider-openai,provider-cartesia`. Not in the prebuilt set: `sip`
 (the SIP trunk listener), `otlp` (OpenTelemetry export) and `recording-encryption`; build from
@@ -240,6 +240,18 @@ provider adapters and the core types, and forwards the server's features. The ot
 `brisvox-engine`, `brisvox-agent-link`, `brisvox-inference`, `brisvox-audio`, `brisvox-sim`) are on
 crates.io too, for those who need one alone. Release notes are in the
 [changelog](CHANGELOG.md); security reports go to the [security policy](SECURITY.md).
+
+## Try it without keys
+
+A voice agent that runs entirely on your computer (speech recognition, language model and voice, CPU
+only), talked to in the browser. Needs Docker, 4+ cores, 8 GB of memory; the first start downloads
+about 6.5 GB.
+
+```sh
+docker compose -f deploy/local/compose.yaml up      # then open http://localhost:8088/demo?force=ws
+```
+
+Details, a larger model for faster machines and the licences: [`deploy/local/`](deploy/local/README.md).
 
 ## Quickstart
 

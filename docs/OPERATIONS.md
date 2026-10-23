@@ -161,6 +161,7 @@ exit status 1 and a message naming the variable.
 | `BRISVOX_MODELS_DIR` | `models` | Directory of the model files. |
 | `BRISVOX_EXTRA_CA_FILE` | unset | **Tests and benchmarks only.** PEM file of CA certificates that every provider adapter trusts besides the public roots (certificate and host name are still verified). It lets the adapters talk TLS to the fake providers of `bench/fake_providers`, whose certificate is signed by a throwaway CA. Read once, when the first TLS connection is set up; an unreadable or invalid file fails that connection. Not for production: use a real certificate, or `BRISVOX_AGENT_TLS_CA` for a private agent. |
 | `BRISVOX_SMART_TURN_THREADS` | the inference pool's threads (half the cores) | Threads of the Smart Turn executor: the 20-25 ms analyses run on their own threads so they never delay the VAD windows of other calls. `0` runs them on the VAD's pool as before (use it to compare). One thread is about 55% busy at 200 calls and delays verdicts when turns end together; the default carries ~180 calls per thread with headroom. Small machines: the default is half the cores (at least 1), so 1-3 cores give 1 executor thread; the server logs a warning at start when the VAD pool, the executor and the ONNX Runtime intra-op workers together exceed the available cores. |
+| `BRISVOX_SMART_TURN_GRAPH` | `fused` | `fused` runs the pinned model with its GELUs fused into one operation each (about 40% less memory traffic per analysis; verdicts matched the published graph on 3997 of 4000 test clips with the same accuracy, and on 299 of 300 on a CPU without VNNI, docs/providers/smart-turn.md "Fused GELU"); `original` runs the file exactly as published. |
 
 A listener address is `host:port` or `off`. Without any listener (`BRISVOX_WS_ADDR=off` and
 the others unset) the binary serves its health endpoints only and needs no agent file.
@@ -516,6 +517,44 @@ worst latency of each stage; its JSON shape is in the protocol document. `provid
 are the primaries of the agent definition (`model` is `default` where the adapter leaves the choice
 to the provider). A call that failed over to a secondary is counted under the primary, and a
 call that never connected to a provider has zeros.
+
+### Grafana dashboard
+
+`deploy/grafana/brisvox.json` is a Grafana dashboard for the metrics above. It is tested with
+Grafana 12.1 and declares Grafana 10 as the minimum. Two ways to load it:
+
+- UI import: Dashboards, New, Import, upload the file and pick the Prometheus datasource that
+  scrapes `/metrics` (the file declares it as an import input).
+- File provisioning: put the file in a dashboard provider's folder next to a provisioned
+  Prometheus datasource. The `Datasource` variable then selects the default Prometheus datasource;
+  pick another one from the variable if you have several.
+
+Nothing else is configured. The `Instance` variable filters by scrape target
+and `Provider` filters the provider panels (breakers, concurrency budgets, usage). Rates use
+`$__rate_interval`, so set the scrape interval on the datasource (5 to 15 s). A test
+(`cargo test -p brisvox-server --lib dashboard`) renders the real `/metrics` text and fails when a
+panel queries a metric, label or label value the server does not export, applies `rate()` to a
+gauge, reads a counter or histogram bucket without `rate()` or `increase()`, or takes a
+`histogram_quantile()` over buckets without `le` in its `by (...)`. The rows are the questions an
+operator asks, in the order they ask them:
+
+| Row | Question | Panels |
+|---|---|---|
+| Is it healthy right now? | Are calls getting through? | Calls live; calls refused in the selected range (every one is a lost caller, red from the first); p95 server-side response latency (orange from 1.0 s, red from the 1.2 s objective of the benchmarks); inference pool pressure; live calls as a percentage of `BRISVOX_MAX_SESSIONS` (80% line); how calls end (failed and panicked in red); refusals by reason. |
+| Is it fast? | Where does the time go? | Response latency p50 and p95 with the 1.2 s line; time to silence after a barge-in; per-stage p50 and p95 (`end_of_turn`, `stt_final`, `llm_first_token`, `tts_first_byte`; they overlap, so they do not add up); the engine's own hops (`into_llm`, `out_of_tts`). |
+| Do barge-ins work? | Does the caller get to interrupt the bot? | Share of finished turns that ended in a barge-in (a step change is the signal, there is no good value); clear failures (the playback flush the transport did not accept) and mark timeouts (the client never echoed the end-of-response mark), both bad above zero and counted when a call ends. |
+| Why is it slow or refusing? | Is the server or a limit the cause? | Inference pool queue depth (the overload limit is `BRISVOX_OVERLOAD_QUEUE_PER_THREAD` times the pool's threads, so it has no line; the pressure stat shows it) and mean wait (the 50 ms line is the default `BRISVOX_OVERLOAD_QUEUE_WAIT`); provider concurrency in use against `BRISVOX_PROVIDER_LIMITS`; the Smart Turn executor's queue and the analyses it rejected or answered late (these never show in the pool panels). |
+| Are providers failing? | Which provider, and is it absorbed? | Circuit breaker state per provider; failed attempts per provider; provider errors by stage and kind (the counters carry no provider label); retries and failovers; failures the resilience layer could not absorb (unavailable, retry budget spent, unrecovered). |
+| What does it cost? | What units did the providers bill? | LLM tokens, STT audio (minutes) and TTS characters over a rolling hour per provider and model (multiply by your price list); call duration. |
+
+Tool calls have no metric of their own. The `llm_round` stage of
+`brisvox_stage_latency_seconds` is one observation per LLM request, including the requests after a
+tool result, so it is the place to see what a tool loop costs; the dashboard has no panel for it.
+
+The latency panels show the server-side response latency: the caller's network and the client's
+buffering come on top, so a call can miss a client-measured objective while the panel is still
+green. The 50 ms and 1.2 s lines are the default and the benchmark objective; edit the panel
+thresholds if your settings or objective differ.
 
 ### Traces
 

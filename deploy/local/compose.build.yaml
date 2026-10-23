@@ -1,0 +1,18 @@
+# Build brisvox-server from this checkout instead of pulling the published image (to try a
+# change, or a version that is not released yet):
+#
+#   docker compose -f deploy/local/compose.yaml -f deploy/local/compose.build.yaml up --build
+#
+# The first build compiles the server and takes several minutes (add `BUILD_JOBS: "4"` below on
+# a small machine; docs/DEPLOY.md, "The image"). The features are those of the published image
+# minus telephony call control: every provider adapter, Smart Turn, and the WebRTC listener that
+# serves the browser page.
+
+services:
+  brisvox:
+    image: brisvox/server:local
+    build:
+      context: ../..
+      dockerfile: Dockerfile
+      args:
+        BRISVOX_FEATURES: all-providers,smart-turn-ort,webrtc

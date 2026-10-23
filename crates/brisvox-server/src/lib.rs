@@ -14,6 +14,8 @@ pub mod fdlimit;
 pub mod health;
 pub mod hosting;
 pub mod lifecycle;
+#[cfg(feature = "mcp")]
+pub mod mcp;
 pub mod observability;
 pub mod privacy;
 pub mod providers;

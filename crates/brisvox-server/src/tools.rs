@@ -149,6 +149,12 @@ pub struct ToolSetup {
     app: ToolRegistry,
     /// The settings of each call's [`ToolEngine`].
     engine: ToolEngineConfig,
+    /// The names of the MCP tools in `app` ([`Self::with_mcp`]): every agent that has MCP
+    /// servers offers them without listing them in `agent.tools`.
+    mcp_names: Vec<String>,
+    /// The connections to the MCP servers behind those tools.
+    #[cfg(feature = "mcp")]
+    mcp: Option<Arc<crate::mcp::McpHost>>,
     /// The carriers' call control, when configured.
     #[cfg(feature = "call-control")]
     call_control: Option<telephony::CallControls>,
@@ -182,11 +188,63 @@ impl ToolSetup {
         Self {
             app: ToolRegistry::new(),
             engine: ToolEngineConfig::default(),
+            mcp_names: Vec::new(),
+            #[cfg(feature = "mcp")]
+            mcp: None,
             #[cfg(feature = "call-control")]
             call_control: None,
             #[cfg(feature = "call-control")]
             callbacks: None,
         }
+    }
+
+    /// Connects to the MCP servers `agent` names (`[[mcp.servers]]`, `docs/TOOLS.md` "MCP
+    /// tools") and registers their allowlisted tools: they are offered to the agent's calls
+    /// like any tool of this setup. Does nothing for a definition without MCP servers.
+    ///
+    /// Call it once at startup, inside the runtime; the connections are shared by every call.
+    /// Close them with `ToolSetup::mcp_host` and `McpHost::shutdown` when the server stops.
+    ///
+    /// # Errors
+    /// [`Error::Config`] with the position in the file of a server that cannot be reached, a
+    /// tool it does not offer, or a name another tool has; and when this build lacks the `mcp`
+    /// feature.
+    #[cfg_attr(not(feature = "mcp"), allow(clippy::unused_async))]
+    pub async fn with_mcp(
+        #[cfg_attr(not(feature = "mcp"), allow(unused_mut))] mut self,
+        agent: &AgentConfig,
+        clock: &SharedClock,
+    ) -> Result<Self> {
+        if agent.mcp().is_empty() {
+            return Ok(self);
+        }
+        #[cfg(feature = "mcp")]
+        {
+            let host = crate::mcp::McpHost::connect(agent, clock, &mut self.app).await?;
+            self.mcp_names = agent.mcp().exposed_names().map(str::to_owned).collect();
+            self.mcp = Some(Arc::new(host));
+            Ok(self)
+        }
+        #[cfg(not(feature = "mcp"))]
+        {
+            let _ = clock;
+            Err(Error::Config(format!(
+                "{}: this binary is built without MCP support (cargo feature `mcp` of \
+                 brisvox-server)",
+                agent
+                    .mcp()
+                    .servers
+                    .first()
+                    .map_or("mcp", |s| s.key.as_str())
+            )))
+        }
+    }
+
+    /// The connections to the MCP servers ([`Self::with_mcp`]); close them with
+    /// `McpHost::shutdown` when the server stops.
+    #[cfg(feature = "mcp")]
+    pub fn mcp_host(&self) -> Option<Arc<crate::mcp::McpHost>> {
+        self.mcp.clone()
     }
 
     /// Adds an application's tools ([`AppTools`]).
@@ -372,6 +430,10 @@ pub(crate) struct AgentTools {
     app: Arc<ToolRegistry>,
     /// The settings of each call's engine.
     engine: ToolEngineConfig,
+    /// The connections to the agent's MCP servers: kept for as long as the agent's calls may
+    /// use their tools.
+    #[cfg(feature = "mcp")]
+    _mcp: Option<Arc<crate::mcp::McpHost>>,
     /// The carriers' call control for this agent, when the server has one configured.
     #[cfg(feature = "call-control")]
     telephony: Option<telephony::AgentTelephony>,
@@ -496,8 +558,31 @@ impl AgentTools {
         agent
             .check_tools(&offered)
             .map_err(|e| Error::Config(format!("{e}\n{}", missing_tool_hint(&offered))))?;
+        // The agent's MCP tools: each of its `[[mcp.servers]]` tools must have been connected
+        // (`ToolSetup::with_mcp`); they are offered without being listed in `agent.tools`.
+        for server in &agent.mcp().servers {
+            for tool in &server.tools {
+                if !setup.mcp_names.contains(&tool.exposed) {
+                    return Err(agent
+                        .error_at(
+                            &tool.key,
+                            tool.span.clone(),
+                            format!(
+                                "the MCP tool `{}` of server `{}` is not connected: call \
+                                 `ToolSetup::with_mcp` with this definition before starting",
+                                tool.exposed, server.name
+                            ),
+                        )
+                        .into());
+                }
+            }
+        }
         let names: Vec<&str> = agent.tool_names().collect();
-        let app = setup.app.filtered(|spec| names.contains(&&*spec.name));
+        // Only this agent's own MCP tools: a setup connected for another agent may hold more.
+        let own_mcp: Vec<&str> = agent.mcp().exposed_names().collect();
+        let app = setup
+            .app
+            .filtered(|spec| names.contains(&&*spec.name) || own_mcp.contains(&&*spec.name));
         #[cfg(feature = "call-control")]
         let telephony_tools = telephony.as_ref().is_some_and(|t| {
             names.iter().any(|n| TELEPHONY_TOOLS.contains(n)) || t.has_voicemail()
@@ -505,6 +590,8 @@ impl AgentTools {
         Ok(Self {
             app: Arc::new(app),
             engine: setup.engine,
+            #[cfg(feature = "mcp")]
+            _mcp: if own_mcp.is_empty() { None } else { setup.mcp },
             #[cfg(feature = "call-control")]
             telephony,
             #[cfg(feature = "call-control")]

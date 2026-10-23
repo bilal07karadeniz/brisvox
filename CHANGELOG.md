@@ -8,14 +8,52 @@ named plain `brisvox` on crates.io, PyPI and npm, are released together under on
 
 ## [Unreleased]
 
+## [0.1.2] - 2026-10-23
+
+### Added
+
+- **Keyless local stack**: `docker compose -f deploy/local/compose.yaml up` starts a voice agent
+  you talk to in the browser with no API key and no cloud: brisvox-server, a sherpa-onnx streaming
+  recognizer, Ollama with `qwen2.5:1.5b` and a Kokoro-FastAPI voice, all on the CPU, with health
+  checks, a first-start model pull, a Llama 3.2 3B variant for faster machines and a
+  build-from-source override. A weekly workflow plays one recorded conversation at the stack. See
+  `deploy/local/README.md` and `docs/DEPLOY.md`.
+- **MCP tools for agents**: an agent file can name MCP (Model Context Protocol) servers, as a
+  program the server starts (stdio) or a streamable HTTP endpoint, with `[[mcp.servers]]`. The
+  tools on a server's allowlist are offered to the LLM like the server's own tools, with the same
+  guarantees: tools marked `read_only` in the file may run speculatively and are dropped on a
+  barge-in, every other tool never runs speculatively and never twice for one call, `confirm`
+  holds a tool for the caller's confirmation, and the engine's idempotency key travels in the
+  request's `_meta`. A stdio server that exits is restarted with backoff, and calls fail at once
+  meanwhile; the child process gets only its own environment, never the provider keys. Plain
+  `http://` is accepted only to a private-network host unless the entry sets `allow_insecure`, and
+  `max_in_flight` (default 32) bounds the calls in flight per server. Cargo
+  feature `mcp` (in the prebuilt binaries and the image). See `docs/TOOLS.md` ("MCP tools"),
+  `docs/CONFIG.md` and the example `examples/agents/mcp/docs-en.toml`.
+- **Grafana dashboard** for the server's Prometheus metrics: `deploy/grafana/brisvox.json`, one row
+  per operator question (healthy now, fast, do barge-ins work, why slow or refusing, providers
+  failing, cost). Tested with Grafana 12.1 (UI import and file provisioning). A test checks every
+  metric, label and label value it queries against the real `/metrics` output, and rejects
+  quantiles without `le` and counters without a rate.
+
 ### Changed
 
+- **Turn detection is cheaper**: the Smart Turn model runs with each GELU fused into one operation
+  (rewritten in memory from the pinned file), about 40% less memory traffic per analysis and up to a
+  third more analyses per second under load, with the same quality: on 4000 clips of the official
+  Smart Turn v3.2 test set the verdicts matched the published graph on 3997 and the accuracy did not
+  drop. `BRISVOX_SMART_TURN_GRAPH=original` runs the file as published.
 - **Benchmarks**: the capacity numbers in the README and the book now come from cloud containers
   (AMD EPYC 9655P, 4 vCPU / 4 GB and 8 vCPU / 8 GB) with every call going through each system's own
   provider client code to protocol-faithful fake providers over TLS, and the real Silero VAD and
   Smart Turn models: brisvox 250 and 470 calls within the latency SLO against 1 and 10 for
   Pipecat 1.12.0, and 430 and 780 without a failed call or lost turn against 10 and 10. The local
   harness runs the same comparison: `PROVIDERS=fakes MODELS=1 bench/capacity_linux.sh`.
+
+### Fixed
+
+- **sherpa-onnx**: a hang-up ends the stream with `Done` and lets the server close the
+  socket, so the Python server no longer logs a failed connection after every call.
 
 ## [0.1.1] - 2026-10-15
 
@@ -118,6 +156,7 @@ First public release.
   and Windows (x86_64) with checksums, and a multi-architecture image at
   `ghcr.io/bilal07karadeniz/brisvox-server`.
 
-[Unreleased]: https://github.com/bilal07karadeniz/brisvox/compare/v0.1.1...HEAD
+[Unreleased]: https://github.com/bilal07karadeniz/brisvox/compare/v0.1.2...HEAD
+[0.1.2]: https://github.com/bilal07karadeniz/brisvox/compare/v0.1.1...v0.1.2
 [0.1.1]: https://github.com/bilal07karadeniz/brisvox/compare/v0.1.0...v0.1.1
 [0.1.0]: https://github.com/bilal07karadeniz/brisvox/releases/tag/v0.1.0

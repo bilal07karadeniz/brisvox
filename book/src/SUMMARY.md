@@ -67,6 +67,7 @@
   - [Gemini Live (speech-to-speech)](reference/providers/gemini-live.md)
   - [WebRTC](reference/providers/webrtc.md)
   - [RTVI](reference/providers/rtvi.md)
+  - [MCP (tools)](reference/providers/mcp.md)
   - [Silero VAD](reference/providers/silero-vad.md)
   - [VAD alternatives](reference/providers/vad-alternatives.md)
   - [Smart Turn](reference/providers/smart-turn.md)

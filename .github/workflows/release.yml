@@ -26,7 +26,7 @@ env:
   CARGO_INCREMENTAL: "0"
   # The feature set of the prebuilt binaries and of the container image (README, "What to build
   # with"): every provider adapter, call control, Smart Turn on ONNX Runtime, the WebRTC listener.
-  FEATURES: all-providers,call-control,smart-turn-ort,webrtc
+  FEATURES: all-providers,call-control,smart-turn-ort,mcp,webrtc
 
 jobs:
   # ------------------------------------------------------------------------------------------

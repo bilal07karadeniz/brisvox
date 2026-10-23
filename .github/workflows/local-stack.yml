@@ -1,0 +1,152 @@
+# Smoke test of the keyless local stack (deploy/local/README.md): starts the compose stack as a
+# user would (the default agent, Qwen2.5 1.5B, the smallest model of the stack) and plays one
+# recorded conversation at it with the benchmark client over the WebSocket, then checks that
+# every turn was answered. It pulls about 6.5 GB of images and a 1 GB model, so it runs only
+#   - when deploy/local or this file changes,
+#   - once a week (an upstream image, release asset or model that disappears or changes shows up
+#     here and not in a user's first try),
+#   - and on demand.
+# The normal CI (ci.yml) does not wait for it. Linux only. No secrets.
+name: local-stack
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "41 5 * * 3"
+  push:
+    branches: [main, master]
+    paths:
+      - "deploy/local/**"
+      - ".github/workflows/local-stack.yml"
+  pull_request:
+    paths:
+      - "deploy/local/**"
+      - ".github/workflows/local-stack.yml"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: local-stack-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+env:
+  CARGO_TERM_COLOR: always
+  CARGO_INCREMENTAL: "0"
+  COMPOSE: docker compose -f deploy/local/compose.yaml -f ${{ github.workspace }}/ci-override.yaml
+
+jobs:
+  smoke:
+    name: one conversation through the local stack
+    runs-on: ubuntu-latest
+    timeout-minutes: 50
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      # The images are about 20 GB unpacked and the runner's disk is 14 GB free: remove toolchains
+      # this job does not use.
+      - name: Free disk space
+        run: |
+          sudo rm -rf /usr/local/lib/android /usr/share/dotnet /opt/ghc /usr/local/share/boost
+          df -h /
+
+      # The benchmark client (the same one `bench/results/README.md` documents).
+      - name: Install pinned toolchain
+        run: |
+          rustup toolchain install
+          rustup show active-toolchain
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        with:
+          save-if: ${{ github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master' }}
+      - name: Build the benchmark client
+        run: cargo build --release --locked -p brisvox-bench
+
+      # The speech recognizer image is built here (sherpa-onnx has no server image). Its layers
+      # (the verified model and scripts) come from the Actions cache after the first run.
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+      - name: Build the speech recognizer image
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+        with:
+          context: deploy/local/sherpa-onnx
+          load: true
+          tags: brisvox-local/sherpa-onnx:1.13.8
+          cache-from: type=gha,scope=local-stack-sherpa
+          cache-to: type=gha,scope=local-stack-sherpa,mode=max
+
+      # The language model is cached on the runner side: a bind mount instead of the named volume.
+      - name: Restore the language model
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ${{ runner.temp }}/ollama
+          key: ollama-${{ hashFiles('deploy/local/agents/agent.toml') }}
+      - name: Compose override for the runner
+        run: |
+          mkdir -p "$RUNNER_TEMP/ollama"
+          cat > ci-override.yaml <<EOF
+          services:
+            llm:
+              volumes:
+                - $RUNNER_TEMP/ollama:/root/.ollama
+          EOF
+          $COMPOSE config --quiet
+
+      - name: Start the stack
+        run: $COMPOSE up --detach --no-build --pull missing
+
+      # brisvox-server starts only after the recognizer, the voice and the model are healthy
+      # and the model pull has finished, so "healthy" means the whole stack is ready.
+      - name: Wait until the stack is ready
+        run: |
+          deadline=$((SECONDS + 1500))
+          while true; do
+            state=$(docker inspect --format '{{.State.Health.Status}}' brisvox-local-brisvox-1 2>/dev/null || echo absent)
+            [ "$state" = healthy ] && break
+            pull=$(docker inspect --format '{{.State.Status}} {{.State.ExitCode}}' brisvox-local-llm-pull-1 2>/dev/null || echo absent)
+            case "$pull" in "exited 0"|"absent"|"created 0"|"running 0") ;; exited*) echo "llm-pull failed: $pull"; exit 1 ;; esac
+            bad=$(docker ps --all --filter label=com.docker.compose.project=brisvox-local --filter health=unhealthy --format '{{.Names}}')
+            if [ -n "$bad" ]; then echo "unhealthy: $bad"; exit 1; fi
+            if [ "$SECONDS" -ge "$deadline" ]; then echo "stack not ready after 25 minutes"; $COMPOSE ps; exit 1; fi
+            sleep 10
+          done
+          $COMPOSE ps
+          curl -fsS -o /dev/null http://127.0.0.1:8088/demo
+
+      # Two utterances of a recorded English speaker, answered by the real stack. The gap and the
+      # response window are long on purpose: a CPU-only stack on shared cores is slow, and a late
+      # answer must not look like a caller talking over the bot.
+      - name: One scripted conversation
+        run: |
+          target/release/brisvox-bench v2v --url ws://127.0.0.1:8088/ws \
+            --fixtures en_two_utterances --runs 1 \
+            --min-gap-ms 25000 --response-timeout-ms 60000 \
+            --out-json "$RUNNER_TEMP/v2v.json" --out-md "$RUNNER_TEMP/v2v.md" | tee "$RUNNER_TEMP/v2v.txt"
+          python3 - "$RUNNER_TEMP/v2v.json" <<'PY'
+          import json, sys
+          report = json.load(open(sys.argv[1]))
+          overall = report["overall"]
+          print("turns", overall["turns"], "answered", overall["answered"], "failed runs", report["failed_runs"])
+          assert report["failed_runs"] == 0, "a call failed"
+          assert overall["turns"] >= 2, "the fixture has two utterances"
+          assert overall["answered"] == overall["turns"], "a turn was not answered"
+          PY
+
+      - name: Server log and report
+        if: always()
+        run: |
+          $COMPOSE logs --no-color --tail 80 brisvox || true
+          cat "$RUNNER_TEMP/v2v.md" 2>/dev/null || true
+      - name: Failure details
+        if: failure()
+        run: $COMPOSE logs --no-color --tail 60 stt llm llm-pull tts || true
+
+      - name: Stop the stack
+        if: always()
+        run: |
+          $COMPOSE down --volumes --timeout 45 || true
+          # the model files were written by root inside the container; the cache step reads them
+          sudo chown -R "$USER" "$RUNNER_TEMP/ollama" || true

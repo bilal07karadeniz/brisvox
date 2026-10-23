@@ -7,11 +7,13 @@ The process itself (settings, listeners, admission, drain, exit status) is
 
 Files: `Dockerfile`, `.dockerignore`, `deploy/compose.yaml`, `deploy/agents/{web,phone}.toml`,
 `deploy/{ws,twilio}.env.example`, `deploy/healthcheck.sh`.
+The keyless local stack (no API key, everything in containers on one machine) is in `deploy/local/`
+("Compose: a keyless local stack" below).
 
 ## The image
 
 Releases publish it as `ghcr.io/bilal07karadeniz/brisvox-server` (tags `vX.Y.Z` and `latest`,
-`linux/amd64` and `linux/arm64`), built with `BRISVOX_FEATURES=all-providers,call-control,smart-turn-ort,webrtc`
+`linux/amd64` and `linux/arm64`), built with `BRISVOX_FEATURES=all-providers,call-control,smart-turn-ort,mcp,webrtc`
 (`docs/RELEASING.md`). To build it yourself, with another feature set if you need one:
 
 ```sh
@@ -21,7 +23,7 @@ docker build -t brisvox/server --build-arg BRISVOX_FEATURES=all-providers,call-c
 ```
 
 Build arguments: `BRISVOX_FEATURES` (cargo features of `brisvox-server` on top of its defaults
-`mimalloc`, `yaml`, `silero-tract`; default `all-providers,call-control,smart-turn-ort`),
+`mimalloc`, `yaml`, `silero-tract`; default `all-providers,call-control,smart-turn-ort,mcp`),
 `STRIP_BINARY` (`1`), `RUST_VERSION` (`1.99.0`, checked against `rust-toolchain.toml` so the
 two cannot drift), `DEBIAN_RELEASE` (`trixie`; not `bookworm`, see below), `BUILD_JOBS` (empty: cargo uses every core; `4` caps rustc jobs for small build hosts), `CARGO_CHEF_VERSION` (`0.1.78`),
 `PYTHON_VERSION` (`3.12`). The build needs network access (crates, the ONNX Runtime binaries
@@ -148,6 +150,45 @@ not start without `BRISVOX_TWILIO_STREAM_SECRET`, so `deploy/twilio.env.example`
 active and empty. A static TwiML Bin that cannot compute the segment needs
 `BRISVOX_TWILIO_ALLOW_STATIC_URL=1` instead (and no secret), which accepts the fixed URL and its
 replayable signature; use it for a first try only.
+
+## Compose: a keyless local stack
+
+`deploy/local/compose.yaml` starts a complete voice agent that needs no API key, no account and no
+network once it is downloaded: brisvox-server (the published image, pinned by version and digest),
+a sherpa-onnx streaming speech recognizer (English, built from `deploy/local/sherpa-onnx/` with a
+checked model download), Ollama with `qwen2.5:1.5b`, and a Kokoro-FastAPI voice, all on the CPU.
+The browser page of the server's WebRTC listener is the interface.
+
+```sh
+docker compose -f deploy/local/compose.yaml up
+# when the log says "brisvox-server ready":  http://localhost:8088/demo?force=ws
+```
+
+Health checks and `depends_on` order the start (recognizer, voice and model pull first, the server
+last), so the page appears only when the whole stack answers. The first start downloads about
+6.5 GB; the table, the settings (`BRISVOX_LOCAL_AGENT=agent-quality.toml` for a 3B model on a fast
+machine, `BRISVOX_LOCAL_PORT`), the build-from-source variant
+(`-f deploy/local/compose.build.yaml --build`) and the licences are in
+[`deploy/local/README.md`](../deploy/local/README.md). Image versions, digests and the sources they
+were read from are in `docs/providers/local-speech.md`, "The keyless Docker stack".
+
+Two choices in it are about safety, not convenience:
+
+- **One network namespace.** The helper servers have no authentication of their own, and the
+  language model adapter sends plain `http://` only to loopback addresses. The recognizer, Ollama,
+  the voice and brisvox-server therefore share the namespace of an empty `net` container
+  (`network_mode: "service:net"`) and reach each other at `127.0.0.1`; only `net` publishes a port,
+  `127.0.0.1:8088`. Nothing else can reach the helpers.
+- **`BRISVOX_INSECURE_LISTENERS=1` on a loopback-only port.** The same rule as `agent-ws` above:
+  the listener binds `0.0.0.0` inside the container, and the published port is on `127.0.0.1`.
+  To expose the page beyond the machine, remove the opt-out, set `BRISVOX_SESSION_SECRET` and put
+  TLS in front ("TLS and authentication in front" below).
+
+The call runs over the WebSocket of the signaling port (`?force=ws`): WebRTC media over UDP does not
+cross a Docker port mapping to a browser on the same machine (`BRISVOX_WEBRTC_UDP_ADDR=127.0.0.1:0`,
+as in "Platforms with one HTTPS port and no UDP"). A workflow, `.github/workflows/local-stack.yml`,
+starts the stack weekly and when `deploy/local/` changes and plays one recorded
+conversation at it with `brisvox-bench v2v`, failing if a turn goes unanswered.
 
 ## TLS and authentication in front
 
@@ -458,7 +499,7 @@ UDP to the server, which has no UDP ingress.
 
 ### Build
 
-- **Features.** The image default (`all-providers,call-control,smart-turn-ort`) has **no `webrtc`**,
+- **Features.** The image default (`all-providers,call-control,smart-turn-ort,mcp`) has **no `webrtc`**,
   and a binary without it refuses `BRISVOX_WEBRTC_ADDR` at start. Build with
   `BRISVOX_FEATURES=all-providers,smart-turn-ort,webrtc` (the browser row of "What to build with" in
   the README); `webrtc` compiles libopus (cmake and a C compiler are in the build stage). Add

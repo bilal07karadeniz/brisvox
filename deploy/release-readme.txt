@@ -1,7 +1,7 @@
 brisvox-server @VERSION@ (@TARGET@)
 
 Prebuilt with: cargo build --release --locked -p brisvox-server \
-    --features all-providers,call-control,smart-turn-ort,webrtc
+    --features all-providers,call-control,smart-turn-ort,mcp,webrtc
 That is every STT/LLM/TTS provider adapter, call control (transfer_call, send_dtmf, end_call),
 Smart Turn on ONNX Runtime and the WebRTC listener. Not included: the SIP listener (feature
 "sip"), OpenTelemetry export ("otlp"), encrypted recordings ("recording-encryption"),

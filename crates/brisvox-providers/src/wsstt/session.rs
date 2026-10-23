@@ -699,20 +699,18 @@ impl<W: Wire> Session<W> {
     async fn hang_up(&mut self, mut ws: Ws) {
         self.events = None;
         let goodbye = self.p.wire.goodbye();
+        let server_closes = self.p.wire.server_closes_after_goodbye();
         let close = async {
             for message in goodbye {
                 if ws.send(message).await.is_err() {
                     return;
                 }
             }
-            if ws.send(Message::Close(None)).await.is_err() {
+            if !server_closes && ws.send(Message::Close(None)).await.is_err() {
                 return;
             }
-            while let Some(Ok(message)) = ws.next().await {
-                if matches!(message, Message::Close(_)) {
-                    break;
-                }
-            }
+            // Until the stream ends: after the server's close the reply goes out on the next poll.
+            while let Some(Ok(_)) = ws.next().await {}
         };
         let _ = timed(
             &*self.p.clock,

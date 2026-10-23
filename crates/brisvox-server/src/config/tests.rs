@@ -1154,12 +1154,17 @@ speed = 0.9
 }
 
 /// Every example in `examples/agents` and every shipped agent in `deploy/agents` (the files the
-/// image bakes in and compose mounts; TOML, and YAML when the `yaml` feature is on) loads (with
-/// placeholder keys) and builds its adapter configurations, so they cannot rot.
+/// image bakes in and compose mounts; TOML, and YAML when the `yaml` feature is on) and in
+/// `deploy/local/agents` (the keyless local stack) loads (with placeholder keys) and builds its
+/// adapter configurations, so they cannot rot.
 #[cfg(feature = "all-providers")]
 #[test]
 fn the_examples_are_valid() {
-    for (rel, min) in [("../../examples/agents", 3), ("../../deploy/agents", 2)] {
+    for (rel, min) in [
+        ("../../examples/agents", 3),
+        ("../../deploy/agents", 2),
+        ("../../deploy/local/agents", 2),
+    ] {
         let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join(rel);
         check_agent_dir(&dir, min);
     }

@@ -43,6 +43,8 @@ use crate::mel::{FEATURES, WINDOW_SAMPLES, WhisperLogMel};
 use crate::pool::{JobTiming, PoolHandle};
 
 #[cfg(feature = "smart-turn-ort")]
+pub mod fuse;
+#[cfg(feature = "smart-turn-ort")]
 pub mod ort_backend;
 
 /// Size of the pinned `smart-turn-v3.2-cpu.onnx`.

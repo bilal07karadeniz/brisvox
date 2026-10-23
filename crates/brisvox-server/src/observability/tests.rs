@@ -416,7 +416,7 @@ async fn the_guard_ends_the_call_when_dropped_mid_call() {
 }
 
 /// A fixed resilience layer: a primary STT whose breaker is open, a healthy secondary.
-struct FakeResilience;
+pub(super) struct FakeResilience;
 
 impl ResilienceSource for FakeResilience {
     fn resilience_snapshot(&self) -> ResilienceSnapshot {
@@ -1086,7 +1086,7 @@ fn no_models() -> crate::config::ProviderModels {
     }
 }
 
-fn models(model: &str) -> crate::config::ProviderModels {
+pub(super) fn models(model: &str) -> crate::config::ProviderModels {
     use crate::config::ProviderModel;
     let named = |provider: &'static str, model: &str| {
         Some(ProviderModel {

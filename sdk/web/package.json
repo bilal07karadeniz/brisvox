@@ -1,6 +1,6 @@
 {
   "name": "@brisvox/web",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "Browser client for Brisvox voice calls: WebRTC with an automatic WebSocket fallback, microphone capture, playback and barge-in, in one dependency-free ES module.",
   "keywords": [
     "voice",

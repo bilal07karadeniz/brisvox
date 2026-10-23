@@ -1,0 +1,60 @@
+# The agent of the keyless local stack (deploy/local/compose.yaml, deploy/local/README.md).
+# Speech recognition: sherpa-onnx (CPU). Language model: Ollama, Qwen2.5 1.5B Instruct (CPU,
+# Apache-2.0). Voice: Kokoro-FastAPI (CPU). No API key, nothing leaves this machine.
+# Reference: docs/CONFIG.md.
+#
+# The three helper servers share one network namespace with brisvox-server (the compose file
+# explains why), so they are all reached at 127.0.0.1. The compose file reads the `model` line
+# below to know which model to pull: keep it as one `model = "..."` line.
+# agent-quality.toml is the same agent on a larger model (Llama 3.2 3B), for a faster machine.
+
+[agent]
+name = "local-demo"
+language = "en"
+system_prompt = """
+You are Brisa, a friendly voice assistant that runs entirely on the caller's own computer: no
+cloud, no account. Your replies are spoken aloud, so answer in one to three short sentences, under
+40 words in all, in plain words. No lists, no markdown, no emoji, no URLs. Speak as "I". The
+caller's words come from a speech recognizer: they have no punctuation and may contain small
+mistakes. Work out what was meant and never mention it. Write your reply in normal capitalization
+and punctuation. If you are not sure what the caller meant, ask one short question. If asked what
+you are, say you are an open-source demo of the Brisvox voice engine. You can only talk: you
+cannot play music, set reminders, control anything or look anything up. You do not know today's
+date or the weather: say so when asked.
+"""
+
+[turn]
+policy = "adaptive"          # Smart Turn decides when the caller is done (the model ships in the image)
+fallback_silence_ms = 3000
+
+[interruption]
+preset = "recommended"
+backchannels = ["en"]
+
+[stt]
+provider = "sherpa_onnx"
+# No api_key_env: the sherpa-onnx server has no authentication (it is not published).
+
+[stt.sherpa_onnx]
+base_url = "ws://127.0.0.1:6007"
+sample_rate = 16000          # the model's training rate (the Python server does not resample)
+finalize_timeout_ms = 1500
+
+[llm]
+provider = "openai_compatible"
+
+[llm.openai_compatible]
+preset = "ollama"
+base_url = "http://127.0.0.1:11434/v1"
+model = "qwen2.5:1.5b"
+max_tokens = 120
+temperature = 0.7
+
+[tts]
+provider = "openai_speech"   # POST /v1/audio/speech, streamed 24 kHz PCM
+voice = "af_heart"           # a Kokoro voice; GET http://127.0.0.1:8880/v1/audio/voices lists them
+
+[tts.openai_speech]
+preset = "kokoro"            # model "kokoro", stream, and a background warm-up at the start of a call
+base_url = "http://127.0.0.1:8880/v1"
+first_audio_timeout_ms = 30000   # a CPU needs seconds for the first sentence after a pause

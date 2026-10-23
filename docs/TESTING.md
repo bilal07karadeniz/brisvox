@@ -636,6 +636,22 @@ First worked example: `crates/brisvox-providers/tests/openai/`. Its mock is a ha
 Limitation: the checks observe behaviour, not wire bytes. Wire-level facts (endpoints, message
 shapes, auth headers) stay in each adapter's own tests and `docs/providers/`.
 
+## MCP tools
+
+`crates/brisvox-server/tests/mcp_tools.rs` runs the agent file's `[[mcp.servers]]` against real MCP
+servers through the real `ToolEngine`: a stdio server (the example `examples/mcp_test_server.rs`, a
+child process, rebuilt by the test when its sources are newer), an in-process streamable HTTP server
+and two hand-written servers of the session era (rmcp's own server always speaks the newest
+revision). Its test target has `required-features = ["mcp", "provider-deepgram", "provider-openai",
+"provider-cartesia"]` and, like the example, compiles rmcp's server side and axum (dev-dependencies,
+which cannot depend on a feature, so every test build of `brisvox-server` compiles them). The
+restart backoff, the side-effect wait, the read-only backstop, the startup timeout and the in-flight
+limit are tested without a process on the simulated clock (`src/mcp/tests.rs`: an in-memory MCP
+server behind a fake connector, paused tokio time), so they are exact and cannot be flaky on a loaded
+machine; the tests with a real process use real time only for what needs one. The config tests are
+in `src/config/mcp_tests.rs`. `BRISVOX_LIVE_TESTS=1` adds a call to DeepWiki's public server
+(no key).
+
 ## Tool calling through the engine, scripted and live
 
 `crates/brisvox-engine/tests/tool_scenarios/` runs one set of scenarios (parallel calls, a chain, a

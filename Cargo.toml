@@ -3,7 +3,7 @@ resolver = "3"
 members = ["crates/*", "examples/rust-tools", "bench/fake_providers"]
 
 [workspace.package]
-version = "0.1.1"
+version = "0.1.2"
 edition = "2024"
 rust-version = "1.99"
 license = "MIT OR Apache-2.0"
@@ -29,6 +29,11 @@ http = "1.5.0"
 # JSON Schema validation of tool arguments. default-features off: no remote $ref
 # resolution (no network, no reqwest/rustls), no idna; draft-2020-12 validation only.
 jsonschema = { version = "0.58.6", default-features = false }
+# MCP client for the agent file's `[[mcp.servers]]` (feature `mcp` of brisvox-server): the official
+# Rust SDK, Apache-2.0, crates.io 3.7.0 (2026-10-22). default-features off: no macros, no server
+# side (the server side is a dev-dependency of brisvox-server's tests); TLS for the HTTP
+# transport is the server's own rustls/ring config (brisvox-providers `net`), not rmcp's aws-lc.
+rmcp = { version = "3.7.0", default-features = false }
 rubato = "5.0.1"
 # WebRTC transport: sans-IO str0m with the pure-Rust crypto backend (no C toolchain
 # for DTLS/SRTP; the default aws-lc-rs needs cmake/nasm on Windows) and no default features
@@ -103,17 +108,17 @@ toml = { version = "1.1.8", default-features = false, features = ["std", "serde"
 tracing = "0.1.44"
 tracing-subscriber = "0.3.23"
 
-brisvox = { path = "crates/brisvox", version = "0.1.1" }
-brisvox-core = { path = "crates/brisvox-core", version = "0.1.1" }
-brisvox-audio = { path = "crates/brisvox-audio", version = "0.1.1" }
-brisvox-inference = { path = "crates/brisvox-inference", version = "0.1.1" }
-brisvox-agent = { path = "crates/brisvox-agent", version = "0.1.1" }
-brisvox-agent-link = { path = "crates/brisvox-agent-link", version = "0.1.1" }
-brisvox-providers = { path = "crates/brisvox-providers", version = "0.1.1" }
-brisvox-transport = { path = "crates/brisvox-transport", version = "0.1.1" }
-brisvox-engine = { path = "crates/brisvox-engine", version = "0.1.1" }
-brisvox-server = { path = "crates/brisvox-server", version = "0.1.1" }
-brisvox-sim = { path = "crates/brisvox-sim", version = "0.1.1" }
+brisvox = { path = "crates/brisvox", version = "0.1.2" }
+brisvox-core = { path = "crates/brisvox-core", version = "0.1.2" }
+brisvox-audio = { path = "crates/brisvox-audio", version = "0.1.2" }
+brisvox-inference = { path = "crates/brisvox-inference", version = "0.1.2" }
+brisvox-agent = { path = "crates/brisvox-agent", version = "0.1.2" }
+brisvox-agent-link = { path = "crates/brisvox-agent-link", version = "0.1.2" }
+brisvox-providers = { path = "crates/brisvox-providers", version = "0.1.2" }
+brisvox-transport = { path = "crates/brisvox-transport", version = "0.1.2" }
+brisvox-engine = { path = "crates/brisvox-engine", version = "0.1.2" }
+brisvox-server = { path = "crates/brisvox-server", version = "0.1.2" }
+brisvox-sim = { path = "crates/brisvox-sim", version = "0.1.2" }
 
 [workspace.lints.rust]
 unsafe_code = "deny"

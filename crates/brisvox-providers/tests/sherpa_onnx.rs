@@ -854,6 +854,13 @@ async fn hanging_up_closes_the_events_at_once_and_the_socket_soon_after() {
     drop(input);
     let closed = tokio::time::timeout(Duration::from_millis(500), events.recv()).await;
     assert!(matches!(closed, Ok(None)), "{closed:?}");
+    // The socket ends with `Done` (the server answers and closes), not with a bare close frame,
+    // which the Python server logs as a failed connection.
+    let deadline = Instant::now() + Duration::from_secs(2);
+    while server.log.texts(0).is_empty() && Instant::now() < deadline {
+        tokio::time::sleep(Duration::from_millis(10)).await;
+    }
+    assert_eq!(server.log.texts(0), ["Done"]);
 }
 
 #[tokio::test]

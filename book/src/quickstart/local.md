@@ -6,6 +6,12 @@ A voice assistant that never leaves your machine: no API key, no cloud. Speech r
 `brisvox-server` serves itself. The agent is
 [`examples/agents/local/local-en.toml`](https://github.com/bilal07karadeniz/brisvox/blob/main/examples/agents/local/local-en.toml).
 
+**The short way.** If you have Docker, one command starts all of it (the recognizer, Ollama, the voice
+and the server, CPU only) and serves the same browser page; nothing to build or install:
+`docker compose -f deploy/local/compose.yaml up`, then open `http://localhost:8088/demo?force=ws`.
+See [`deploy/local/README.md`](https://github.com/bilal07karadeniz/brisvox/blob/main/deploy/local/README.md).
+The steps below are the same stack by hand, on a GPU if you have one.
+
 What runs where:
 
 ```

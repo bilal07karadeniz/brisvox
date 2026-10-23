@@ -33,7 +33,7 @@ use brisvox_inference::mel::{FEATURES, WINDOW_SAMPLES, WhisperLogMel};
 use brisvox_inference::silero::SileroVad;
 use brisvox_inference::silero_tract::SileroTractModel;
 use brisvox_inference::smart_turn::TurnModel;
-use brisvox_inference::smart_turn::ort_backend::{OrtOptions, SmartTurnOrt};
+use brisvox_inference::smart_turn::ort_backend::{OrtOptions, SmartTurnGraph, SmartTurnOrt};
 use brisvox_sim::fixture::{Fixture, fixtures_dir};
 
 use crate::BenchError;
@@ -63,6 +63,7 @@ impl ModelCpuConfig {
         let options = |intra_threads, intra_op_spinning| OrtOptions {
             intra_threads,
             intra_op_spinning,
+            ..OrtOptions::default()
         };
         Self {
             models_dir,
@@ -80,15 +81,30 @@ impl ModelCpuConfig {
     }
 }
 
-/// Parses `"2:1,1:0"` (threads:spinning) into session options.
+/// Parses `"2:1,1:0:original"` (threads:spinning[:fused|original]) into session options.
 ///
 /// # Errors
 /// [`BenchError::Config`] on a malformed entry.
 pub fn parse_configs(text: &str) -> Result<Vec<OrtOptions>, BenchError> {
     text.split(',')
         .map(|entry| {
-            let bad = || BenchError::Config(format!("bad config {entry:?}, expected THREADS:0|1"));
-            let (threads, spin) = entry.trim().split_once(':').ok_or_else(bad)?;
+            let bad = || {
+                BenchError::Config(format!(
+                    "bad config {entry:?}, expected THREADS:0|1[:fused|original]"
+                ))
+            };
+            let mut parts = entry.trim().split(':');
+            let (Some(threads), Some(spin)) = (parts.next(), parts.next()) else {
+                return Err(bad());
+            };
+            let graph = match parts.next() {
+                None | Some("fused") => SmartTurnGraph::Fused,
+                Some("original") => SmartTurnGraph::Original,
+                Some(_) => return Err(bad()),
+            };
+            if parts.next().is_some() {
+                return Err(bad());
+            }
             Ok(OrtOptions {
                 intra_threads: threads.parse().map_err(|_| bad())?,
                 intra_op_spinning: match spin {
@@ -96,6 +112,7 @@ pub fn parse_configs(text: &str) -> Result<Vec<OrtOptions>, BenchError> {
                     "1" => true,
                     _ => return Err(bad()),
                 },
+                graph,
             })
         })
         .collect()
@@ -566,24 +583,32 @@ fn us(d: Duration) -> String {
     format!("{:.1}", d.as_secs_f64() * 1e6)
 }
 
+fn graph_name(graph: SmartTurnGraph) -> &'static str {
+    match graph {
+        SmartTurnGraph::Fused => "fused",
+        SmartTurnGraph::Original => "original",
+    }
+}
+
 fn mode_rows(out: &mut String, title: &str, results: &[SmartTurnResult], paced: bool) {
     let _ = writeln!(out, "\n{title}\n");
     let _ = writeln!(
         out,
-        "| intra-op threads | spinning | CPU mean (ms) | CPU p50 / p99 of batch means (ms) | wall p50 / p99 (ms) |"
+        "| intra-op threads | spinning | graph | CPU mean (ms) | CPU p50 / p99 of batch means (ms) | wall p50 / p99 (ms) |"
     );
-    let _ = writeln!(out, "|---:|:---:|---:|---:|---:|");
+    let _ = writeln!(out, "|---:|:---:|:---:|---:|---:|---:|");
     for r in results {
         let m = if paced { &r.paced } else { &r.tight };
         let _ = writeln!(
             out,
-            "| {} | {} | {} | {} / {} | {} / {} |",
+            "| {} | {} | {} | {} | {} / {} | {} / {} |",
             r.options.intra_threads,
             if r.options.intra_op_spinning {
                 "on"
             } else {
                 "off"
             },
+            graph_name(r.options.graph),
             ms(m.cpu_mean),
             ms(m.cpu_batches.p50),
             ms(m.cpu_batches.p99),
@@ -627,19 +652,20 @@ pub fn markdown(report: &ModelCpuReport, environment: &[String]) -> String {
     );
     let _ = writeln!(
         out,
-        "| intra-op threads | spinning | probabilities differing in bits | worst abs error vs reference | verdicts differing from reference |"
+        "| intra-op threads | spinning | graph | probabilities differing in bits | worst abs error vs reference | verdicts differing from reference |"
     );
-    let _ = writeln!(out, "|---:|:---:|---:|---:|---:|");
+    let _ = writeln!(out, "|---:|:---:|:---:|---:|---:|---:|");
     for r in &report.smart_turn {
         let _ = writeln!(
             out,
-            "| {} | {} | {} | {:.2e} | {} |",
+            "| {} | {} | {} | {} | {:.2e} | {} |",
             r.options.intra_threads,
             if r.options.intra_op_spinning {
                 "on"
             } else {
                 "off"
             },
+            graph_name(r.options.graph),
             r.bit_diffs,
             r.worst_golden_error,
             r.verdict_diffs
@@ -687,15 +713,20 @@ mod tests {
             vec![
                 OrtOptions {
                     intra_threads: 2,
-                    intra_op_spinning: true
+                    intra_op_spinning: true,
+                    ..OrtOptions::default()
                 },
                 OrtOptions {
                     intra_threads: 1,
-                    intra_op_spinning: false
+                    intra_op_spinning: false,
+                    ..OrtOptions::default()
                 }
             ]
         );
-        for bad in ["2", "x:1", "2:2", "2:1,", ""] {
+        let graphs = parse_configs("1:1:original,1:1:fused").unwrap();
+        assert_eq!(graphs[0].graph, SmartTurnGraph::Original);
+        assert_eq!(graphs[1].graph, SmartTurnGraph::Fused);
+        for bad in ["2", "x:1", "2:2", "2:1,", "", "1:1:fast", "1:1:fused:x"] {
             assert!(parse_configs(bad).is_err(), "{bad:?}");
         }
     }

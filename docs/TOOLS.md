@@ -761,6 +761,135 @@ If your tools live in another process or language, use the
 Python or TypeScript SDK (`sdk/python`, `sdk/typescript`) instead; the agent file then lists no
 `agent.tools` for them (the agent link supplies them).
 
+## MCP tools
+
+An agent file can name [MCP](https://modelcontextprotocol.io) (Model Context Protocol) servers
+(`[[mcp.servers]]`, `docs/CONFIG.md`). The server connects to each once at startup, lists its
+tools, and offers the ones on the file's allowlist to the LLM as ordinary tools of the agent: the
+engine's rules above apply unchanged (schema-checked arguments, timeouts, the idempotency key,
+speculation for ReadOnly tools only, the confirmation gate, fillers). Cargo feature `mcp` (in the
+prebuilt binaries and the image); the protocol and the SDK facts are in `docs/providers/mcp.md`.
+
+```toml
+[[mcp.servers]]
+name = "orders"
+command = "orders-mcp"                 # stdio: a program the server starts
+tools = ["find_order", "cancel_order"] # the allowlist
+read_only = ["find_order"]             # everything else has side effects
+confirm = ["cancel_order"]             # held for the user's confirmation
+prefix = true                          # find_order is offered as orders_find_order
+
+[[mcp.servers]]
+name = "crm"
+url = "https://crm.example.com/mcp"    # streamable HTTP
+bearer_env = "CRM_TOKEN"
+tools = ["find_customer"]
+read_only = ["find_customer"]
+```
+
+`examples/agents/mcp/docs-en.toml` is a whole agent on a public MCP server (DeepWiki).
+
+**Transports.** *stdio*: the server starts `command` with `args` and speaks newline-delimited
+JSON-RPC over its standard input and output; its standard error is logged at debug level.
+*Streamable HTTP*: one endpoint `url`, requests are POSTs, answers JSON or an SSE stream; `bearer_env`
+names the variable holding a static bearer token (no OAuth flow: a headless voice agent cannot do
+the browser step). Both protocol revisions are spoken: the client probes `server/discover` (2026-07-28)
+and falls back to `initialize` (2025-11-25 and earlier), so servers of either era work. The client
+declares no capabilities (no sampling, roots or elicitation); a server that wants input in the middle of
+a call gets a `tool_failed` result saying so.
+
+**Kinds.** The file decides, not the server. A tool in `read_only` is ReadOnly; every other tool
+on the allowlist is SideEffect, so it never runs speculatively and never runs twice for one call id
+(`What "never twice" covers`). The MCP specification says tool annotations (`readOnlyHint`,
+`destructiveHint`, ...) are hints from a server that may not be trustworthy; they are written to the
+debug log and never used. `confirm` puts the confirmation gate on a SideEffect tool.
+
+**Guarantees.**
+- *Allowlist.* `tools` is required and not empty: a tool that is not on it is not registered, and the
+  LLM is never told it exists, whatever the server lists. A name on the list that the server does not
+  offer stops the start, at the position of that entry in the file (fail closed, like a missing
+  `agent.tools` entry).
+- *One connection.* The connections are made at startup and shared by every call; per-call state (the
+  idempotency store, pending confirmations) stays in the call's own engine. MCP servers must treat
+  the calls as independent users of one client: a tool that needs per-call state takes a handle
+  (a basket id) as an ordinary argument.
+- *Idempotency key.* The engine's key of the call (`ToolCallCtx::idempotency_key`, 16 hex digits) is
+  sent in the request's `_meta` as `io.brisvox/idempotency_key`, so a server can deduplicate a call
+  that is delivered twice. The key is per call, session and turn, as above: it is unique for the
+  lifetime of one session (one phone call) in one server process and is not remembered beyond it, so
+  deduplicate within that, and use an application key for anything longer (`What "never twice"
+  covers`).
+- *Pinned at startup.* Descriptions and input schemas are read once at startup and registered; a
+  restarted server keeps the registered ones (after a restart the allowlisted names are checked
+  again, and a server that no longer offers one stays down and is retried). A server that changes a
+  tool's schema needs a restart of this server. A schema larger than 16 KiB as JSON stops the start,
+  at its allowlist entry: it would travel to the model with every request.
+- *Timeouts.* `timeout_ms` (default 5 s, at most 30 s) as for every tool. A ReadOnly call is dropped at
+  it or at a barge-in; dropping the request sends `notifications/cancelled` (a late result is
+  ignored). A SideEffect call is not dropped: its slot is answered `timeout`, the call keeps waiting up
+  to 60 s, and its result then becomes a late note. Past the wait, or when the connection is lost
+  after the request was sent, the error says "the outcome is unknown" and the call is never retried.
+- *Results.* Text content becomes the tool's result; structured content, when the tool gives it, is
+  the result as JSON. Images, audio and binary resources are replaced by a one-line note saying what
+  they were. `isError: true` is the tool's error with its text (the model may correct the call); a
+  JSON-RPC error answer is a failure too ("the server rejected the call"), not an unknown outcome;
+  a transport error is `tool_failed`. Results are cut at 60 KiB, descriptions at 1000 characters.
+- *Lifecycle.* A stdio server that exits is restarted with a growing delay (0.25 s, doubling to 10 s,
+  and then every 10 s for as long as it takes: a deploy of the MCP server needs no restart of this
+  one; the failed attempts are logged at `warn` level three times and then once a minute; a connection
+  that held for a minute starts the delays afresh). While it is down every call to it fails at once
+  with `tool_failed` ("not connected right now ... the call was not made") instead of waiting. An HTTP
+  server needs no such supervision (each request is its own POST); one of the
+  session era that restarts and forgets its sessions answers 404 to the old one, and the client then
+  starts a new session and sends that request again (the server never processed it). On shutdown, after the calls have drained, a stdio server's standard input is closed, the
+  process waited for (a few seconds), then killed. `McpHost::status` reports each server (`Up`,
+  `Restarting`, `Down`) and its restart count.
+- *Bounds.* At most 8 servers, 64 tools per server and 64 in all; startup of each server is bounded by
+  `startup_timeout_ms` (default 30 s), concurrently; every await has a timeout and every channel is
+  bounded. At most `max_in_flight` calls (default 32, at most 256) are in flight to one server, over
+  every call of the process; one more fails at once with a `tool_failed` result "the MCP server is busy
+  ... the call was not made, try again in a moment". Nothing was sent, so this is true for a tool with
+  side effects too, and the model may try again (or tell the caller). The permit is held while the
+  request is open, and a dropped ReadOnly call gives it back.
+
+**Security notes.**
+- *The operator's file is the policy.* A stdio `command` runs with the server's privileges and comes
+  only from the agent file, never from the LLM or a caller. Treat a file that names one like any
+  deployment script. Prefer a server binary you pinned over `npx -y package` (which fetches code at
+  every start and leaves a node process behind when it is killed).
+- *The child's environment.* A stdio server gets `PATH` (on Windows also `PATHEXT`, `SystemRoot`,
+  `COMSPEC`, `TEMP`, `TMP`), the `env` of its entry and the variables named by `env_from`, and
+  nothing else. The server's own environment, which holds the provider keys, does not leak into it. A
+  program that needs `HOME` has to be given it in `env`.
+- *Untrusted text.* A server's descriptions, schemas and results go to the LLM as the text of any
+  tool; they can try to steer the model (prompt injection). That is why the allowlist is exact, kinds
+  are the operator's, and `confirm` exists: put it on anything that spends money, sends a message or
+  deletes data. Results are bounded, never executed and never logged (arguments and results are not in
+  the logs, `docs/PRIVACY.md`).
+- *Secrets.* The file never holds one: `bearer_env` and `env_from` name variables. A plain `http://`
+  URL to a host outside the private networks (loopback, RFC 1918, link-local, `localhost`,
+  `*.internal`, `*.local`, a single-label service name: the rule of `[agent_link]`'s `ws://`) is refused
+  at load, with or without a token, because tool arguments and results carry what the caller said;
+  `allow_insecure = true` on the entry accepts it anyway. A `url` has no query, fragment or user
+  info, since SDK errors quote it. HTTPS uses the same rustls/ring configuration and webpki roots
+  as the provider adapters; redirects are not followed.
+- *What the server learns.* Every argument the model sends (a name, a number, an order id) goes to the
+  MCP server, and so does the key above. A public third-party server (the DeepWiki example) receives
+  what the caller asked. Name only servers you may send that data to (`docs/PRIVACY.md`).
+- *The image.* The container image has no Node or Python: an HTTP MCP server works there as it is, a
+  stdio one needs its runtime added to the image (or run the MCP server as its own service and name
+  its `url`).
+
+**Not supported.** OAuth for HTTP servers (a static bearer token only), server-initiated requests
+(sampling, roots, elicitation), tasks, resources and prompts, `tools/list_changed` (the tool list is
+read at startup and after a restart; a changed server needs a server restart), progress forwarding to
+the caller.
+
+**In Rust** (`brisvox_server::mcp`, feature `mcp`): `ToolSetup::with_mcp(&agent, &clock).await`
+connects the servers of a definition and registers their tools into the setup; `ToolSetup::mcp_host`
+returns the `McpHost` to close (`McpHost::shutdown`) when the server stops. The stock binary does both.
+An agent file with MCP servers on a setup that never connected them is refused at the runner.
+
 ## Confirmation gate for SideEffect tools
 
 Idempotency stops a SideEffect tool from running *twice*; it does not stop it from running

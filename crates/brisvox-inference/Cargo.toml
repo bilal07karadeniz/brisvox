@@ -23,12 +23,14 @@ silero = ["dep:ort"]
 # Silero VAD on tract, pure Rust; runs the prepared graph.
 silero-tract = ["dep:tract-onnx"]
 # Smart Turn v3.2 end-of-turn model; needs models/smart-turn-v3.2-cpu.onnx
-# (scripts/models/fetch_models.py). Runs on ONNX Runtime.
-smart-turn-ort = ["dep:ort"]
+# (scripts/models/fetch_models.py). Runs on ONNX Runtime; the graph is rewritten in memory
+# (fused GELU, smart_turn::fuse) with the ONNX protobuf types of tract-onnx.
+smart-turn-ort = ["dep:ort", "dep:tract-onnx", "dep:prost"]
 
 [dependencies]
 ort = { workspace = true, optional = true }
 tract-onnx = { workspace = true, optional = true }
+prost = { workspace = true, optional = true }
 brisvox-core = { workspace = true }
 realfft = { workspace = true }
 thiserror = { workspace = true }

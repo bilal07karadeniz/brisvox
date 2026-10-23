@@ -622,6 +622,10 @@ async fn start_hosting(
     // The stock binary has no application tools; an application embedding the server passes its
     // `AppTools` through `run_with_tools` (docs/TOOLS.md).
     let tools = ToolSetup::from_env_linked(&ProcessEnv, clock, app_tools, &host.stream_links())?;
+    // The agent file's MCP servers (`[[mcp.servers]]`): connected once, here, shared by every call.
+    let tools = tools.with_mcp(&agent, clock).await?;
+    #[cfg(feature = "mcp")]
+    let mut mcp_hosts: Vec<_> = tools.mcp_host().into_iter().collect();
     // The callback listener serves the live calls of the telephony tools.
     #[cfg(feature = "call-control")]
     let callbacks = tools.callbacks().cloned().zip(tools.call_hub());
@@ -662,7 +666,7 @@ async fn start_hosting(
     }
     // The generic websocket listener's own agent: its own providers and agent links, the same
     // inference pool, Smart Turn executor, observability and recording (one admission control
-    // for both). No application or telephony tools: those are bound to the main agent.
+    // for both). No application or telephony tools: those are bound to the main agent (its own MCP servers excepted).
     let websocket_runner = match websocket_agent {
         None => None,
         Some(ws_agent) => {
@@ -681,13 +685,17 @@ async fn start_hosting(
                 smart_turn = websocket_smart_turn.is_some(),
                 "the generic websocket listener runs its own agent (BRISVOX_WS_AGENT_FILE)"
             );
+            // Its own MCP servers (`[[mcp.servers]]` of that file), when it has any; no other tools.
+            let ws_tools = crate::ToolSetup::none().with_mcp(&ws_agent, clock).await?;
+            #[cfg(feature = "mcp")]
+            mcp_hosts.extend(ws_tools.mcp_host());
             let mut ws = EngineRunner::with_tools(
                 ws_agent,
                 ws_providers,
                 Offload::Pool(pool.handle()),
                 vad.clone(),
                 runner,
-                crate::ToolSetup::none(),
+                ws_tools,
                 clock,
             )?;
             if let Some(model) = websocket_smart_turn {
@@ -792,6 +800,11 @@ async fn start_hosting(
     if let Some((settings, hub)) = callbacks {
         let listener = crate::callbacks::CallbackServer::bind(settings, hub, clock.clone()).await?;
         server.attach_callbacks(listener);
+    }
+    // The MCP connections close with the server, after the calls have drained.
+    #[cfg(feature = "mcp")]
+    for mcp_host in mcp_hosts {
+        server.attach_mcp(mcp_host);
     }
     // Both pools outlive the server: dropping one closes its queue.
     Ok((

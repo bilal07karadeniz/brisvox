@@ -238,6 +238,13 @@ pub(crate) trait Wire: Send + 'static {
     fn goodbye(&mut self) -> Vec<Message> {
         Vec::new()
     }
+
+    /// The server closes the connection itself after the goodbye: on hang-up the session waits
+    /// for that close instead of starting the handshake (a server that is still answering when a
+    /// client's close arrives reports an error).
+    fn server_closes_after_goodbye(&self) -> bool {
+        false
+    }
 }
 
 /// Opens the first connection of a session and starts its task.

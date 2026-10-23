@@ -413,6 +413,12 @@ A voice assistant that never leaves your machine: no API key, no cloud. Speech r
 `brisvox-server` serves itself. The agent is
 [`examples/agents/local/local-en.toml`](https://github.com/bilal07karadeniz/brisvox/blob/main/examples/agents/local/local-en.toml).
 
+**The short way.** If you have Docker, one command starts all of it (the recognizer, Ollama, the voice
+and the server, CPU only) and serves the same browser page; nothing to build or install:
+`docker compose -f deploy/local/compose.yaml up`, then open `http://localhost:8088/demo?force=ws`.
+See [`deploy/local/README.md`](https://github.com/bilal07karadeniz/brisvox/blob/main/deploy/local/README.md).
+The steps below are the same stack by hand, on a GPU if you have one.
+
 What runs where:
 
 ```
@@ -748,6 +754,7 @@ cargo feature is not compiled into this binary, with the feature to turn on), `c
 | an environment variable named by `api_key_env` / `token_env` is not set | warning; an error with `--require-secrets` (use it on the machine or CI job that has the real environment) |
 | a variable is set but empty, or has spaces or control characters inside | error |
 | a tool in `agent.tools` that this binary does not register: the built-in telephony tools need the `call-control` feature and `BRISVOX_CALL_CONTROL` set to a carrier (with both they count as registered; `check` does not verify the carrier's credentials, which the server needs at start), the demo tools the `demo-tools` feature, your own tools `AppTools` (`docs/TOOLS.md`) | **error**: the server refuses to start with it. If it is a Python/TypeScript SDK tool, remove it from `agent.tools`: the SDK agent declares it over the agent link |
+| an MCP server in `[[mcp.servers]]` | not contacted: `check` starts no process and makes no network call, so a server's reachability and the tool names of its allowlist are only checked when the server starts; a binary without the `mcp` feature is an **error**; a variable named by `bearer_env` / `env_from` that is not set is reported like an `api_key_env` one |
 | adaptive turns, and no Smart Turn model: the binary lacks the `smart-turn-ort` feature, or the model file (`BRISVOX_SMART_TURN_MODEL`, default `$BRISVOX_MODELS_DIR/smart-turn-v3.2-cpu.onnx`) does not exist | warning (without the model, turns end at their fallback deadline, or the start fails if the feature is on and the file is missing); `BRISVOX_SMART_TURN_MODEL=off` silences it |
 
 `check` answers for the binary it runs in: a server built with fewer provider features than the
@@ -1039,6 +1046,60 @@ sends the caller's number, the called number and the carrier's call id to the ag
 `session.start.call` for Twilio, Telnyx and SIP calls (`docs/AGENT_PROTOCOL.md`, "Caller
 identity"). A route has its own `caller_identity` and never inherits the section's or the
 environment's. The numbers are withheld while the server redacts phone numbers (`docs/PRIVACY.md`).
+
+### `[[mcp.servers]]` (optional)
+
+MCP (Model Context Protocol) servers whose tools the agent may call: the tools of a server's
+allowlist are offered to the LLM like the server's own tools. Behaviour, guarantees and security
+notes: `docs/TOOLS.md`, "MCP tools". Needs the `mcp` cargo feature; a build without it refuses a file
+with the table and names the first server. At most 8 servers and 64 MCP tools.
+
+```toml
+[[mcp.servers]]                        # a program the server starts, spoken to over stdin/stdout
+name = "orders"                        # 1-32 letters, digits, _ or -; each once
+command = "orders-mcp"                 # looked up on PATH; exactly one of command / url
+args = ["--read-only-db"]
+env = { LOG_LEVEL = "warn" }           # the program's environment: only these and PATH
+env_from = { ORDERS_TOKEN = "ORDERS_API_TOKEN" }   # CHILD_NAME = "server environment variable"
+tools = ["find_order", "cancel_order"] # the allowlist: required, not empty
+read_only = ["find_order"]             # subset of tools; every other tool has side effects
+confirm = ["cancel_order"]             # subset of tools: held for the user's confirmation
+prefix = true                          # names the LLM sees: "orders_find_order" (or prefix = "o_")
+timeout_ms = 5000                      # default 5000, at most 30000
+filler_after_ms = 700
+
+[[mcp.servers]]                        # a streamable HTTP endpoint
+name = "crm"
+url = "https://crm.example.com/mcp"
+bearer_env = "CRM_TOKEN"               # environment variable holding the bearer token
+tools = ["find_customer"]
+read_only = ["find_customer"]
+prefix = "crm_"
+```
+
+| key | type | notes |
+|---|---|---|
+| `name` | string | 1-32 of `A-Z a-z 0-9 _ -`, each once. Used in logs and errors, and as the prefix with `prefix = true` |
+| `command` | string | stdio transport: the program, looked up on `PATH`. Exactly one of `command` and `url` |
+| `args` | array of strings | stdio only, at most 64 |
+| `env` | table of strings | stdio only: environment variables of the program (a value is not a secret store). The program gets these and `PATH` (on Windows also what the system needs to start a program), not the server's own environment: the provider keys stay out of it |
+| `env_from` | table of names | stdio only: `CHILD_NAME = "SERVER_VARIABLE"` gives the program the value of a variable of the server's environment. The file names the variable, never holds the value; a variable that is not set stops the start. A name cannot be in `env` too |
+| `url` | string | streamable HTTP transport: `https://...`, or `http://` to a host on a private network (loopback, RFC 1918, link-local, `localhost`, `*.internal`, `*.local`, a single-label service name; the rule of `[agent_link]`), or to any host with `allow_insecure = true`. No query, fragment or user info. Exactly one of `command` and `url` |
+| `allow_insecure` | bool | url only: accept a plain `http://` URL to a host outside the private networks. Default `false`: tool arguments and results carry what the caller said, so it is refused with or without a bearer token |
+| `bearer_env` | env var name | url only: the bearer token, sent as `Authorization: Bearer`. A variable that is not set stops the start |
+| `tools` | array of strings | **required, not empty, at most 64**: the server's own names of the tools to offer (letters, digits, `_`, `-`, `.`; at most 128 characters). A name the server does not offer stops the start at its position |
+| `read_only` | array of strings | subset of `tools` that only read: they may run speculatively and are dropped on a barge-in. Every other tool of `tools` is treated as having side effects, whatever the server's annotations say |
+| `confirm` | array of strings | subset of `tools` (not of `read_only`) held for the user's confirmation (`docs/TOOLS.md`, "Confirmation gate") |
+| `prefix` | bool or string | `true`: `<name>_` before every tool name; a string (1-32 of `A-Z a-z 0-9 _ -`): that text. Default none. Characters a tool name cannot have (the `.` of `files.read`) become `_` |
+| `timeout_ms` | 1-30000 | longest wait for a call's result; default 5000 |
+| `filler_after_ms` | 1-30000 | time without a result after which the filler plays (`[filler]`); default 700 |
+| `startup_timeout_ms` | 1000-120000 | longest wait for the server to start and list its tools at startup (and at each restart); default 30000 |
+| `max_in_flight` | 1-256 | most calls in flight to this server at once, over all of the process's calls; one more fails at once with a "busy" tool error and nothing is sent. Default 32 |
+
+The names the LLM sees must be unique and valid tool names (at most 64 characters): a name that
+clashes with another MCP tool, a tool of `agent.tools`, a telephony tool or `confirm_pending` is
+reported at its `tools[i]` entry with the advice to set `prefix`. MCP tools are not listed in
+`agent.tools`: listing them in the server's `tools` is what offers them.
 
 ### `[stt]`, `[llm]`, `[tts]` (required)
 
@@ -1337,6 +1398,7 @@ from 1 to 65535, the start fails with a message naming both variables.
 | `recording.retention_days` 1 to 3650; `recording.redact_kinds` not empty and not given with `recording.redact = false` | the key |
 | `stt.api_key_env` present (except `sherpa_onnx` and the local dialects); `speaches`/`vllm` have a `model`; a token is never sent over plain `ws://` to another machine | `stt.*` |
 | tool names valid and unique; keyterm/vocabulary lists bounded | the entry |
+| `[[mcp.servers]]`: each server has exactly one of `command` and `url` and only the keys of its transport; a non-empty allowlist; `read_only` and `confirm` are disjoint subsets of `tools`; the names the LLM sees are valid and unique; no plain `http://` URL to a host outside the private networks without `allow_insecure`; no query or fragment in a `url`; the `mcp` feature is compiled in | `mcp.servers[i].*` |
 | `llm.api_key_env` present (except `openai_compatible`); compatible server has a preset or URL+model | `llm.*` |
 | a secondary is checked like a primary (same rules, with the primary's language and rate) | `<stage>.secondary.*` |
 | a secondary sets no `language`, `sample_rate`, `max_tool_rounds`, `context_window_tokens` and has no `secondary` | the key |
@@ -1353,6 +1415,9 @@ The provider facts behind these rules come from `docs/providers/*.md` (fetched 2
 on by default (light builds); a definition naming a provider whose feature is off is rejected with
 the feature to enable. `SttProviderConfig` / `LlmProviderConfig` / `TtsProviderConfig` have one
 variant per compiled adapter.
+
+The `mcp` feature (MCP tools, `[[mcp.servers]]`) works the same way: a definition with the table is
+refused, at the first server's position, by a build without it.
 
 ## Why TOML is the reference and how YAML is read
 
@@ -1538,6 +1603,7 @@ exit status 1 and a message naming the variable.
 | `BRISVOX_MODELS_DIR` | `models` | Directory of the model files. |
 | `BRISVOX_EXTRA_CA_FILE` | unset | **Tests and benchmarks only.** PEM file of CA certificates that every provider adapter trusts besides the public roots (certificate and host name are still verified). It lets the adapters talk TLS to the fake providers of `bench/fake_providers`, whose certificate is signed by a throwaway CA. Read once, when the first TLS connection is set up; an unreadable or invalid file fails that connection. Not for production: use a real certificate, or `BRISVOX_AGENT_TLS_CA` for a private agent. |
 | `BRISVOX_SMART_TURN_THREADS` | the inference pool's threads (half the cores) | Threads of the Smart Turn executor: the 20-25 ms analyses run on their own threads so they never delay the VAD windows of other calls. `0` runs them on the VAD's pool as before (use it to compare). One thread is about 55% busy at 200 calls and delays verdicts when turns end together; the default carries ~180 calls per thread with headroom. Small machines: the default is half the cores (at least 1), so 1-3 cores give 1 executor thread; the server logs a warning at start when the VAD pool, the executor and the ONNX Runtime intra-op workers together exceed the available cores. |
+| `BRISVOX_SMART_TURN_GRAPH` | `fused` | `fused` runs the pinned model with its GELUs fused into one operation each (about 40% less memory traffic per analysis; verdicts matched the published graph on 3997 of 4000 test clips with the same accuracy, and on 299 of 300 on a CPU without VNNI, docs/providers/smart-turn.md "Fused GELU"); `original` runs the file exactly as published. |
 
 A listener address is `host:port` or `off`. Without any listener (`BRISVOX_WS_ADDR=off` and
 the others unset) the binary serves its health endpoints only and needs no agent file.
@@ -1893,6 +1959,44 @@ worst latency of each stage; its JSON shape is in the protocol document. `provid
 are the primaries of the agent definition (`model` is `default` where the adapter leaves the choice
 to the provider). A call that failed over to a secondary is counted under the primary, and a
 call that never connected to a provider has zeros.
+
+### Grafana dashboard
+
+`deploy/grafana/brisvox.json` is a Grafana dashboard for the metrics above. It is tested with
+Grafana 12.1 and declares Grafana 10 as the minimum. Two ways to load it:
+
+- UI import: Dashboards, New, Import, upload the file and pick the Prometheus datasource that
+  scrapes `/metrics` (the file declares it as an import input).
+- File provisioning: put the file in a dashboard provider's folder next to a provisioned
+  Prometheus datasource. The `Datasource` variable then selects the default Prometheus datasource;
+  pick another one from the variable if you have several.
+
+Nothing else is configured. The `Instance` variable filters by scrape target
+and `Provider` filters the provider panels (breakers, concurrency budgets, usage). Rates use
+`$__rate_interval`, so set the scrape interval on the datasource (5 to 15 s). A test
+(`cargo test -p brisvox-server --lib dashboard`) renders the real `/metrics` text and fails when a
+panel queries a metric, label or label value the server does not export, applies `rate()` to a
+gauge, reads a counter or histogram bucket without `rate()` or `increase()`, or takes a
+`histogram_quantile()` over buckets without `le` in its `by (...)`. The rows are the questions an
+operator asks, in the order they ask them:
+
+| Row | Question | Panels |
+|---|---|---|
+| Is it healthy right now? | Are calls getting through? | Calls live; calls refused in the selected range (every one is a lost caller, red from the first); p95 server-side response latency (orange from 1.0 s, red from the 1.2 s objective of the benchmarks); inference pool pressure; live calls as a percentage of `BRISVOX_MAX_SESSIONS` (80% line); how calls end (failed and panicked in red); refusals by reason. |
+| Is it fast? | Where does the time go? | Response latency p50 and p95 with the 1.2 s line; time to silence after a barge-in; per-stage p50 and p95 (`end_of_turn`, `stt_final`, `llm_first_token`, `tts_first_byte`; they overlap, so they do not add up); the engine's own hops (`into_llm`, `out_of_tts`). |
+| Do barge-ins work? | Does the caller get to interrupt the bot? | Share of finished turns that ended in a barge-in (a step change is the signal, there is no good value); clear failures (the playback flush the transport did not accept) and mark timeouts (the client never echoed the end-of-response mark), both bad above zero and counted when a call ends. |
+| Why is it slow or refusing? | Is the server or a limit the cause? | Inference pool queue depth (the overload limit is `BRISVOX_OVERLOAD_QUEUE_PER_THREAD` times the pool's threads, so it has no line; the pressure stat shows it) and mean wait (the 50 ms line is the default `BRISVOX_OVERLOAD_QUEUE_WAIT`); provider concurrency in use against `BRISVOX_PROVIDER_LIMITS`; the Smart Turn executor's queue and the analyses it rejected or answered late (these never show in the pool panels). |
+| Are providers failing? | Which provider, and is it absorbed? | Circuit breaker state per provider; failed attempts per provider; provider errors by stage and kind (the counters carry no provider label); retries and failovers; failures the resilience layer could not absorb (unavailable, retry budget spent, unrecovered). |
+| What does it cost? | What units did the providers bill? | LLM tokens, STT audio (minutes) and TTS characters over a rolling hour per provider and model (multiply by your price list); call duration. |
+
+Tool calls have no metric of their own. The `llm_round` stage of
+`brisvox_stage_latency_seconds` is one observation per LLM request, including the requests after a
+tool result, so it is the place to see what a tool loop costs; the dashboard has no panel for it.
+
+The latency panels show the server-side response latency: the caller's network and the client's
+buffering come on top, so a call can miss a client-measured objective while the panel is still
+green. The 50 ms and 1.2 s lines are the default and the benchmark objective; edit the panel
+thresholds if your settings or objective differ.
 
 ### Traces
 
@@ -3143,6 +3247,135 @@ or a stale agent file fails the build.
 If your tools live in another process or language, use the
 Python or TypeScript SDK (`sdk/python`, `sdk/typescript`) instead; the agent file then lists no
 `agent.tools` for them (the agent link supplies them).
+
+## MCP tools
+
+An agent file can name [MCP](https://modelcontextprotocol.io) (Model Context Protocol) servers
+(`[[mcp.servers]]`, `docs/CONFIG.md`). The server connects to each once at startup, lists its
+tools, and offers the ones on the file's allowlist to the LLM as ordinary tools of the agent: the
+engine's rules above apply unchanged (schema-checked arguments, timeouts, the idempotency key,
+speculation for ReadOnly tools only, the confirmation gate, fillers). Cargo feature `mcp` (in the
+prebuilt binaries and the image); the protocol and the SDK facts are in `docs/providers/mcp.md`.
+
+```toml
+[[mcp.servers]]
+name = "orders"
+command = "orders-mcp"                 # stdio: a program the server starts
+tools = ["find_order", "cancel_order"] # the allowlist
+read_only = ["find_order"]             # everything else has side effects
+confirm = ["cancel_order"]             # held for the user's confirmation
+prefix = true                          # find_order is offered as orders_find_order
+
+[[mcp.servers]]
+name = "crm"
+url = "https://crm.example.com/mcp"    # streamable HTTP
+bearer_env = "CRM_TOKEN"
+tools = ["find_customer"]
+read_only = ["find_customer"]
+```
+
+`examples/agents/mcp/docs-en.toml` is a whole agent on a public MCP server (DeepWiki).
+
+**Transports.** *stdio*: the server starts `command` with `args` and speaks newline-delimited
+JSON-RPC over its standard input and output; its standard error is logged at debug level.
+*Streamable HTTP*: one endpoint `url`, requests are POSTs, answers JSON or an SSE stream; `bearer_env`
+names the variable holding a static bearer token (no OAuth flow: a headless voice agent cannot do
+the browser step). Both protocol revisions are spoken: the client probes `server/discover` (2026-07-28)
+and falls back to `initialize` (2025-11-25 and earlier), so servers of either era work. The client
+declares no capabilities (no sampling, roots or elicitation); a server that wants input in the middle of
+a call gets a `tool_failed` result saying so.
+
+**Kinds.** The file decides, not the server. A tool in `read_only` is ReadOnly; every other tool
+on the allowlist is SideEffect, so it never runs speculatively and never runs twice for one call id
+(`What "never twice" covers`). The MCP specification says tool annotations (`readOnlyHint`,
+`destructiveHint`, ...) are hints from a server that may not be trustworthy; they are written to the
+debug log and never used. `confirm` puts the confirmation gate on a SideEffect tool.
+
+**Guarantees.**
+- *Allowlist.* `tools` is required and not empty: a tool that is not on it is not registered, and the
+  LLM is never told it exists, whatever the server lists. A name on the list that the server does not
+  offer stops the start, at the position of that entry in the file (fail closed, like a missing
+  `agent.tools` entry).
+- *One connection.* The connections are made at startup and shared by every call; per-call state (the
+  idempotency store, pending confirmations) stays in the call's own engine. MCP servers must treat
+  the calls as independent users of one client: a tool that needs per-call state takes a handle
+  (a basket id) as an ordinary argument.
+- *Idempotency key.* The engine's key of the call (`ToolCallCtx::idempotency_key`, 16 hex digits) is
+  sent in the request's `_meta` as `io.brisvox/idempotency_key`, so a server can deduplicate a call
+  that is delivered twice. The key is per call, session and turn, as above: it is unique for the
+  lifetime of one session (one phone call) in one server process and is not remembered beyond it, so
+  deduplicate within that, and use an application key for anything longer (`What "never twice"
+  covers`).
+- *Pinned at startup.* Descriptions and input schemas are read once at startup and registered; a
+  restarted server keeps the registered ones (after a restart the allowlisted names are checked
+  again, and a server that no longer offers one stays down and is retried). A server that changes a
+  tool's schema needs a restart of this server. A schema larger than 16 KiB as JSON stops the start,
+  at its allowlist entry: it would travel to the model with every request.
+- *Timeouts.* `timeout_ms` (default 5 s, at most 30 s) as for every tool. A ReadOnly call is dropped at
+  it or at a barge-in; dropping the request sends `notifications/cancelled` (a late result is
+  ignored). A SideEffect call is not dropped: its slot is answered `timeout`, the call keeps waiting up
+  to 60 s, and its result then becomes a late note. Past the wait, or when the connection is lost
+  after the request was sent, the error says "the outcome is unknown" and the call is never retried.
+- *Results.* Text content becomes the tool's result; structured content, when the tool gives it, is
+  the result as JSON. Images, audio and binary resources are replaced by a one-line note saying what
+  they were. `isError: true` is the tool's error with its text (the model may correct the call); a
+  JSON-RPC error answer is a failure too ("the server rejected the call"), not an unknown outcome;
+  a transport error is `tool_failed`. Results are cut at 60 KiB, descriptions at 1000 characters.
+- *Lifecycle.* A stdio server that exits is restarted with a growing delay (0.25 s, doubling to 10 s,
+  and then every 10 s for as long as it takes: a deploy of the MCP server needs no restart of this
+  one; the failed attempts are logged at `warn` level three times and then once a minute; a connection
+  that held for a minute starts the delays afresh). While it is down every call to it fails at once
+  with `tool_failed` ("not connected right now ... the call was not made") instead of waiting. An HTTP
+  server needs no such supervision (each request is its own POST); one of the
+  session era that restarts and forgets its sessions answers 404 to the old one, and the client then
+  starts a new session and sends that request again (the server never processed it). On shutdown, after the calls have drained, a stdio server's standard input is closed, the
+  process waited for (a few seconds), then killed. `McpHost::status` reports each server (`Up`,
+  `Restarting`, `Down`) and its restart count.
+- *Bounds.* At most 8 servers, 64 tools per server and 64 in all; startup of each server is bounded by
+  `startup_timeout_ms` (default 30 s), concurrently; every await has a timeout and every channel is
+  bounded. At most `max_in_flight` calls (default 32, at most 256) are in flight to one server, over
+  every call of the process; one more fails at once with a `tool_failed` result "the MCP server is busy
+  ... the call was not made, try again in a moment". Nothing was sent, so this is true for a tool with
+  side effects too, and the model may try again (or tell the caller). The permit is held while the
+  request is open, and a dropped ReadOnly call gives it back.
+
+**Security notes.**
+- *The operator's file is the policy.* A stdio `command` runs with the server's privileges and comes
+  only from the agent file, never from the LLM or a caller. Treat a file that names one like any
+  deployment script. Prefer a server binary you pinned over `npx -y package` (which fetches code at
+  every start and leaves a node process behind when it is killed).
+- *The child's environment.* A stdio server gets `PATH` (on Windows also `PATHEXT`, `SystemRoot`,
+  `COMSPEC`, `TEMP`, `TMP`), the `env` of its entry and the variables named by `env_from`, and
+  nothing else. The server's own environment, which holds the provider keys, does not leak into it. A
+  program that needs `HOME` has to be given it in `env`.
+- *Untrusted text.* A server's descriptions, schemas and results go to the LLM as the text of any
+  tool; they can try to steer the model (prompt injection). That is why the allowlist is exact, kinds
+  are the operator's, and `confirm` exists: put it on anything that spends money, sends a message or
+  deletes data. Results are bounded, never executed and never logged (arguments and results are not in
+  the logs, `docs/PRIVACY.md`).
+- *Secrets.* The file never holds one: `bearer_env` and `env_from` name variables. A plain `http://`
+  URL to a host outside the private networks (loopback, RFC 1918, link-local, `localhost`,
+  `*.internal`, `*.local`, a single-label service name: the rule of `[agent_link]`'s `ws://`) is refused
+  at load, with or without a token, because tool arguments and results carry what the caller said;
+  `allow_insecure = true` on the entry accepts it anyway. A `url` has no query, fragment or user
+  info, since SDK errors quote it. HTTPS uses the same rustls/ring configuration and webpki roots
+  as the provider adapters; redirects are not followed.
+- *What the server learns.* Every argument the model sends (a name, a number, an order id) goes to the
+  MCP server, and so does the key above. A public third-party server (the DeepWiki example) receives
+  what the caller asked. Name only servers you may send that data to (`docs/PRIVACY.md`).
+- *The image.* The container image has no Node or Python: an HTTP MCP server works there as it is, a
+  stdio one needs its runtime added to the image (or run the MCP server as its own service and name
+  its `url`).
+
+**Not supported.** OAuth for HTTP servers (a static bearer token only), server-initiated requests
+(sampling, roots, elicitation), tasks, resources and prompts, `tools/list_changed` (the tool list is
+read at startup and after a restart; a changed server needs a server restart), progress forwarding to
+the caller.
+
+**In Rust** (`brisvox_server::mcp`, feature `mcp`): `ToolSetup::with_mcp(&agent, &clock).await`
+connects the servers of a definition and registers their tools into the setup; `ToolSetup::mcp_host`
+returns the `McpHost` to close (`McpHost::shutdown`) when the server stops. The stock binary does both.
+An agent file with MCP servers on a setup that never connected them is refused at the runner.
 
 ## Confirmation gate for SideEffect tools
 
@@ -5422,11 +5655,13 @@ The process itself (settings, listeners, admission, drain, exit status) is
 
 Files: `Dockerfile`, `.dockerignore`, `deploy/compose.yaml`, `deploy/agents/{web,phone}.toml`,
 `deploy/{ws,twilio}.env.example`, `deploy/healthcheck.sh`.
+The keyless local stack (no API key, everything in containers on one machine) is in `deploy/local/`
+("Compose: a keyless local stack" below).
 
 ## The image
 
 Releases publish it as `ghcr.io/bilal07karadeniz/brisvox-server` (tags `vX.Y.Z` and `latest`,
-`linux/amd64` and `linux/arm64`), built with `BRISVOX_FEATURES=all-providers,call-control,smart-turn-ort,webrtc`
+`linux/amd64` and `linux/arm64`), built with `BRISVOX_FEATURES=all-providers,call-control,smart-turn-ort,mcp,webrtc`
 (`docs/RELEASING.md`). To build it yourself, with another feature set if you need one:
 
 ```sh
@@ -5436,7 +5671,7 @@ docker build -t brisvox/server --build-arg BRISVOX_FEATURES=all-providers,call-c
 ```
 
 Build arguments: `BRISVOX_FEATURES` (cargo features of `brisvox-server` on top of its defaults
-`mimalloc`, `yaml`, `silero-tract`; default `all-providers,call-control,smart-turn-ort`),
+`mimalloc`, `yaml`, `silero-tract`; default `all-providers,call-control,smart-turn-ort,mcp`),
 `STRIP_BINARY` (`1`), `RUST_VERSION` (`1.99.0`, checked against `rust-toolchain.toml` so the
 two cannot drift), `DEBIAN_RELEASE` (`trixie`; not `bookworm`, see below), `BUILD_JOBS` (empty: cargo uses every core; `4` caps rustc jobs for small build hosts), `CARGO_CHEF_VERSION` (`0.1.78`),
 `PYTHON_VERSION` (`3.12`). The build needs network access (crates, the ONNX Runtime binaries
@@ -5563,6 +5798,45 @@ not start without `BRISVOX_TWILIO_STREAM_SECRET`, so `deploy/twilio.env.example`
 active and empty. A static TwiML Bin that cannot compute the segment needs
 `BRISVOX_TWILIO_ALLOW_STATIC_URL=1` instead (and no secret), which accepts the fixed URL and its
 replayable signature; use it for a first try only.
+
+## Compose: a keyless local stack
+
+`deploy/local/compose.yaml` starts a complete voice agent that needs no API key, no account and no
+network once it is downloaded: brisvox-server (the published image, pinned by version and digest),
+a sherpa-onnx streaming speech recognizer (English, built from `deploy/local/sherpa-onnx/` with a
+checked model download), Ollama with `qwen2.5:1.5b`, and a Kokoro-FastAPI voice, all on the CPU.
+The browser page of the server's WebRTC listener is the interface.
+
+```sh
+docker compose -f deploy/local/compose.yaml up
+# when the log says "brisvox-server ready":  http://localhost:8088/demo?force=ws
+```
+
+Health checks and `depends_on` order the start (recognizer, voice and model pull first, the server
+last), so the page appears only when the whole stack answers. The first start downloads about
+6.5 GB; the table, the settings (`BRISVOX_LOCAL_AGENT=agent-quality.toml` for a 3B model on a fast
+machine, `BRISVOX_LOCAL_PORT`), the build-from-source variant
+(`-f deploy/local/compose.build.yaml --build`) and the licences are in
+[`deploy/local/README.md`](../deploy/local/README.md). Image versions, digests and the sources they
+were read from are in `docs/providers/local-speech.md`, "The keyless Docker stack".
+
+Two choices in it are about safety, not convenience:
+
+- **One network namespace.** The helper servers have no authentication of their own, and the
+  language model adapter sends plain `http://` only to loopback addresses. The recognizer, Ollama,
+  the voice and brisvox-server therefore share the namespace of an empty `net` container
+  (`network_mode: "service:net"`) and reach each other at `127.0.0.1`; only `net` publishes a port,
+  `127.0.0.1:8088`. Nothing else can reach the helpers.
+- **`BRISVOX_INSECURE_LISTENERS=1` on a loopback-only port.** The same rule as `agent-ws` above:
+  the listener binds `0.0.0.0` inside the container, and the published port is on `127.0.0.1`.
+  To expose the page beyond the machine, remove the opt-out, set `BRISVOX_SESSION_SECRET` and put
+  TLS in front ("TLS and authentication in front" below).
+
+The call runs over the WebSocket of the signaling port (`?force=ws`): WebRTC media over UDP does not
+cross a Docker port mapping to a browser on the same machine (`BRISVOX_WEBRTC_UDP_ADDR=127.0.0.1:0`,
+as in "Platforms with one HTTPS port and no UDP"). A workflow, `.github/workflows/local-stack.yml`,
+starts the stack weekly and when `deploy/local/` changes and plays one recorded
+conversation at it with `brisvox-bench v2v`, failing if a turn goes unanswered.
 
 ## TLS and authentication in front
 
@@ -5873,7 +6147,7 @@ UDP to the server, which has no UDP ingress.
 
 ### Build
 
-- **Features.** The image default (`all-providers,call-control,smart-turn-ort`) has **no `webrtc`**,
+- **Features.** The image default (`all-providers,call-control,smart-turn-ort,mcp`) has **no `webrtc`**,
   and a binary without it refuses `BRISVOX_WEBRTC_ADDR` at start. Build with
   `BRISVOX_FEATURES=all-providers,smart-turn-ort,webrtc` (the browser row of "What to build with" in
   the README); `webrtc` compiles libopus (cmake and a C compiler are in the build stage). Add
@@ -6891,6 +7165,19 @@ The server does not write the numbers to its own logs or recordings from this pa
 process should treat them like any other caller data: keep them out of its logs and apply your
 retention to whatever it stores.
 
+## MCP servers
+
+An agent file with `[[mcp.servers]]` (`docs/TOOLS.md`, "MCP tools") sends the arguments of every
+tool call the model makes to those servers: whatever the model puts there, such as a name, a phone
+number, an order id or the text of a question, and the engine's idempotency key of the call. The
+results come back and go to the LLM provider as any tool result does. A stdio server is a program on
+your machine; an HTTP server is a service you name, and a public third-party one (the DeepWiki
+example) receives what callers ask. Treat each as a processor of caller data in your data map, name
+only servers you may send that data to, and use `https://` (a plain `http://` URL outside the private
+networks needs `allow_insecure = true`). The server writes no tool arguments or results to its logs
+or recordings from this path; the server process and its logs are yours to govern. The child's
+environment holds none of the server's provider keys.
+
 ## Retention
 
 The sweeper runs at startup and then every `BRISVOX_RECORDING_SWEEP_INTERVAL`. It looks at the
@@ -7288,6 +7575,89 @@ voice = "af_heart"                  # a Kokoro voice; GET {base_url}/audio/voice
 preset = "kokoro"                   # model "kokoro", 24 kHz pcm, stream: true
 base_url = "http://localhost:8880/v1"
 # first_audio_timeout_ms = 15000    # raise it for a slow CPU
+```
+
+
+<!-- source: examples/agents/mcp/docs-en.toml -->
+
+```toml
+# A voice agent whose tools come from an MCP server: DeepWiki's public, read-only MCP server
+# (https://mcp.deepwiki.com/mcp, no key) answers questions about open-source repositories.
+# Reference: docs/CONFIG.md (`[[mcp.servers]]`), docs/TOOLS.md ("MCP tools"). Needs a server built
+# with the `mcp` feature (the prebuilt binaries and the image have it). Secrets are never in this
+# file: every `api_key_env` names the environment variable that holds the key.
+#
+# PRIVACY: DeepWiki is a public third-party service. Every question a caller asks about a
+# repository is sent to it (the repository and the question are the tool's arguments). Use this
+# example for public projects and demos only; for real callers point `url` at a server you run or
+# may send their words to (docs/PRIVACY.md, "MCP servers").
+#
+# The agent does not list the tools in `agent.tools`: the server's `tools` allowlist is what
+# offers them. Under the names the LLM sees (`prefix = "wiki_"`): wiki_ask_wiki_question and
+# wiki_read_wiki_structure. The server also offers read_wiki_contents; it is left out, because a
+# whole wiki page is too long to speak and the allowlist is exact.
+#
+# The same shape works for a program on the machine (stdio), for example the reference
+# filesystem server (it needs Node.js, which the container image does not have):
+#
+#   [[mcp.servers]]
+#   name = "files"
+#   command = "npx"
+#   args = ["-y", "@modelcontextprotocol/server-filesystem", "/srv/documents"]
+#   tools = ["read_text_file", "list_directory"]
+#   read_only = ["read_text_file", "list_directory"]
+#
+# (check the tool names against the server's own `tools/list`; a name it does not offer stops the
+# start, naming the line.)
+
+[agent]
+name = "repo-guide"
+language = "en"
+system_prompt = """
+You are a voice assistant that answers questions about open-source software projects. Answer in
+one to three short spoken sentences; never read out URLs, file paths or code unless asked. When
+the user asks about a repository, call wiki_ask_wiki_question with the repository as owner/repo
+(ask for the owner and the name if you do not have them) and the question. Use
+wiki_read_wiki_structure only when the user asks what topics a project's documentation covers.
+"""
+
+[turn]
+policy = "adaptive"
+fallback_silence_ms = 3000
+
+[interruption]
+preset = "recommended"
+backchannels = ["en"]
+
+[filler]
+delay_ms = 1200              # a question to DeepWiki takes several seconds: say something meanwhile
+
+[stt]
+provider = "deepgram"
+api_key_env = "DEEPGRAM_API_KEY"
+
+[stt.deepgram]
+model = "nova-3"
+endpointing_ms = 300
+
+[llm]
+provider = "openai"
+api_key_env = "OPENAI_API_KEY"
+max_tool_rounds = 3
+
+[tts]
+provider = "cartesia"
+api_key_env = "CARTESIA_API_KEY"
+voice = "replace-with-a-cartesia-voice-id"
+sample_rate = 24000
+
+[[mcp.servers]]
+name = "deepwiki"
+url = "https://mcp.deepwiki.com/mcp"
+tools = ["ask_wiki_question", "read_wiki_structure"]
+read_only = ["ask_wiki_question", "read_wiki_structure"]   # both only read
+prefix = "wiki_"
+timeout_ms = 25000           # an answer can take 10 s or more; the call is dropped at this limit
 ```
 
 

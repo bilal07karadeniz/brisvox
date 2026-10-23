@@ -210,6 +210,83 @@ sherpa-onnx's own server: done for 16 kHz speech (`docs/providers/sherpa-onnx.md
 phone audio is still unmeasured. (c) Speaches on Blackwell and (d) a Turkish MOS/WER listening
 test: not done.
 
+## 7. The keyless Docker stack (`deploy/local/`)
+
+Read and checked 2026-10-23. What the compose file pulls, pinned by tag and by the digest of the
+multi-architecture index (read from the registries on that date):
+
+| Part | Image or file | Pin | Size (compressed, amd64) | Licence | Source |
+|---|---|---|---|---|---|
+| server | `ghcr.io/bilal07karadeniz/brisvox-server` | `v0.1.1`, `sha256:d48d8076a8c66382b9953df0ec9d180770689c3ebddbe23e395c2896ca05da06` | 68 MB | MIT OR Apache-2.0 | `docs/DEPLOY.md`; built with `webrtc` and every provider (`release.yml`) |
+| speech recognition | built from `deploy/local/sherpa-onnx/Dockerfile`: `python:3.12-slim-trixie@sha256:cb33f7f771ecec2ef1225cf39b159591a040391bd73e4c01f00fdfc4c47611d2`, pip `sherpa-onnx==1.13.8`, `websockets==13.1`, `numpy==2.2.6` | `streaming_server.py` and `http_server.py` of tag `v1.13.8` by SHA-256 (`3f74d3c0...`, `a78a7df7...`); model archive `sherpa-onnx-streaming-zipformer-en-2023-06-26.tar.bz2` by SHA-256 `639e25b578e9e997131402199419c13a941f8e4e198e2da1ce57dbf5cf401282` (310,414,022 bytes) | 310 MB archive, 75 MB kept (int8 encoder and joiner, decoder, tokens) | Apache-2.0 (code; the model's `README.md` in the archive says `license: apache-2.0`) | github.com/k2-fsa/sherpa-onnx; no server image exists (Docker Hub `k2fsa/` has only `icefall`) |
+| language model server | `ollama/ollama` | `0.40.8` (stable, 2026-10-21), `sha256:2b8eecdb85aa6ea67c381c8ecffec04b2658496cf2821a8f88b0485bdff198e8` | 3.4 GB (Ubuntu 24.04 plus the CPU, CUDA, ROCm and Vulkan runners) | MIT | docs.ollama.com/docker, `Dockerfile` of tag v0.40.8 (`ENV OLLAMA_HOST=0.0.0.0:11434`, `ENTRYPOINT ["/bin/ollama"]`) |
+| language model | `qwen2.5:1.5b` (986 MB) | Ollama library tag | 1.0 GB | Apache-2.0 (huggingface.co/Qwen/Qwen2.5-1.5B-Instruct) | ollama.com/library/qwen2.5 |
+| language model, option | `llama3.2:3b` (2.0 GB) | Ollama library tag | 2.0 GB | Llama 3.2 Community License (attribution, acceptable use policy, 700 million monthly users threshold; huggingface.co/meta-llama/Llama-3.2-3B-Instruct) | ollama.com/library/llama3.2 |
+| voice | `ghcr.io/remsky/kokoro-fastapi-cpu` | `v0.9.0` (2026-09-10), `sha256:ee3111d6a2c903ed62f3b4fa19543c6901205ed39fce3c177e895b34a8386b9c` | 1.5 GB | Apache-2.0 (code and the Kokoro-82M weights; StyleTTS2-derived inference code MIT) | github.com/remsky/Kokoro-FastAPI (README: "pre-built multi-arch images with models baked in"; `docker/cpu/Dockerfile.optimized` installs `curl`, which the health check uses) |
+| network anchor | `busybox:1.37.0` | `sha256:bdf57e528e45e4433820e045b29b4597825a1c9e38353532d90a01445013f82e` | 2 MB | GPL-2.0 | hub.docker.com |
+
+Facts the compose file relies on (each read from source or docs on that date):
+
+- **Ollama.** Port 11434; models in `/root/.ollama`; `OLLAMA_KEEP_ALIVE` (negative keeps loaded),
+  `OLLAMA_NUM_PARALLEL` (1), `OLLAMA_MAX_LOADED_MODELS`, `OLLAMA_NO_CLOUD=1` (local-only mode),
+  default context 4096 tokens (docs.ollama.com/faq, /context-length). `ollama list` is the health
+  check; `ollama pull` and `ollama run MODEL "PROMPT"` run in a second container against the same
+  server. The server image is large because it carries every GPU runner; there is no CPU-only tag.
+- **Kokoro-FastAPI.** `GET /health` returns `{"status":"healthy"}` and is served after the model is
+  loaded and warmed up (`api/src/main.py` lifespan); `POST /v1/audio/speech` as in section 3;
+  `DOWNLOAD_MODEL=true` (default) is a no-op when the weights are baked in; one uvicorn worker
+  serves one request at a time.
+- **sherpa-onnx server.** `streaming_server.py` imports `http_server.py`, which reads sixteen
+  static files from `--doc-root` at start, and the server refuses to start without the directory,
+  so the image gives it empty stand-ins. It writes `log/log-streaming-server-<time>.txt` in its
+  working directory. A plain `GET /` is answered with `200` (the static page) without a websocket
+  error, which is what the health check uses. `websockets` is pinned to 13.1: the script's
+  `process_request(path, headers)` hook is the legacy API.
+- **brisvox-server adapters.** Plain `http://` goes to loopback hosts only for the `openai_compatible`
+  LLM adapter (`allow_insecure_http` is not an agent-file key); `openai_speech` accepts any host
+  without a key and `sherpa_onnx` any host without a token. The compose file therefore puts the
+  server and the three helpers in one network namespace.
+
+Findings from running it (2026-10-23, Windows host, the stack's parts run natively because Docker
+was not available to this session; see "Verified" below):
+
+- **The English zipformer prints capitals.** A small language model that is given a conversation
+  in capitals tends to answer in capitals, whatever the system prompt says about capitalization
+  (14-turn test conversation, replies with more than half of their letters capitalized, prompts
+  that ask for normal capitalization): `llama3.2:1b` 14 of 14, `qwen2.5:1.5b` 0 or 3 of 14 (two
+  wordings of the prompt), `llama3.2:3b` 0 of 14 on short turns but every reply to long ones with
+  the first prompt, `gemma3:1b` 0 of 14. Kokoro-FastAPI 0.9.0 also has an all-caps normalizer
+  (acronyms), so shouted text is read badly. The image therefore runs the unmodified upstream
+  script behind `deploy/local/sherpa-onnx/server.py`, which only changes the `text` field of its
+  messages to sentence case (lowercase, `I`, a capital first letter); checked with the pinned model
+  on `fixtures/en_two_utterances.wav`. With sentence-case input and the shipped prompt,
+  `qwen2.5:1.5b` capitalized 0 of 14 replies.
+- **Speed on a CPU** (Ollama 0.34.1 on a desktop CPU, CPU only, 4 threads, 3-turn conversation with
+  the agent's prompt, streaming): `llama3.2:3b` 7 to 13 tokens per second, first token 0.24 to
+  0.73 s, first sentence 0.8 to 3.7 s; `llama3.2:1b` about 18 tokens per second; `qwen2.5:1.5b`
+  28 to 30 tokens per second, first token 0.10 to 0.24 s, first sentence 0.34 to 1.17 s. The model
+  must be loaded before the first call: a cold load took 8 to 10 s on that machine, longer than the
+  adapter waits for response headers, which is why the `llm-pull` job loads the model and the server
+  waits for it.
+- **Models that did not suit.** `llama3.2:1b` (capitals, invented weather), `gemma3:1b`
+  (short, repetitive, sometimes off-topic). Models that think before answering need
+  `reasoning_effort` (see `docs/providers/openai-compatible.md`).
+
+Verified, and not:
+
+- Run natively on Windows 11 (no containers): the sherpa-onnx 1.13.8 `streaming_server.py` with
+  `websockets 13.1`, the pinned model and the `server.py` wrapper; Ollama 0.34.1 with the three
+  models above; a `brisvox-server` build (0.1.0, with the `webrtc` feature) serving
+  `deploy/local/agents/agent.toml` with the Ollama port changed; the benchmark client
+  `brisvox-bench v2v --url ws://127.0.0.1:PORT/ws` played `fixtures/en_two_utterances.wav` and both
+  turns were answered. The voice was a stand-in that streams a tone over the
+  OpenAI speech protocol, not Kokoro.
+- Not run: any container (no Docker or WSL was available to the session that wrote this), so the
+  images' tags and digests were read from the registries but not pulled, the sherpa-onnx
+  Dockerfile and the compose file were not built or started (the compose file was validated against
+  the compose specification's JSON schema), Kokoro-FastAPI on a CPU, and the published server
+  image. The first run of `.github/workflows/local-stack.yml` is the first container run.
+
 ## Sources (all fetched 2026-10-14)
 
 Speaches: github.com/speaches-ai/speaches; speaches.ai; speaches.ai/usage/realtime-api/;

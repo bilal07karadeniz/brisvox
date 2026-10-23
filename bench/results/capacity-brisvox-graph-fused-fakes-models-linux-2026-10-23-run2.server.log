@@ -1,0 +1,269 @@
+[2m2026-10-23T00:20:45.146556Z[0m [33m WARN[0m [2mbrisvox_providers::net[0m[2m:[0m BRISVOX_EXTRA_CA_FILE is set: provider connections also trust this CA (meant for tests and benchmarks) [3mfile[0m[2m=[0m/pki/ca.pem
+[2m2026-10-23T00:28:43.579941Z[0m [33m WARN[0m [2mbrisvox::engine[0m[2m:[0m vad batch failed [3mstage[0m[2m=[0m"vad" [3merror[0m[2m=[0minference job timed out after 250ms
+[2m2026-10-23T00:28:43.582931Z[0m [33m WARN[0m [2mbrisvox::engine[0m[2m:[0m vad batch failed [3mstage[0m[2m=[0m"vad" [3merror[0m[2m=[0minference job timed out after 250ms
+[2m2026-10-23T00:28:43.583608Z[0m [33m WARN[0m [2mbrisvox::engine[0m[2m:[0m vad batch failed [3mstage[0m[2m=[0m"vad" [3merror[0m[2m=[0minference job timed out after 250ms
+[2m2026-10-23T00:28:43.585155Z[0m [33m WARN[0m [2mbrisvox::engine[0m[2m:[0m vad batch failed [3mstage[0m[2m=[0m"vad" [3merror[0m[2m=[0minference job timed out after 250ms
+[2m2026-10-23T00:28:43.603552Z[0m [33m WARN[0m [2mbrisvox::engine[0m[2m:[0m vad batch failed [3mstage[0m[2m=[0m"vad" [3merror[0m[2m=[0minference job timed out after 250ms
+[2m2026-10-23T00:28:43.612483Z[0m [33m WARN[0m [2mbrisvox::engine[0m[2m:[0m vad batch failed [3mstage[0m[2m=[0m"vad" [3merror[0m[2m=[0minference job timed out after 250ms
+[2m2026-10-23T00:28:43.618284Z[0m [33m WARN[0m [2mbrisvox::engine[0m[2m:[0m vad batch failed [3mstage[0m[2m=[0m"vad" [3merror[0m[2m=[0minference job timed out after 250ms
+[2m2026-10-23T00:28:43.618552Z[0m [33m WARN[0m [2mbrisvox::engine[0m[2m:[0m vad batch failed [3mstage[0m[2m=[0m"vad" [3merror[0m[2m=[0minference job timed out after 250ms
+[2m2026-10-23T00:28:43.645574Z[0m [33m WARN[0m [2mbrisvox::engine[0m[2m:[0m vad batch failed [3mstage[0m[2m=[0m"vad" [3merror[0m[2m=[0minference job timed out after 250ms
+[2m2026-10-23T00:28:43.651462Z[0m [33m WARN[0m [2mbrisvox::engine[0m[2m:[0m vad batch failed [3mstage[0m[2m=[0m"vad" [3merror[0m[2m=[0minference job timed out after 250ms
+[2m2026-10-23T00:28:43.656511Z[0m [33m WARN[0m [2mbrisvox::engine[0m[2m:[0m vad batch failed [3mstage[0m[2m=[0m"vad" [3merror[0m[2m=[0minference job timed out after 250ms
+[2m2026-10-23T00:28:43.660515Z[0m [33m WARN[0m [2mbrisvox::engine[0m[2m:[0m vad batch failed [3mstage[0m[2m=[0m"vad" [3merror[0m[2m=[0minference job timed out after 250ms
+[2m2026-10-23T00:28:43.661428Z[0m [33m WARN[0m [2mbrisvox::engine[0m[2m:[0m vad batch failed [3mstage[0m[2m=[0m"vad" [3merror[0m[2m=[0minference job timed out after 250ms
+[2m2026-10-23T00:28:43.662680Z[0m [33m WARN[0m [2mbrisvox::engine[0m[2m:[0m vad batch failed [3mstage[0m[2m=[0m"vad" [3merror[0m[2m=[0minference job timed out after 250ms
+[2m2026-10-23T00:28:43.651224Z[0m [33m WARN[0m [2mbrisvox::engine[0m[2m:[0m vad batch failed [3mstage[0m[2m=[0m"vad" [3merror[0m[2m=[0minference job timed out after 250ms
+[2m2026-10-23T00:28:43.670787Z[0m [33m WARN[0m [2mbrisvox::engine[0m[2m:[0m vad batch failed [3mstage[0m[2m=[0m"vad" [3merror[0m[2m=[0minference job timed out after 250ms
+[2m2026-10-23T00:28:43.686251Z[0m [33m WARN[0m [2mbrisvox::engine[0m[2m:[0m vad batch failed [3mstage[0m[2m=[0m"vad" [3merror[0m[2m=[0minference job timed out after 250ms
+[2m2026-10-23T00:28:43.686886Z[0m [33m WARN[0m [2mbrisvox::engine[0m[2m:[0m vad batch failed [3mstage[0m[2m=[0m"vad" [3merror[0m[2m=[0minference job timed out after 250ms
+[2m2026-10-23T00:28:43.686973Z[0m [33m WARN[0m [2mbrisvox::engine[0m[2m:[0m vad batch failed [3mstage[0m[2m=[0m"vad" [3merror[0m[2m=[0minference job timed out after 250ms
+[2m2026-10-23T00:28:43.686997Z[0m [33m WARN[0m [2mbrisvox::engine[0m[2m:[0m vad batch failed [3mstage[0m[2m=[0m"vad" [3merror[0m[2m=[0minference job timed out after 250ms
+[2m2026-10-23T00:28:43.687013Z[0m [33m WARN[0m [2mbrisvox::engine[0m[2m:[0m vad batch failed [3mstage[0m[2m=[0m"vad" [3merror[0m[2m=[0minference job timed out after 250ms
+[2m2026-10-23T00:28:43.687031Z[0m [33m WARN[0m [2mbrisvox::engine[0m[2m:[0m vad batch failed [3mstage[0m[2m=[0m"vad" [3merror[0m[2m=[0minference job timed out after 250ms
+[2m2026-10-23T00:28:43.704419Z[0m [33m WARN[0m [2mbrisvox::engine[0m[2m:[0m vad batch failed [3mstage[0m[2m=[0m"vad" [3merror[0m[2m=[0minference job timed out after 250ms
+[2m2026-10-23T00:28:43.706234Z[0m [33m WARN[0m [2mbrisvox::engine[0m[2m:[0m vad batch failed [3mstage[0m[2m=[0m"vad" [3merror[0m[2m=[0minference job timed out after 250ms
+[2m2026-10-23T00:28:43.706341Z[0m [33m WARN[0m [2mbrisvox::engine[0m[2m:[0m vad batch failed [3mstage[0m[2m=[0m"vad" [3merror[0m[2m=[0minference job timed out after 250ms
+[2m2026-10-23T00:28:43.706364Z[0m [33m WARN[0m [2mbrisvox::engine[0m[2m:[0m vad batch failed [3mstage[0m[2m=[0m"vad" [3merror[0m[2m=[0minference job timed out after 250ms
+[2m2026-10-23T00:28:43.706383Z[0m [33m WARN[0m [2mbrisvox::engine[0m[2m:[0m vad batch failed [3mstage[0m[2m=[0m"vad" [3merror[0m[2m=[0minference job timed out after 250ms
+[2m2026-10-23T00:28:43.706450Z[0m [33m WARN[0m [2mbrisvox::engine[0m[2m:[0m vad batch failed [3mstage[0m[2m=[0m"vad" [3merror[0m[2m=[0minference job timed out after 250ms
+[2m2026-10-23T00:28:43.707055Z[0m [33m WARN[0m [2mbrisvox::engine[0m[2m:[0m vad batch failed [3mstage[0m[2m=[0m"vad" [3merror[0m[2m=[0minference job timed out after 250ms
+[2m2026-10-23T00:28:43.707483Z[0m [33m WARN[0m [2mbrisvox::engine[0m[2m:[0m vad batch failed [3mstage[0m[2m=[0m"vad" [3merror[0m[2m=[0minference job timed out after 250ms
+[2m2026-10-23T00:28:43.709549Z[0m [33m WARN[0m [2mbrisvox::engine[0m[2m:[0m vad batch failed [3mstage[0m[2m=[0m"vad" [3merror[0m[2m=[0minference job timed out after 250ms
+[2m2026-10-23T00:28:43.720690Z[0m [33m WARN[0m [2mbrisvox::engine[0m[2m:[0m vad batch failed [3mstage[0m[2m=[0m"vad" [3merror[0m[2m=[0minference job timed out after 250ms
+[2m2026-10-23T00:28:43.721777Z[0m [33m WARN[0m [2mbrisvox::engine[0m[2m:[0m vad batch failed [3mstage[0m[2m=[0m"vad" [3merror[0m[2m=[0minference job timed out after 250ms
+[2m2026-10-23T00:28:43.721849Z[0m [33m WARN[0m [2mbrisvox::engine[0m[2m:[0m vad batch failed [3mstage[0m[2m=[0m"vad" [3merror[0m[2m=[0minference job timed out after 250ms
+[2m2026-10-23T00:28:43.745423Z[0m [33m WARN[0m [2mbrisvox::engine[0m[2m:[0m vad batch failed [3mstage[0m[2m=[0m"vad" [3merror[0m[2m=[0minference job timed out after 250ms
+[2m2026-10-23T00:28:43.754916Z[0m [33m WARN[0m [2mbrisvox::engine[0m[2m:[0m vad batch failed [3mstage[0m[2m=[0m"vad" [3merror[0m[2m=[0minference job timed out after 250ms
+[2m2026-10-23T00:28:43.760605Z[0m [33m WARN[0m [2mbrisvox::engine[0m[2m:[0m vad batch failed [3mstage[0m[2m=[0m"vad" [3merror[0m[2m=[0minference job timed out after 250ms
+[2m2026-10-23T00:28:43.770037Z[0m [33m WARN[0m [2mbrisvox::engine[0m[2m:[0m vad batch failed [3mstage[0m[2m=[0m"vad" [3merror[0m[2m=[0minference job timed out after 250ms
+[2m2026-10-23T00:28:43.781965Z[0m [33m WARN[0m [2mbrisvox::engine[0m[2m:[0m vad batch failed [3mstage[0m[2m=[0m"vad" [3merror[0m[2m=[0minference job timed out after 250ms
+[2m2026-10-23T00:28:43.789989Z[0m [33m WARN[0m [2mbrisvox::engine[0m[2m:[0m vad batch failed [3mstage[0m[2m=[0m"vad" [3merror[0m[2m=[0minference job timed out after 250ms
+[2m2026-10-23T00:28:43.798228Z[0m [33m WARN[0m [2mbrisvox::engine[0m[2m:[0m vad batch failed [3mstage[0m[2m=[0m"vad" [3merror[0m[2m=[0minference job timed out after 250ms
+[2m2026-10-23T00:28:43.804966Z[0m [33m WARN[0m [2mbrisvox::engine[0m[2m:[0m vad batch failed [3mstage[0m[2m=[0m"vad" [3merror[0m[2m=[0minference job timed out after 250ms
+[2m2026-10-23T00:28:43.827342Z[0m [33m WARN[0m [2mbrisvox::engine[0m[2m:[0m vad batch failed [3mstage[0m[2m=[0m"vad" [3merror[0m[2m=[0minference job timed out after 250ms
+[2m2026-10-23T00:28:43.836796Z[0m [33m WARN[0m [2mbrisvox::engine[0m[2m:[0m vad batch failed [3mstage[0m[2m=[0m"vad" [3merror[0m[2m=[0minference job timed out after 250ms
+[2m2026-10-23T00:28:43.854119Z[0m [33m WARN[0m [2mbrisvox::engine[0m[2m:[0m vad batch failed [3mstage[0m[2m=[0m"vad" [3merror[0m[2m=[0minference job timed out after 250ms
+[2m2026-10-23T00:28:43.866898Z[0m [33m WARN[0m [2mbrisvox::engine[0m[2m:[0m vad batch failed [3mstage[0m[2m=[0m"vad" [3merror[0m[2m=[0minference job timed out after 250ms
+[2m2026-10-23T00:28:43.891404Z[0m [33m WARN[0m [2mbrisvox::engine[0m[2m:[0m vad batch failed [3mstage[0m[2m=[0m"vad" [3merror[0m[2m=[0minference job timed out after 250ms
+[2m2026-10-23T00:28:43.926145Z[0m [33m WARN[0m [2mbrisvox::engine[0m[2m:[0m vad batch failed [3mstage[0m[2m=[0m"vad" [3merror[0m[2m=[0minference job timed out after 250ms
+[2m2026-10-23T00:28:43.940438Z[0m [33m WARN[0m [2mbrisvox::engine[0m[2m:[0m vad batch failed [3mstage[0m[2m=[0m"vad" [3merror[0m[2m=[0minference job timed out after 250ms
+[2m2026-10-23T00:28:43.940533Z[0m [33m WARN[0m [2mbrisvox::engine[0m[2m:[0m vad batch failed [3mstage[0m[2m=[0m"vad" [3merror[0m[2m=[0minference job timed out after 250ms
+[2m2026-10-23T00:28:43.942754Z[0m [33m WARN[0m [2mbrisvox::engine[0m[2m:[0m vad batch failed [3mstage[0m[2m=[0m"vad" [3merror[0m[2m=[0minference job timed out after 250ms
+[2m2026-10-23T00:28:43.953201Z[0m [33m WARN[0m [2mbrisvox::engine[0m[2m:[0m vad batch failed [3mstage[0m[2m=[0m"vad" [3merror[0m[2m=[0minference job timed out after 250ms
+[2m2026-10-23T00:28:43.969165Z[0m [33m WARN[0m [2mbrisvox::engine[0m[2m:[0m vad batch failed [3mstage[0m[2m=[0m"vad" [3merror[0m[2m=[0minference job timed out after 250ms
+[2m2026-10-23T00:28:43.973024Z[0m [33m WARN[0m [2mbrisvox::engine[0m[2m:[0m vad batch failed [3mstage[0m[2m=[0m"vad" [3merror[0m[2m=[0minference job timed out after 250ms
+[2m2026-10-23T00:28:43.973511Z[0m [33m WARN[0m [2mbrisvox::engine[0m[2m:[0m vad batch failed [3mstage[0m[2m=[0m"vad" [3merror[0m[2m=[0minference job timed out after 250ms
+[2m2026-10-23T00:28:43.973653Z[0m [33m WARN[0m [2mbrisvox::engine[0m[2m:[0m vad batch failed [3mstage[0m[2m=[0m"vad" [3merror[0m[2m=[0minference job timed out after 250ms
+[2m2026-10-23T00:28:43.973699Z[0m [33m WARN[0m [2mbrisvox::engine[0m[2m:[0m vad batch failed [3mstage[0m[2m=[0m"vad" [3merror[0m[2m=[0minference job timed out after 250ms
+[2m2026-10-23T00:28:43.998286Z[0m [33m WARN[0m [2mbrisvox::engine[0m[2m:[0m vad batch failed [3mstage[0m[2m=[0m"vad" [3merror[0m[2m=[0minference job timed out after 250ms
+[2m2026-10-23T00:28:43.998722Z[0m [33m WARN[0m [2mbrisvox::engine[0m[2m:[0m vad batch failed [3mstage[0m[2m=[0m"vad" [3merror[0m[2m=[0minference job timed out after 250ms
+[2m2026-10-23T00:28:44.000707Z[0m [33m WARN[0m [2mbrisvox::engine[0m[2m:[0m vad batch failed [3mstage[0m[2m=[0m"vad" [3merror[0m[2m=[0minference job timed out after 250ms
+[2m2026-10-23T00:28:44.003598Z[0m [33m WARN[0m [2mbrisvox::engine[0m[2m:[0m vad batch failed [3mstage[0m[2m=[0m"vad" [3merror[0m[2m=[0minference job timed out after 250ms
+[2m2026-10-23T00:28:44.006847Z[0m [33m WARN[0m [2mbrisvox::engine[0m[2m:[0m vad batch failed [3mstage[0m[2m=[0m"vad" [3merror[0m[2m=[0minference job timed out after 250ms
+[2m2026-10-23T00:28:44.011074Z[0m [33m WARN[0m [2mbrisvox::engine[0m[2m:[0m vad batch failed [3mstage[0m[2m=[0m"vad" [3merror[0m[2m=[0minference job timed out after 250ms
+[2m2026-10-23T00:28:44.029773Z[0m [33m WARN[0m [2mbrisvox::engine[0m[2m:[0m vad batch failed [3mstage[0m[2m=[0m"vad" [3merror[0m[2m=[0minference job timed out after 250ms
+[2m2026-10-23T00:28:44.049703Z[0m [33m WARN[0m [2mbrisvox::engine[0m[2m:[0m vad batch failed [3mstage[0m[2m=[0m"vad" [3merror[0m[2m=[0minference job timed out after 250ms
+[2m2026-10-23T00:28:44.055612Z[0m [33m WARN[0m [2mbrisvox::engine[0m[2m:[0m vad batch failed [3mstage[0m[2m=[0m"vad" [3merror[0m[2m=[0minference job timed out after 250ms
+[2m2026-10-23T00:28:44.057275Z[0m [33m WARN[0m [2mbrisvox::engine[0m[2m:[0m vad batch failed [3mstage[0m[2m=[0m"vad" [3merror[0m[2m=[0minference job timed out after 250ms
+[2m2026-10-23T00:28:44.057817Z[0m [33m WARN[0m [2mbrisvox::engine[0m[2m:[0m vad batch failed [3mstage[0m[2m=[0m"vad" [3merror[0m[2m=[0minference job timed out after 250ms
+[2m2026-10-23T00:28:44.057873Z[0m [33m WARN[0m [2mbrisvox::engine[0m[2m:[0m vad batch failed [3mstage[0m[2m=[0m"vad" [3merror[0m[2m=[0minference job timed out after 250ms
+[2m2026-10-23T00:28:44.066678Z[0m [33m WARN[0m [2mbrisvox::engine[0m[2m:[0m vad batch failed [3mstage[0m[2m=[0m"vad" [3merror[0m[2m=[0minference job timed out after 250ms
+[2m2026-10-23T00:28:44.071591Z[0m [33m WARN[0m [2mbrisvox::engine[0m[2m:[0m vad batch failed [3mstage[0m[2m=[0m"vad" [3merror[0m[2m=[0minference job timed out after 250ms
+[2m2026-10-23T00:28:44.072297Z[0m [33m WARN[0m [2mbrisvox::engine[0m[2m:[0m vad batch failed [3mstage[0m[2m=[0m"vad" [3merror[0m[2m=[0minference job timed out after 250ms
+[2m2026-10-23T00:28:44.072394Z[0m [33m WARN[0m [2mbrisvox::engine[0m[2m:[0m vad batch failed [3mstage[0m[2m=[0m"vad" [3merror[0m[2m=[0minference job timed out after 250ms
+[2m2026-10-23T00:28:44.072436Z[0m [33m WARN[0m [2mbrisvox::engine[0m[2m:[0m vad batch failed [3mstage[0m[2m=[0m"vad" [3merror[0m[2m=[0minference job timed out after 250ms
+[2m2026-10-23T00:28:44.073611Z[0m [33m WARN[0m [2mbrisvox::engine[0m[2m:[0m vad batch failed [3mstage[0m[2m=[0m"vad" [3merror[0m[2m=[0minference job timed out after 250ms
+[2m2026-10-23T00:28:44.073892Z[0m [33m WARN[0m [2mbrisvox::engine[0m[2m:[0m vad batch failed [3mstage[0m[2m=[0m"vad" [3merror[0m[2m=[0minference job timed out after 250ms
+[2m2026-10-23T00:28:44.082252Z[0m [33m WARN[0m [2mbrisvox::engine[0m[2m:[0m vad batch failed [3mstage[0m[2m=[0m"vad" [3merror[0m[2m=[0minference job timed out after 250ms
+[2m2026-10-23T00:28:44.100292Z[0m [33m WARN[0m [2mbrisvox::engine[0m[2m:[0m vad batch failed [3mstage[0m[2m=[0m"vad" [3merror[0m[2m=[0minference job timed out after 250ms
+[2m2026-10-23T00:28:44.135006Z[0m [33m WARN[0m [2mbrisvox::engine[0m[2m:[0m vad batch failed [3mstage[0m[2m=[0m"vad" [3merror[0m[2m=[0minference job timed out after 250ms
+[2m2026-10-23T00:28:44.138822Z[0m [33m WARN[0m [2mbrisvox::engine[0m[2m:[0m vad batch failed [3mstage[0m[2m=[0m"vad" [3merror[0m[2m=[0minference job timed out after 250ms
+[2m2026-10-23T00:28:44.142228Z[0m [33m WARN[0m [2mbrisvox::engine[0m[2m:[0m vad batch failed [3mstage[0m[2m=[0m"vad" [3merror[0m[2m=[0minference job timed out after 250ms
+[2m2026-10-23T00:28:44.147012Z[0m [33m WARN[0m [2mbrisvox::engine[0m[2m:[0m vad batch failed [3mstage[0m[2m=[0m"vad" [3merror[0m[2m=[0minference job timed out after 250ms
+[2m2026-10-23T00:28:44.148159Z[0m [33m WARN[0m [2mbrisvox::engine[0m[2m:[0m vad batch failed [3mstage[0m[2m=[0m"vad" [3merror[0m[2m=[0minference job timed out after 250ms
+[2m2026-10-23T00:28:44.148249Z[0m [33m WARN[0m [2mbrisvox::engine[0m[2m:[0m vad batch failed [3mstage[0m[2m=[0m"vad" [3merror[0m[2m=[0minference job timed out after 250ms
+[2m2026-10-23T00:28:44.152306Z[0m [33m WARN[0m [2mbrisvox::engine[0m[2m:[0m vad batch failed [3mstage[0m[2m=[0m"vad" [3merror[0m[2m=[0minference job timed out after 250ms
+[2m2026-10-23T00:28:44.152851Z[0m [33m WARN[0m [2mbrisvox::engine[0m[2m:[0m vad batch failed [3mstage[0m[2m=[0m"vad" [3merror[0m[2m=[0minference job timed out after 250ms
+[2m2026-10-23T00:28:44.172472Z[0m [33m WARN[0m [2mbrisvox::engine[0m[2m:[0m vad batch failed [3mstage[0m[2m=[0m"vad" [3merror[0m[2m=[0minference job timed out after 250ms
+[2m2026-10-23T00:28:44.195511Z[0m [33m WARN[0m [2mbrisvox::engine[0m[2m:[0m vad batch failed [3mstage[0m[2m=[0m"vad" [3merror[0m[2m=[0minference job timed out after 250ms
+[2m2026-10-23T00:28:44.196550Z[0m [33m WARN[0m [2mbrisvox::engine[0m[2m:[0m vad batch failed [3mstage[0m[2m=[0m"vad" [3merror[0m[2m=[0minference job timed out after 250ms
+[2m2026-10-23T00:28:44.197649Z[0m [33m WARN[0m [2mbrisvox::engine[0m[2m:[0m vad batch failed [3mstage[0m[2m=[0m"vad" [3merror[0m[2m=[0minference job timed out after 250ms
+[2m2026-10-23T00:28:44.201815Z[0m [33m WARN[0m [2mbrisvox::engine[0m[2m:[0m vad batch failed [3mstage[0m[2m=[0m"vad" [3merror[0m[2m=[0minference job timed out after 250ms
+[2m2026-10-23T00:28:44.212407Z[0m [33m WARN[0m [2mbrisvox::engine[0m[2m:[0m vad batch failed [3mstage[0m[2m=[0m"vad" [3merror[0m[2m=[0minference job timed out after 250ms
+[2m2026-10-23T00:28:44.214787Z[0m [33m WARN[0m [2mbrisvox::engine[0m[2m:[0m vad batch failed [3mstage[0m[2m=[0m"vad" [3merror[0m[2m=[0minference job timed out after 250ms
+[2m2026-10-23T00:28:44.230977Z[0m [33m WARN[0m [2mbrisvox::engine[0m[2m:[0m vad batch failed [3mstage[0m[2m=[0m"vad" [3merror[0m[2m=[0minference job timed out after 250ms
+[2m2026-10-23T00:28:44.277226Z[0m [33m WARN[0m [2mbrisvox::engine[0m[2m:[0m vad batch failed [3mstage[0m[2m=[0m"vad" [3merror[0m[2m=[0minference job timed out after 250ms
+[2m2026-10-23T00:28:44.281173Z[0m [33m WARN[0m [2mbrisvox::engine[0m[2m:[0m vad batch failed [3mstage[0m[2m=[0m"vad" [3merror[0m[2m=[0minference job timed out after 250ms
+[2m2026-10-23T00:28:44.282581Z[0m [33m WARN[0m [2mbrisvox::engine[0m[2m:[0m vad batch failed [3mstage[0m[2m=[0m"vad" [3merror[0m[2m=[0minference job timed out after 250ms
+[2m2026-10-23T00:28:44.282669Z[0m [33m WARN[0m [2mbrisvox::engine[0m[2m:[0m vad batch failed [3mstage[0m[2m=[0m"vad" [3merror[0m[2m=[0minference job timed out after 250ms
+[2m2026-10-23T00:28:44.290839Z[0m [33m WARN[0m [2mbrisvox::engine[0m[2m:[0m vad batch failed [3mstage[0m[2m=[0m"vad" [3merror[0m[2m=[0minference job timed out after 250ms
+[2m2026-10-23T00:28:44.307357Z[0m [33m WARN[0m [2mbrisvox::engine[0m[2m:[0m vad batch failed [3mstage[0m[2m=[0m"vad" [3merror[0m[2m=[0minference job timed out after 250ms
+[2m2026-10-23T00:28:44.307773Z[0m [33m WARN[0m [2mbrisvox::engine[0m[2m:[0m vad batch failed [3mstage[0m[2m=[0m"vad" [3merror[0m[2m=[0minference job timed out after 250ms
+[2m2026-10-23T00:28:44.309202Z[0m [33m WARN[0m [2mbrisvox::engine[0m[2m:[0m vad batch failed [3mstage[0m[2m=[0m"vad" [3merror[0m[2m=[0minference job timed out after 250ms
+[2m2026-10-23T00:28:44.309263Z[0m [33m WARN[0m [2mbrisvox::engine[0m[2m:[0m vad batch failed [3mstage[0m[2m=[0m"vad" [3merror[0m[2m=[0minference job timed out after 250ms
+[2m2026-10-23T00:28:44.309404Z[0m [33m WARN[0m [2mbrisvox::engine[0m[2m:[0m vad batch failed [3mstage[0m[2m=[0m"vad" [3merror[0m[2m=[0minference job timed out after 250ms
+[2m2026-10-23T00:28:44.309455Z[0m [33m WARN[0m [2mbrisvox::engine[0m[2m:[0m vad batch failed [3mstage[0m[2m=[0m"vad" [3merror[0m[2m=[0minference job timed out after 250ms
+[2m2026-10-23T00:28:44.309477Z[0m [33m WARN[0m [2mbrisvox::engine[0m[2m:[0m vad batch failed [3mstage[0m[2m=[0m"vad" [3merror[0m[2m=[0minference job timed out after 250ms
+[2m2026-10-23T00:28:44.309494Z[0m [33m WARN[0m [2mbrisvox::engine[0m[2m:[0m vad batch failed [3mstage[0m[2m=[0m"vad" [3merror[0m[2m=[0minference job timed out after 250ms
+[2m2026-10-23T00:28:44.309518Z[0m [33m WARN[0m [2mbrisvox::engine[0m[2m:[0m vad batch failed [3mstage[0m[2m=[0m"vad" [3merror[0m[2m=[0minference job timed out after 250ms
+[2m2026-10-23T00:28:44.321572Z[0m [33m WARN[0m [2mbrisvox::engine[0m[2m:[0m vad batch failed [3mstage[0m[2m=[0m"vad" [3merror[0m[2m=[0minference job timed out after 250ms
+[2m2026-10-23T00:28:44.324419Z[0m [33m WARN[0m [2mbrisvox::engine[0m[2m:[0m vad batch failed [3mstage[0m[2m=[0m"vad" [3merror[0m[2m=[0minference job timed out after 250ms
+[2m2026-10-23T00:28:44.327210Z[0m [33m WARN[0m [2mbrisvox::engine[0m[2m:[0m vad batch failed [3mstage[0m[2m=[0m"vad" [3merror[0m[2m=[0minference job timed out after 250ms
+[2m2026-10-23T00:28:44.329562Z[0m [33m WARN[0m [2mbrisvox::engine[0m[2m:[0m vad batch failed [3mstage[0m[2m=[0m"vad" [3merror[0m[2m=[0minference job timed out after 250ms
+[2m2026-10-23T00:28:44.347753Z[0m [33m WARN[0m [2mbrisvox::engine[0m[2m:[0m vad batch failed [3mstage[0m[2m=[0m"vad" [3merror[0m[2m=[0minference job timed out after 250ms
+[2m2026-10-23T00:28:44.367401Z[0m [33m WARN[0m [2mbrisvox::engine[0m[2m:[0m vad batch failed [3mstage[0m[2m=[0m"vad" [3merror[0m[2m=[0minference job timed out after 250ms
+[2m2026-10-23T00:28:44.369634Z[0m [33m WARN[0m [2mbrisvox::engine[0m[2m:[0m vad batch failed [3mstage[0m[2m=[0m"vad" [3merror[0m[2m=[0minference job timed out after 250ms
+[2m2026-10-23T00:28:44.369732Z[0m [33m WARN[0m [2mbrisvox::engine[0m[2m:[0m vad batch failed [3mstage[0m[2m=[0m"vad" [3merror[0m[2m=[0minference job timed out after 250ms
+[2m2026-10-23T00:28:44.434495Z[0m [33m WARN[0m [2mbrisvox::engine[0m[2m:[0m vad batch failed [3mstage[0m[2m=[0m"vad" [3merror[0m[2m=[0minference job timed out after 250ms
+[2m2026-10-23T00:28:44.465226Z[0m [33m WARN[0m [2mbrisvox::engine[0m[2m:[0m vad batch failed [3mstage[0m[2m=[0m"vad" [3merror[0m[2m=[0minference job timed out after 250ms
+[2m2026-10-23T00:28:44.503608Z[0m [33m WARN[0m [2mbrisvox::engine[0m[2m:[0m vad batch failed [3mstage[0m[2m=[0m"vad" [3merror[0m[2m=[0minference job timed out after 250ms
+[2m2026-10-23T00:28:44.514151Z[0m [33m WARN[0m [2mbrisvox::engine[0m[2m:[0m vad batch failed [3mstage[0m[2m=[0m"vad" [3merror[0m[2m=[0minference job timed out after 250ms
+[2m2026-10-23T00:28:44.522000Z[0m [33m WARN[0m [2mbrisvox::engine[0m[2m:[0m vad batch failed [3mstage[0m[2m=[0m"vad" [3merror[0m[2m=[0minference job timed out after 250ms
+[2m2026-10-23T00:28:44.542022Z[0m [33m WARN[0m [2mbrisvox::engine[0m[2m:[0m vad batch failed [3mstage[0m[2m=[0m"vad" [3merror[0m[2m=[0minference job timed out after 250ms
+[2m2026-10-23T00:28:44.544231Z[0m [33m WARN[0m [2mbrisvox::engine[0m[2m:[0m vad batch failed [3mstage[0m[2m=[0m"vad" [3merror[0m[2m=[0minference job timed out after 250ms
+[2m2026-10-23T00:28:44.575902Z[0m [33m WARN[0m [2mbrisvox::engine[0m[2m:[0m vad batch failed [3mstage[0m[2m=[0m"vad" [3merror[0m[2m=[0minference job timed out after 250ms
+[2m2026-10-23T00:28:44.576071Z[0m [33m WARN[0m [2mbrisvox::engine[0m[2m:[0m vad batch failed [3mstage[0m[2m=[0m"vad" [3merror[0m[2m=[0minference job timed out after 250ms
+[2m2026-10-23T00:28:44.576169Z[0m [33m WARN[0m [2mbrisvox::engine[0m[2m:[0m vad batch failed [3mstage[0m[2m=[0m"vad" [3merror[0m[2m=[0minference job timed out after 250ms
+[2m2026-10-23T00:28:44.576192Z[0m [33m WARN[0m [2mbrisvox::engine[0m[2m:[0m vad batch failed [3mstage[0m[2m=[0m"vad" [3merror[0m[2m=[0minference job timed out after 250ms
+[2m2026-10-23T00:28:44.576210Z[0m [33m WARN[0m [2mbrisvox::engine[0m[2m:[0m vad batch failed [3mstage[0m[2m=[0m"vad" [3merror[0m[2m=[0minference job timed out after 250ms
+[2m2026-10-23T00:28:44.576225Z[0m [33m WARN[0m [2mbrisvox::engine[0m[2m:[0m vad batch failed [3mstage[0m[2m=[0m"vad" [3merror[0m[2m=[0minference job timed out after 250ms
+[2m2026-10-23T00:28:44.576239Z[0m [33m WARN[0m [2mbrisvox::engine[0m[2m:[0m vad batch failed [3mstage[0m[2m=[0m"vad" [3merror[0m[2m=[0minference job timed out after 250ms
+[2m2026-10-23T00:28:44.576252Z[0m [33m WARN[0m [2mbrisvox::engine[0m[2m:[0m vad batch failed [3mstage[0m[2m=[0m"vad" [3merror[0m[2m=[0minference job timed out after 250ms
+[2m2026-10-23T00:28:44.576262Z[0m [33m WARN[0m [2mbrisvox::engine[0m[2m:[0m vad batch failed [3mstage[0m[2m=[0m"vad" [3merror[0m[2m=[0minference job timed out after 250ms
+[2m2026-10-23T00:28:44.577315Z[0m [33m WARN[0m [2mbrisvox::engine[0m[2m:[0m vad batch failed [3mstage[0m[2m=[0m"vad" [3merror[0m[2m=[0minference job timed out after 250ms
+[2m2026-10-23T00:28:44.616751Z[0m [33m WARN[0m [2mbrisvox::engine[0m[2m:[0m vad batch failed [3mstage[0m[2m=[0m"vad" [3merror[0m[2m=[0minference job timed out after 250ms
+[2m2026-10-23T00:28:44.620150Z[0m [33m WARN[0m [2mbrisvox::engine[0m[2m:[0m vad batch failed [3mstage[0m[2m=[0m"vad" [3merror[0m[2m=[0minference job timed out after 250ms
+[2m2026-10-23T00:28:44.632148Z[0m [33m WARN[0m [2mbrisvox::engine[0m[2m:[0m vad batch failed [3mstage[0m[2m=[0m"vad" [3merror[0m[2m=[0minference job timed out after 250ms
+[2m2026-10-23T00:28:44.656757Z[0m [33m WARN[0m [2mbrisvox::engine[0m[2m:[0m vad batch failed [3mstage[0m[2m=[0m"vad" [3merror[0m[2m=[0minference job timed out after 250ms
+[2m2026-10-23T00:28:44.658398Z[0m [33m WARN[0m [2mbrisvox::engine[0m[2m:[0m vad batch failed [3mstage[0m[2m=[0m"vad" [3merror[0m[2m=[0minference job timed out after 250ms
+[2m2026-10-23T00:28:44.666794Z[0m [33m WARN[0m [2mbrisvox::engine[0m[2m:[0m vad batch failed [3mstage[0m[2m=[0m"vad" [3merror[0m[2m=[0minference job timed out after 250ms
+[2m2026-10-23T00:28:44.666885Z[0m [33m WARN[0m [2mbrisvox::engine[0m[2m:[0m vad batch failed [3mstage[0m[2m=[0m"vad" [3merror[0m[2m=[0minference job timed out after 250ms
+[2m2026-10-23T00:28:44.667601Z[0m [33m WARN[0m [2mbrisvox::engine[0m[2m:[0m vad batch failed [3mstage[0m[2m=[0m"vad" [3merror[0m[2m=[0minference job timed out after 250ms
+[2m2026-10-23T00:28:44.667860Z[0m [33m WARN[0m [2mbrisvox::engine[0m[2m:[0m vad batch failed [3mstage[0m[2m=[0m"vad" [3merror[0m[2m=[0minference job timed out after 250ms
+[2m2026-10-23T00:28:44.667947Z[0m [33m WARN[0m [2mbrisvox::engine[0m[2m:[0m vad batch failed [3mstage[0m[2m=[0m"vad" [3merror[0m[2m=[0minference job timed out after 250ms
+[2m2026-10-23T00:28:44.667966Z[0m [33m WARN[0m [2mbrisvox::engine[0m[2m:[0m vad batch failed [3mstage[0m[2m=[0m"vad" [3merror[0m[2m=[0minference job timed out after 250ms
+[2m2026-10-23T00:28:44.671777Z[0m [33m WARN[0m [2mbrisvox::engine[0m[2m:[0m vad batch failed [3mstage[0m[2m=[0m"vad" [3merror[0m[2m=[0minference job timed out after 250ms
+[2m2026-10-23T00:28:44.674704Z[0m [33m WARN[0m [2mbrisvox::engine[0m[2m:[0m vad batch failed [3mstage[0m[2m=[0m"vad" [3merror[0m[2m=[0minference job timed out after 250ms
+[2m2026-10-23T00:28:44.686483Z[0m [33m WARN[0m [2mbrisvox::engine[0m[2m:[0m vad batch failed [3mstage[0m[2m=[0m"vad" [3merror[0m[2m=[0minference job timed out after 250ms
+[2m2026-10-23T00:28:44.697814Z[0m [33m WARN[0m [2mbrisvox::engine[0m[2m:[0m vad batch failed [3mstage[0m[2m=[0m"vad" [3merror[0m[2m=[0minference job timed out after 250ms
+[2m2026-10-23T00:28:44.698537Z[0m [33m WARN[0m [2mbrisvox::engine[0m[2m:[0m vad batch failed [3mstage[0m[2m=[0m"vad" [3merror[0m[2m=[0minference job timed out after 250ms
+[2m2026-10-23T00:28:44.876845Z[0m [33m WARN[0m [2mbrisvox::engine[0m[2m:[0m vad batch failed [3mstage[0m[2m=[0m"vad" [3merror[0m[2m=[0minference job timed out after 250ms
+[2m2026-10-23T00:28:44.882217Z[0m [33m WARN[0m [2mbrisvox::engine[0m[2m:[0m vad batch failed [3mstage[0m[2m=[0m"vad" [3merror[0m[2m=[0minference job timed out after 250ms
+[2m2026-10-23T00:28:44.882294Z[0m [33m WARN[0m [2mbrisvox::engine[0m[2m:[0m vad batch failed [3mstage[0m[2m=[0m"vad" [3merror[0m[2m=[0minference job timed out after 250ms
+[2m2026-10-23T00:28:44.882313Z[0m [33m WARN[0m [2mbrisvox::engine[0m[2m:[0m vad batch failed [3mstage[0m[2m=[0m"vad" [3merror[0m[2m=[0minference job timed out after 250ms
+[2m2026-10-23T00:28:44.894025Z[0m [33m WARN[0m [2mbrisvox::engine[0m[2m:[0m vad batch failed [3mstage[0m[2m=[0m"vad" [3merror[0m[2m=[0minference job timed out after 250ms
+[2m2026-10-23T00:28:44.894250Z[0m [33m WARN[0m [2mbrisvox::engine[0m[2m:[0m vad batch failed [3mstage[0m[2m=[0m"vad" [3merror[0m[2m=[0minference job timed out after 250ms
+[2m2026-10-23T00:28:44.894310Z[0m [33m WARN[0m [2mbrisvox::engine[0m[2m:[0m vad batch failed [3mstage[0m[2m=[0m"vad" [3merror[0m[2m=[0minference job timed out after 250ms
+[2m2026-10-23T00:28:44.902983Z[0m [33m WARN[0m [2mbrisvox::engine[0m[2m:[0m vad batch failed [3mstage[0m[2m=[0m"vad" [3merror[0m[2m=[0minference job timed out after 250ms
+[2m2026-10-23T00:28:44.921259Z[0m [33m WARN[0m [2mbrisvox::engine[0m[2m:[0m vad batch failed [3mstage[0m[2m=[0m"vad" [3merror[0m[2m=[0minference job timed out after 250ms
+[2m2026-10-23T00:28:44.921339Z[0m [33m WARN[0m [2mbrisvox::engine[0m[2m:[0m vad batch failed [3mstage[0m[2m=[0m"vad" [3merror[0m[2m=[0minference job timed out after 250ms
+[2m2026-10-23T00:28:44.923982Z[0m [33m WARN[0m [2mbrisvox::engine[0m[2m:[0m vad batch failed [3mstage[0m[2m=[0m"vad" [3merror[0m[2m=[0minference job timed out after 250ms
+[2m2026-10-23T00:28:44.924700Z[0m [33m WARN[0m [2mbrisvox::engine[0m[2m:[0m vad batch failed [3mstage[0m[2m=[0m"vad" [3merror[0m[2m=[0minference job timed out after 250ms
+[2m2026-10-23T00:28:44.927110Z[0m [33m WARN[0m [2mbrisvox::engine[0m[2m:[0m vad batch failed [3mstage[0m[2m=[0m"vad" [3merror[0m[2m=[0minference job timed out after 250ms
+[2m2026-10-23T00:28:44.927197Z[0m [33m WARN[0m [2mbrisvox::engine[0m[2m:[0m vad batch failed [3mstage[0m[2m=[0m"vad" [3merror[0m[2m=[0minference job timed out after 250ms
+[2m2026-10-23T00:28:44.927218Z[0m [33m WARN[0m [2mbrisvox::engine[0m[2m:[0m vad batch failed [3mstage[0m[2m=[0m"vad" [3merror[0m[2m=[0minference job timed out after 250ms
+[2m2026-10-23T00:28:44.927230Z[0m [33m WARN[0m [2mbrisvox::engine[0m[2m:[0m vad batch failed [3mstage[0m[2m=[0m"vad" [3merror[0m[2m=[0minference job timed out after 250ms
+[2m2026-10-23T00:28:44.927239Z[0m [33m WARN[0m [2mbrisvox::engine[0m[2m:[0m vad batch failed [3mstage[0m[2m=[0m"vad" [3merror[0m[2m=[0minference job timed out after 250ms
+[2m2026-10-23T00:28:44.973292Z[0m [33m WARN[0m [2mbrisvox::engine[0m[2m:[0m vad batch failed [3mstage[0m[2m=[0m"vad" [3merror[0m[2m=[0minference job timed out after 250ms
+[2m2026-10-23T00:28:44.979688Z[0m [33m WARN[0m [2mbrisvox::engine[0m[2m:[0m vad batch failed [3mstage[0m[2m=[0m"vad" [3merror[0m[2m=[0minference job timed out after 250ms
+[2m2026-10-23T00:28:44.990977Z[0m [33m WARN[0m [2mbrisvox::engine[0m[2m:[0m vad batch failed [3mstage[0m[2m=[0m"vad" [3merror[0m[2m=[0minference job timed out after 250ms
+[2m2026-10-23T00:28:44.991148Z[0m [33m WARN[0m [2mbrisvox::engine[0m[2m:[0m vad batch failed [3mstage[0m[2m=[0m"vad" [3merror[0m[2m=[0minference job timed out after 250ms
+[2m2026-10-23T00:28:44.991188Z[0m [33m WARN[0m [2mbrisvox::engine[0m[2m:[0m vad batch failed [3mstage[0m[2m=[0m"vad" [3merror[0m[2m=[0minference job timed out after 250ms
+[2m2026-10-23T00:28:44.991203Z[0m [33m WARN[0m [2mbrisvox::engine[0m[2m:[0m vad batch failed [3mstage[0m[2m=[0m"vad" [3merror[0m[2m=[0minference job timed out after 250ms
+[2m2026-10-23T00:28:47.393230Z[0m [33m WARN[0m [2mbrisvox::engine[0m[2m:[0m stt session ended [3mreason[0m[2m=[0m"finalize timed out" [3moutstanding[0m[2m=[0m1
+[2m2026-10-23T00:28:47.697815Z[0m [33m WARN[0m [2mbrisvox::engine[0m[2m:[0m stt session ended [3mreason[0m[2m=[0m"finalize timed out" [3moutstanding[0m[2m=[0m3
+[2m2026-10-23T00:28:47.749543Z[0m [33m WARN[0m [2mbrisvox::engine[0m[2m:[0m stt session ended [3mreason[0m[2m=[0m"finalize timed out" [3moutstanding[0m[2m=[0m5
+[2m2026-10-23T00:28:47.841471Z[0m [33m WARN[0m [2mbrisvox::engine[0m[2m:[0m stt session ended [3mreason[0m[2m=[0m"finalize timed out" [3moutstanding[0m[2m=[0m4
+[2m2026-10-23T00:28:47.855357Z[0m [33m WARN[0m [2mbrisvox::engine[0m[2m:[0m stt session ended [3mreason[0m[2m=[0m"finalize timed out" [3moutstanding[0m[2m=[0m4
+[2m2026-10-23T00:28:47.865459Z[0m [33m WARN[0m [2mbrisvox::engine[0m[2m:[0m stt session ended [3mreason[0m[2m=[0m"finalize timed out" [3moutstanding[0m[2m=[0m6
+[2m2026-10-23T00:28:47.906372Z[0m [33m WARN[0m [2mbrisvox::engine[0m[2m:[0m stt session ended [3mreason[0m[2m=[0m"finalize timed out" [3moutstanding[0m[2m=[0m3
+[2m2026-10-23T00:28:47.914769Z[0m [33m WARN[0m [2mbrisvox::engine[0m[2m:[0m stt session ended [3mreason[0m[2m=[0m"finalize timed out" [3moutstanding[0m[2m=[0m5
+[2m2026-10-23T00:28:47.989631Z[0m [33m WARN[0m [2mbrisvox::engine[0m[2m:[0m stt session ended [3mreason[0m[2m=[0m"finalize timed out" [3moutstanding[0m[2m=[0m2
+[2m2026-10-23T00:28:48.004632Z[0m [33m WARN[0m [2mbrisvox::engine[0m[2m:[0m stt session ended [3mreason[0m[2m=[0m"finalize timed out" [3moutstanding[0m[2m=[0m1
+[2m2026-10-23T00:28:48.005826Z[0m [33m WARN[0m [2mbrisvox::engine[0m[2m:[0m stt session ended [3mreason[0m[2m=[0m"finalize timed out" [3moutstanding[0m[2m=[0m3
+[2m2026-10-23T00:28:48.011383Z[0m [33m WARN[0m [2mbrisvox::engine[0m[2m:[0m stt session ended [3mreason[0m[2m=[0m"finalize timed out" [3moutstanding[0m[2m=[0m4
+[2m2026-10-23T00:28:48.013453Z[0m [33m WARN[0m [2mbrisvox::engine[0m[2m:[0m stt session ended [3mreason[0m[2m=[0m"finalize timed out" [3moutstanding[0m[2m=[0m3
+[2m2026-10-23T00:28:48.019333Z[0m [33m WARN[0m [2mbrisvox::engine[0m[2m:[0m stt session ended [3mreason[0m[2m=[0m"finalize timed out" [3moutstanding[0m[2m=[0m2
+[2m2026-10-23T00:28:48.035386Z[0m [33m WARN[0m [2mbrisvox::engine[0m[2m:[0m stt session ended [3mreason[0m[2m=[0m"finalize timed out" [3moutstanding[0m[2m=[0m2
+[2m2026-10-23T00:28:48.036003Z[0m [33m WARN[0m [2mbrisvox::engine[0m[2m:[0m stt session ended [3mreason[0m[2m=[0m"finalize timed out" [3moutstanding[0m[2m=[0m4
+[2m2026-10-23T00:28:48.043348Z[0m [33m WARN[0m [2mbrisvox::engine[0m[2m:[0m stt session ended [3mreason[0m[2m=[0m"finalize timed out" [3moutstanding[0m[2m=[0m1
+[2m2026-10-23T00:28:48.044733Z[0m [33m WARN[0m [2mbrisvox::engine[0m[2m:[0m stt session ended [3mreason[0m[2m=[0m"finalize timed out" [3moutstanding[0m[2m=[0m3
+[2m2026-10-23T00:28:48.044833Z[0m [33m WARN[0m [2mbrisvox::engine[0m[2m:[0m stt session ended [3mreason[0m[2m=[0m"finalize timed out" [3moutstanding[0m[2m=[0m2
+[2m2026-10-23T00:28:48.053706Z[0m [33m WARN[0m [2mbrisvox::engine[0m[2m:[0m stt session ended [3mreason[0m[2m=[0m"finalize timed out" [3moutstanding[0m[2m=[0m4
+[2m2026-10-23T00:28:48.061708Z[0m [33m WARN[0m [2mbrisvox::engine[0m[2m:[0m stt session ended [3mreason[0m[2m=[0m"finalize timed out" [3moutstanding[0m[2m=[0m3
+[2m2026-10-23T00:28:48.061786Z[0m [33m WARN[0m [2mbrisvox::engine[0m[2m:[0m stt session ended [3mreason[0m[2m=[0m"finalize timed out" [3moutstanding[0m[2m=[0m4
+[2m2026-10-23T00:28:48.072661Z[0m [33m WARN[0m [2mbrisvox::engine[0m[2m:[0m stt session ended [3mreason[0m[2m=[0m"finalize timed out" [3moutstanding[0m[2m=[0m5
+[2m2026-10-23T00:28:48.073473Z[0m [33m WARN[0m [2mbrisvox::engine[0m[2m:[0m stt session ended [3mreason[0m[2m=[0m"finalize timed out" [3moutstanding[0m[2m=[0m3
+[2m2026-10-23T00:28:48.083401Z[0m [33m WARN[0m [2mbrisvox::engine[0m[2m:[0m stt session ended [3mreason[0m[2m=[0m"finalize timed out" [3moutstanding[0m[2m=[0m2
+[2m2026-10-23T00:28:48.089783Z[0m [33m WARN[0m [2mbrisvox::engine[0m[2m:[0m stt session ended [3mreason[0m[2m=[0m"finalize timed out" [3moutstanding[0m[2m=[0m3
+[2m2026-10-23T00:28:48.095682Z[0m [33m WARN[0m [2mbrisvox::engine[0m[2m:[0m stt session ended [3mreason[0m[2m=[0m"finalize timed out" [3moutstanding[0m[2m=[0m4
+[2m2026-10-23T00:28:48.095888Z[0m [33m WARN[0m [2mbrisvox::engine[0m[2m:[0m stt session ended [3mreason[0m[2m=[0m"finalize timed out" [3moutstanding[0m[2m=[0m1
+[2m2026-10-23T00:28:48.104493Z[0m [33m WARN[0m [2mbrisvox::engine[0m[2m:[0m stt session ended [3mreason[0m[2m=[0m"finalize timed out" [3moutstanding[0m[2m=[0m4
+[2m2026-10-23T00:28:48.106555Z[0m [33m WARN[0m [2mbrisvox::engine[0m[2m:[0m stt session ended [3mreason[0m[2m=[0m"finalize timed out" [3moutstanding[0m[2m=[0m4
+[2m2026-10-23T00:28:48.116285Z[0m [33m WARN[0m [2mbrisvox::engine[0m[2m:[0m stt session ended [3mreason[0m[2m=[0m"finalize timed out" [3moutstanding[0m[2m=[0m4
+[2m2026-10-23T00:28:48.123352Z[0m [33m WARN[0m [2mbrisvox::engine[0m[2m:[0m stt session ended [3mreason[0m[2m=[0m"finalize timed out" [3moutstanding[0m[2m=[0m4
+[2m2026-10-23T00:28:48.147403Z[0m [33m WARN[0m [2mbrisvox::engine[0m[2m:[0m stt session ended [3mreason[0m[2m=[0m"finalize timed out" [3moutstanding[0m[2m=[0m4
+[2m2026-10-23T00:28:48.169479Z[0m [33m WARN[0m [2mbrisvox::engine[0m[2m:[0m stt session ended [3mreason[0m[2m=[0m"finalize timed out" [3moutstanding[0m[2m=[0m3
+[2m2026-10-23T00:28:48.176763Z[0m [33m WARN[0m [2mbrisvox::engine[0m[2m:[0m stt session ended [3mreason[0m[2m=[0m"finalize timed out" [3moutstanding[0m[2m=[0m4
+[2m2026-10-23T00:28:48.189506Z[0m [33m WARN[0m [2mbrisvox::engine[0m[2m:[0m stt session ended [3mreason[0m[2m=[0m"finalize timed out" [3moutstanding[0m[2m=[0m4
+[2m2026-10-23T00:28:48.190475Z[0m [33m WARN[0m [2mbrisvox::engine[0m[2m:[0m stt session ended [3mreason[0m[2m=[0m"finalize timed out" [3moutstanding[0m[2m=[0m4
+[2m2026-10-23T00:28:48.192837Z[0m [33m WARN[0m [2mbrisvox::engine[0m[2m:[0m stt session ended [3mreason[0m[2m=[0m"finalize timed out" [3moutstanding[0m[2m=[0m4
+[2m2026-10-23T00:28:48.193320Z[0m [33m WARN[0m [2mbrisvox::engine[0m[2m:[0m stt session ended [3mreason[0m[2m=[0m"finalize timed out" [3moutstanding[0m[2m=[0m4
+[2m2026-10-23T00:28:48.194140Z[0m [33m WARN[0m [2mbrisvox::engine[0m[2m:[0m stt session ended [3mreason[0m[2m=[0m"finalize timed out" [3moutstanding[0m[2m=[0m3
+[2m2026-10-23T00:28:48.211407Z[0m [33m WARN[0m [2mbrisvox::engine[0m[2m:[0m stt session ended [3mreason[0m[2m=[0m"finalize timed out" [3moutstanding[0m[2m=[0m4
+[2m2026-10-23T00:28:48.217261Z[0m [33m WARN[0m [2mbrisvox::engine[0m[2m:[0m stt session ended [3mreason[0m[2m=[0m"finalize timed out" [3moutstanding[0m[2m=[0m1
+[2m2026-10-23T00:28:48.217716Z[0m [33m WARN[0m [2mbrisvox::engine[0m[2m:[0m stt session ended [3mreason[0m[2m=[0m"finalize timed out" [3moutstanding[0m[2m=[0m4
+[2m2026-10-23T00:28:48.218485Z[0m [33m WARN[0m [2mbrisvox::engine[0m[2m:[0m stt session ended [3mreason[0m[2m=[0m"finalize timed out" [3moutstanding[0m[2m=[0m1
+[2m2026-10-23T00:28:48.218490Z[0m [33m WARN[0m [2mbrisvox::engine[0m[2m:[0m stt session ended [3mreason[0m[2m=[0m"finalize timed out" [3moutstanding[0m[2m=[0m2
+[2m2026-10-23T00:28:48.229201Z[0m [33m WARN[0m [2mbrisvox::engine[0m[2m:[0m stt session ended [3mreason[0m[2m=[0m"finalize timed out" [3moutstanding[0m[2m=[0m4
+[2m2026-10-23T00:28:48.234546Z[0m [33m WARN[0m [2mbrisvox::engine[0m[2m:[0m stt session ended [3mreason[0m[2m=[0m"finalize timed out" [3moutstanding[0m[2m=[0m3
+[2m2026-10-23T00:28:48.234818Z[0m [33m WARN[0m [2mbrisvox::engine[0m[2m:[0m stt session ended [3mreason[0m[2m=[0m"finalize timed out" [3moutstanding[0m[2m=[0m4
+[2m2026-10-23T00:28:48.236487Z[0m [33m WARN[0m [2mbrisvox::engine[0m[2m:[0m stt session ended [3mreason[0m[2m=[0m"finalize timed out" [3moutstanding[0m[2m=[0m3
+[2m2026-10-23T00:28:48.252229Z[0m [33m WARN[0m [2mbrisvox::engine[0m[2m:[0m stt session ended [3mreason[0m[2m=[0m"finalize timed out" [3moutstanding[0m[2m=[0m4
+[2m2026-10-23T00:28:48.259301Z[0m [33m WARN[0m [2mbrisvox::engine[0m[2m:[0m stt session ended [3mreason[0m[2m=[0m"finalize timed out" [3moutstanding[0m[2m=[0m3
+[2m2026-10-23T00:28:48.268822Z[0m [33m WARN[0m [2mbrisvox::engine[0m[2m:[0m stt session ended [3mreason[0m[2m=[0m"finalize timed out" [3moutstanding[0m[2m=[0m3
+[2m2026-10-23T00:28:48.275375Z[0m [33m WARN[0m [2mbrisvox::engine[0m[2m:[0m stt session ended [3mreason[0m[2m=[0m"finalize timed out" [3moutstanding[0m[2m=[0m3
+[2m2026-10-23T00:28:48.275833Z[0m [33m WARN[0m [2mbrisvox::engine[0m[2m:[0m stt session ended [3mreason[0m[2m=[0m"finalize timed out" [3moutstanding[0m[2m=[0m4
+[2m2026-10-23T00:28:48.276402Z[0m [33m WARN[0m [2mbrisvox::engine[0m[2m:[0m stt session ended [3mreason[0m[2m=[0m"finalize timed out" [3moutstanding[0m[2m=[0m1
+[2m2026-10-23T00:28:48.283491Z[0m [33m WARN[0m [2mbrisvox::engine[0m[2m:[0m stt session ended [3mreason[0m[2m=[0m"finalize timed out" [3moutstanding[0m[2m=[0m3
+[2m2026-10-23T00:28:48.284610Z[0m [33m WARN[0m [2mbrisvox::engine[0m[2m:[0m stt session ended [3mreason[0m[2m=[0m"finalize timed out" [3moutstanding[0m[2m=[0m2
+[2m2026-10-23T00:28:48.284671Z[0m [33m WARN[0m [2mbrisvox::engine[0m[2m:[0m stt session ended [3mreason[0m[2m=[0m"finalize timed out" [3moutstanding[0m[2m=[0m4
+[2m2026-10-23T00:28:48.284693Z[0m [33m WARN[0m [2mbrisvox::engine[0m[2m:[0m stt session ended [3mreason[0m[2m=[0m"finalize timed out" [3moutstanding[0m[2m=[0m1
+[2m2026-10-23T00:28:48.289636Z[0m [33m WARN[0m [2mbrisvox::engine[0m[2m:[0m stt session ended [3mreason[0m[2m=[0m"finalize timed out" [3moutstanding[0m[2m=[0m4
+[2m2026-10-23T00:28:48.308026Z[0m [33m WARN[0m [2mbrisvox::engine[0m[2m:[0m stt session ended [3mreason[0m[2m=[0m"finalize timed out" [3moutstanding[0m[2m=[0m2
+[2m2026-10-23T00:28:48.312873Z[0m [33m WARN[0m [2mbrisvox::engine[0m[2m:[0m stt session ended [3mreason[0m[2m=[0m"finalize timed out" [3moutstanding[0m[2m=[0m4
+[2m2026-10-23T00:28:48.343710Z[0m [33m WARN[0m [2mbrisvox::engine[0m[2m:[0m stt session ended [3mreason[0m[2m=[0m"finalize timed out" [3moutstanding[0m[2m=[0m3
+[2m2026-10-23T00:28:48.344496Z[0m [33m WARN[0m [2mbrisvox::engine[0m[2m:[0m stt session ended [3mreason[0m[2m=[0m"finalize timed out" [3moutstanding[0m[2m=[0m4
+[2m2026-10-23T00:28:48.363394Z[0m [33m WARN[0m [2mbrisvox::engine[0m[2m:[0m stt session ended [3mreason[0m[2m=[0m"finalize timed out" [3moutstanding[0m[2m=[0m3
+[2m2026-10-23T00:28:48.373081Z[0m [33m WARN[0m [2mbrisvox::engine[0m[2m:[0m stt session ended [3mreason[0m[2m=[0m"finalize timed out" [3moutstanding[0m[2m=[0m3
+[2m2026-10-23T00:28:48.373272Z[0m [33m WARN[0m [2mbrisvox::engine[0m[2m:[0m stt session ended [3mreason[0m[2m=[0m"finalize timed out" [3moutstanding[0m[2m=[0m3
+[2m2026-10-23T00:28:48.373700Z[0m [33m WARN[0m [2mbrisvox::engine[0m[2m:[0m stt session ended [3mreason[0m[2m=[0m"finalize timed out" [3moutstanding[0m[2m=[0m3
+[2m2026-10-23T00:28:48.373871Z[0m [33m WARN[0m [2mbrisvox::engine[0m[2m:[0m stt session ended [3mreason[0m[2m=[0m"finalize timed out" [3moutstanding[0m[2m=[0m3
+[2m2026-10-23T00:28:48.376785Z[0m [33m WARN[0m [2mbrisvox::engine[0m[2m:[0m stt session ended [3mreason[0m[2m=[0m"finalize timed out" [3moutstanding[0m[2m=[0m3
+[2m2026-10-23T00:28:48.388729Z[0m [33m WARN[0m [2mbrisvox::engine[0m[2m:[0m stt session ended [3mreason[0m[2m=[0m"finalize timed out" [3moutstanding[0m[2m=[0m3
+[2m2026-10-23T00:28:48.388963Z[0m [33m WARN[0m [2mbrisvox::engine[0m[2m:[0m stt session ended [3mreason[0m[2m=[0m"finalize timed out" [3moutstanding[0m[2m=[0m3
+[2m2026-10-23T00:28:48.394700Z[0m [33m WARN[0m [2mbrisvox::engine[0m[2m:[0m stt session ended [3mreason[0m[2m=[0m"finalize timed out" [3moutstanding[0m[2m=[0m2
+[2m2026-10-23T00:28:48.424443Z[0m [33m WARN[0m [2mbrisvox::engine[0m[2m:[0m stt session ended [3mreason[0m[2m=[0m"finalize timed out" [3moutstanding[0m[2m=[0m3
+[2m2026-10-23T00:28:48.424509Z[0m [33m WARN[0m [2mbrisvox::engine[0m[2m:[0m stt session ended [3mreason[0m[2m=[0m"finalize timed out" [3moutstanding[0m[2m=[0m3
+[2m2026-10-23T00:28:48.428946Z[0m [33m WARN[0m [2mbrisvox::engine[0m[2m:[0m stt session ended [3mreason[0m[2m=[0m"finalize timed out" [3moutstanding[0m[2m=[0m1
+[2m2026-10-23T00:28:48.440474Z[0m [33m WARN[0m [2mbrisvox::engine[0m[2m:[0m stt session ended [3mreason[0m[2m=[0m"finalize timed out" [3moutstanding[0m[2m=[0m3
+[2m2026-10-23T00:28:48.443090Z[0m [33m WARN[0m [2mbrisvox::engine[0m[2m:[0m stt session ended [3mreason[0m[2m=[0m"finalize timed out" [3moutstanding[0m[2m=[0m3
+[2m2026-10-23T00:28:48.460051Z[0m [33m WARN[0m [2mbrisvox::engine[0m[2m:[0m stt session ended [3mreason[0m[2m=[0m"finalize timed out" [3moutstanding[0m[2m=[0m3
+[2m2026-10-23T00:28:48.461608Z[0m [33m WARN[0m [2mbrisvox::engine[0m[2m:[0m stt session ended [3mreason[0m[2m=[0m"finalize timed out" [3moutstanding[0m[2m=[0m2
+[2m2026-10-23T00:28:48.469527Z[0m [33m WARN[0m [2mbrisvox::engine[0m[2m:[0m stt session ended [3mreason[0m[2m=[0m"finalize timed out" [3moutstanding[0m[2m=[0m3
+[2m2026-10-23T00:28:48.470915Z[0m [33m WARN[0m [2mbrisvox::engine[0m[2m:[0m stt session ended [3mreason[0m[2m=[0m"finalize timed out" [3moutstanding[0m[2m=[0m3
+[2m2026-10-23T00:28:48.491301Z[0m [33m WARN[0m [2mbrisvox::engine[0m[2m:[0m stt session ended [3mreason[0m[2m=[0m"finalize timed out" [3moutstanding[0m[2m=[0m2
+[2m2026-10-23T00:28:48.491435Z[0m [33m WARN[0m [2mbrisvox::engine[0m[2m:[0m stt session ended [3mreason[0m[2m=[0m"finalize timed out" [3moutstanding[0m[2m=[0m3
+[2m2026-10-23T00:28:48.501599Z[0m [33m WARN[0m [2mbrisvox::engine[0m[2m:[0m stt session ended [3mreason[0m[2m=[0m"finalize timed out" [3moutstanding[0m[2m=[0m2
+[2m2026-10-23T00:28:48.508920Z[0m [33m WARN[0m [2mbrisvox::engine[0m[2m:[0m stt session ended [3mreason[0m[2m=[0m"finalize timed out" [3moutstanding[0m[2m=[0m2
+[2m2026-10-23T00:28:48.519495Z[0m [33m WARN[0m [2mbrisvox::engine[0m[2m:[0m stt session ended [3mreason[0m[2m=[0m"finalize timed out" [3moutstanding[0m[2m=[0m2
+[2m2026-10-23T00:28:48.519960Z[0m [33m WARN[0m [2mbrisvox::engine[0m[2m:[0m stt session ended [3mreason[0m[2m=[0m"finalize timed out" [3moutstanding[0m[2m=[0m2
+[2m2026-10-23T00:28:48.527369Z[0m [33m WARN[0m [2mbrisvox::engine[0m[2m:[0m stt session ended [3mreason[0m[2m=[0m"finalize timed out" [3moutstanding[0m[2m=[0m2
+[2m2026-10-23T00:28:48.551667Z[0m [33m WARN[0m [2mbrisvox::engine[0m[2m:[0m stt session ended [3mreason[0m[2m=[0m"finalize timed out" [3moutstanding[0m[2m=[0m2
+[2m2026-10-23T00:28:48.551833Z[0m [33m WARN[0m [2mbrisvox::engine[0m[2m:[0m stt session ended [3mreason[0m[2m=[0m"finalize timed out" [3moutstanding[0m[2m=[0m2
+[2m2026-10-23T00:28:48.562580Z[0m [33m WARN[0m [2mbrisvox::engine[0m[2m:[0m stt session ended [3mreason[0m[2m=[0m"finalize timed out" [3moutstanding[0m[2m=[0m2
+[2m2026-10-23T00:28:48.571608Z[0m [33m WARN[0m [2mbrisvox::engine[0m[2m:[0m stt session ended [3mreason[0m[2m=[0m"finalize timed out" [3moutstanding[0m[2m=[0m2
+[2m2026-10-23T00:28:48.588032Z[0m [33m WARN[0m [2mbrisvox::engine[0m[2m:[0m stt session ended [3mreason[0m[2m=[0m"finalize timed out" [3moutstanding[0m[2m=[0m2
+[2m2026-10-23T00:28:48.636418Z[0m [33m WARN[0m [2mbrisvox::engine[0m[2m:[0m stt session ended [3mreason[0m[2m=[0m"finalize timed out" [3moutstanding[0m[2m=[0m2
+[2m2026-10-23T00:28:48.650645Z[0m [33m WARN[0m [2mbrisvox::engine[0m[2m:[0m stt session ended [3mreason[0m[2m=[0m"finalize timed out" [3moutstanding[0m[2m=[0m2

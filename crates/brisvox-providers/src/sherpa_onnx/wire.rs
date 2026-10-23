@@ -211,6 +211,21 @@ impl Wire for SherpaWire {
         let last = std::mem::take(&mut self.text);
         self.complete(&last, act);
     }
+
+    fn goodbye(&mut self) -> Vec<Message> {
+        // `Done` is the protocol's end of stream: the server answers and closes. A bare close
+        // makes the Python server log a traceback for every call. No padding: the answer is
+        // not used. An open `Done` exchange ends the same way.
+        if self.draining {
+            Vec::new()
+        } else {
+            vec![Message::text(DONE)]
+        }
+    }
+
+    fn server_closes_after_goodbye(&self) -> bool {
+        true
+    }
 }
 
 #[cfg(test)]

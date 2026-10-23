@@ -198,6 +198,62 @@ Tolerances (measured, then enforced): features bit-identical on all 12 cases; pr
   runtime), 25-35 ms per analysis on the pool, pool wait ~10-20 us. bench/results/smart-turn.md.
   Tests: `crates/brisvox-inference/tests/smart_turn.rs`.
 
+## Fused GELU (measured 2026-10-23)
+
+brisvox runs the pinned int8 file with one change made in memory when a session is created
+(`crates/brisvox-inference/src/smart_turn/fuse.rs`): each of the 8 exact GELUs, exported as five
+element-wise passes over a `[400, 1536]` float tensor (`x / √2`, `Erf`, `+ 1`, `· 0.5`, `· x`), becomes
+one `com.microsoft.Gelu` node, which ONNX Runtime then fuses with the preceding bias add. The file on
+disk and its pin are unchanged; `BRISVOX_SMART_TURN_GRAPH=original` runs the file exactly as published.
+
+Why: an analysis is bound by memory traffic, not arithmetic. ONNX Runtime's profile counts about
+330 MB of tensor output per analysis for the published graph and about 200 MB for the fused one; with
+4 analyses running at once on a desktop with one memory channel, a memory-copy probe on another core
+dropped from 38.7 GB/s (idle) to about 10 GB/s, so concurrent analyses wait on memory, not on the cores
+(docs/LATENCY.md "Capacity with the real provider path").
+
+Quality: the official test set `pipecat-ai/smart-turn-data-v3.2-test` (Hugging Face, CC-BY-4.0,
+31,527 labelled clips); 4000 clips drawn evenly from two of its ten files, 23 languages; features from
+Pipecat's pinned extractor on the last 8 s; ONNX Runtime 1.28.0, verdict `p > 0.5`:
+
+| graph | accuracy against the labels | same verdict as the published graph | mean / max \|Δp\| |
+|---|---|---|---|
+| published int8 (`smart-turn-v3.2-cpu.onnx`) | 92.67% | 100% | - |
+| **fused int8 (brisvox's default)** | **92.70%** | **99.92%** (3 clips differ) | 0.0023 / 0.74 |
+| published fp32 (`smart-turn-v3.2-gpu.onnx`) | 93.62% | 96.0% (160 differ) | 0.042 / 0.92 |
+
+The fused graph's three changed verdicts: one Vietnamese clip corrected, and in Bengali one corrected and one
+broken against the labels; per language the accuracy was equal (Bengali net) or better (Vietnamese). The model is sensitive near a quantization step: the published graph already
+moves by up to 0.096 between CPUs (see "Platform dependence"), and the fused graph moves the same golden case
+by the same amount, with the same verdict on all 12 goldens (`tests/smart_turn.rs`, `FUSED_TOLERANCE`).
+The Rust rewrite and the Python rewrite used for the 4000-clip run give bit-identical probabilities.
+
+On a CPU without VNNI (ONNX Runtime then takes its AVX2 int8 kernels; emulated with qemu-user as a Haswell,
+300 other clips of the same files, 23 languages) the fused graph keeps 299 of 300 verdicts: 92.33% against
+92.67%. The changed clip is English and near the line (0.644 published, 0.451 fused). That is within how much
+the published graph itself moves between CPUs: on the 192 clips both runs share, the published graph changes
+3 verdicts between a VNNI and a non-VNNI CPU, and the two graphs score the same on the non-VNNI one (177 of
+192). Operators who want the published graph's numbers exactly set `BRISVOX_SMART_TURN_GRAPH=original`.
+The fp32 file is about 1 point more accurate overall but changes 4% of the verdicts and is worse in some
+languages (Bengali -4.2 points, Russian and Portuguese slightly), costs 4 times the weight memory per session
+and about 9 ms more per analysis on one core, so it is not the default.
+
+Decision delay (`brisvox-bench model-cpu --configs 1:1:original,1:1:fused,2:1:original,2:1:fused`, the
+reference desktop on Windows, configurations interleaved, `bench/results/model-cpu-fused-windows-2026-10-23.md`):
+one analysis at a time takes 27.1 ms against 27.8 ms with one intra-op thread and 15.1 ms against 15.6 ms with
+two (the server's default), at about 3% less CPU; the verdicts of the 12 goldens are unchanged. The gain grows
+under concurrent load, where the memory traffic is the limit:
+
+Speed (ONNX Runtime 1.28.0, one intra-op thread per analysis, 16-core desktop, single-channel DDR5; a busy
+host, so the trend matters more than the digits): 4 analyses at once 97 -> 107 per second, 8 at once 96 -> 125
+per second; one at a time unchanged within noise.
+
+Capacity (`bench/results/capacity-smart-turn-graph-2026-10-23.md`: 4 CPUs / 4 GiB, real models, the real
+provider clients against the fake providers, six interleaved pairs on the same desktop): the fused graph
+held more calls within the SLO in 5 of 6 pairs; on a quiet host 290 and 320 against 270 and 270 (about
+13% more). Below that knee the CPU per call is the same: the gain is where concurrent analyses compete for
+memory bandwidth. The spread between runs on that host is about 20 calls.
+
 ## Platform dependence (measured 2026-10-15)
 The same file, the same features (bit for bit) and the same ONNX Runtime version (1.28.0) give
 different probabilities per operating system and CPU instruction set. 12 golden cases, `ort`

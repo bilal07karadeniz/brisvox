@@ -212,6 +212,31 @@ fn values_the_reader_rejects_fail_validation() {
             "/telephony/destinations",
             json!([{"name": "x", "number": "5551234"}]),
         ),
+        ("/mcp/servers", json!([{"name": "a", "command": "x"}])),
+        (
+            "/mcp/servers",
+            json!([{"name": "a", "command": "x", "tools": []}]),
+        ),
+        (
+            "/mcp/servers",
+            json!([{"name": "a", "command": "x", "tools": ["t"], "prefix": 5}]),
+        ),
+        (
+            "/mcp/servers",
+            json!([{"name": "a", "command": "x", "tools": ["t"], "readonly": ["t"]}]),
+        ),
+        (
+            "/mcp/servers",
+            json!([{"name": "a", "command": "x", "tools": ["t"], "timeout_ms": 30_001}]),
+        ),
+        (
+            "/mcp/servers",
+            json!([{"name": "a", "url": "ftp://x", "tools": ["t"]}]),
+        ),
+        (
+            "/mcp/servers",
+            json!([{"name": "a", "command": "x", "tools": ["t"], "max_in_flight": 0}]),
+        ),
     ];
     for (pointer, value) in bad {
         let doc = with(pointer, value.clone());
@@ -245,6 +270,18 @@ fn values_the_reader_accepts_pass_validation() {
         (
             "/telephony/destinations",
             json!([{"name": "sales", "number": "+442071234567"}]),
+        ),
+        (
+            "/mcp/servers",
+            json!([
+                {"name": "files", "command": "mcp-files", "args": ["--root", "/data"],
+                 "env": {"LOG": "warn"}, "env_from": {"TOKEN": "FILES_TOKEN"},
+                 "tools": ["list_dir", "files.read"], "read_only": ["list_dir"],
+                 "confirm": ["files.read"], "prefix": true, "timeout_ms": 30_000,
+                 "max_in_flight": 256},
+                {"name": "crm", "url": "https://crm.example.com/mcp", "bearer_env": "CRM_TOKEN",
+                 "tools": ["find"], "prefix": "crm_", "allow_insecure": false}
+            ]),
         ),
     ];
     for (pointer, value) in good {

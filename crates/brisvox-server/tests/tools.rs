@@ -48,6 +48,10 @@ use tokio::net::TcpStream;
 use tokio_tungstenite::tungstenite::Message;
 use tokio_tungstenite::{MaybeTlsStream, WebSocketStream};
 
+#[cfg(feature = "mcp")]
+#[path = "support/mcp_harness.rs"]
+mod mcp_harness;
+
 type Client = WebSocketStream<MaybeTlsStream<TcpStream>>;
 
 const WAIT: Duration = Duration::from_secs(10);
@@ -798,5 +802,127 @@ mod telephony {
         .await;
         assert_eq!(ended.said, "");
         assert!(ended.closed_after < PROMPT, "{:?}", ended.closed_after);
+    }
+}
+
+/// MCP tools (`[[mcp.servers]]`) in a call: offered to the model without being listed in
+/// `agent.tools`, run through the runner, their results back to the model.
+#[cfg(feature = "mcp")]
+mod mcp {
+    use super::*;
+
+    fn mcp_agent(dir: &std::path::Path) -> AgentConfig {
+        let servers = mcp_harness::stdio_entry(
+            "lamps",
+            dir,
+            "\"read_echo\", \"book\"",
+            "\"read_echo\"",
+            "prefix = true",
+            "",
+        );
+        agent_file(&format!("{}\n{servers}", agent_text("")))
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn an_mcp_tool_runs_through_the_runner_and_its_result_reaches_the_model() {
+        let clock = SystemClock::shared();
+        let dir = mcp_harness::state_dir("runner");
+        let agent = mcp_agent(&dir);
+        let tools = ToolSetup::none().with_mcp(&agent, &clock).await.unwrap();
+        let host = tools.mcp_host().unwrap();
+        let script = LlmScript::text(Vec::<String>::new()).with_tool_call(
+            "call-1",
+            "lamps_read_echo",
+            r#"{"text":"lamp"}"#,
+        );
+        let pool = pool(&clock);
+        let runner = Arc::new(
+            EngineRunner::with_tools(
+                agent,
+                Mocks::new(clock.clone(), script),
+                Offload::Pool(pool.handle()),
+                Vad::Off,
+                RunnerConfig::default(),
+                tools,
+                &clock,
+            )
+            .unwrap(),
+        );
+        let rig = Rig::start(&runner, pool).await;
+        let mut ws = rig.call().await;
+
+        let said = ask(&mut ws, "do you have lamps?").await;
+        assert_eq!(said, ANSWER);
+        // The model was offered the allowlisted tools under their prefixed names, and got the
+        // server's answer back.
+        let asked = runner.factory().llm_requests();
+        assert!(
+            asked.contains("lamps_read_echo") && asked.contains("lamps_book"),
+            "{asked}"
+        );
+        assert!(!asked.contains("hidden"), "{asked}");
+        assert!(
+            asked.contains("echo: lamp"),
+            "the tool result reached the model: {asked}"
+        );
+
+        ws.send(rtvi_message("disconnect-bot", "bye-1", &json!(null)))
+            .await
+            .unwrap();
+        rig.until("the call ended", |m| m.stats().active == 0).await;
+        host.shutdown().await;
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn an_agent_without_mcp_servers_is_not_offered_the_tools_of_another_agents_setup() {
+        let clock = SystemClock::shared();
+        let dir = mcp_harness::state_dir("other");
+        // The setup is connected for an agent that has MCP servers ...
+        let tools = ToolSetup::none()
+            .with_mcp(&mcp_agent(&dir), &clock)
+            .await
+            .unwrap();
+        let host = tools.mcp_host().unwrap();
+        // ... and bound to one that has none.
+        let pool = pool(&clock);
+        let runner = Arc::new(
+            EngineRunner::with_tools(
+                agent_file(&agent_text("")),
+                Mocks::new(clock.clone(), LlmScript::text([ANSWER])),
+                Offload::Pool(pool.handle()),
+                Vad::Off,
+                RunnerConfig::default(),
+                tools,
+                &clock,
+            )
+            .unwrap(),
+        );
+        let rig = Rig::start(&runner, pool).await;
+        let mut ws = rig.call().await;
+        assert_eq!(ask(&mut ws, "hello").await, ANSWER);
+        let asked = runner.factory().llm_requests();
+        assert!(!asked.contains("lamps_"), "{asked}");
+        ws.send(rtvi_message("disconnect-bot", "bye-1", &json!(null)))
+            .await
+            .unwrap();
+        rig.until("the call ended", |m| m.stats().active == 0).await;
+        host.shutdown().await;
+    }
+
+    #[tokio::test]
+    async fn a_definition_with_mcp_servers_is_refused_by_a_setup_that_never_connected_them() {
+        let clock = SystemClock::shared();
+        let dir = mcp_harness::state_dir("refused");
+        let error = EngineRunner::new(
+            mcp_agent(&dir),
+            Mocks::new(clock.clone(), LlmScript::text(["x"])),
+            Offload::Inline(clock.clone()),
+            Vad::Off,
+            RunnerConfig::default(),
+        )
+        .unwrap_err()
+        .to_string();
+        assert!(error.contains("mcp.servers[0].tools[0]"), "{error}");
+        assert!(error.contains("ToolSetup::with_mcp"), "{error}");
     }
 }
