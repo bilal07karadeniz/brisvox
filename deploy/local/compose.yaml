@@ -139,7 +139,7 @@ services:
   brisvox:
     <<: *hardened
     cap_drop: [ALL]
-    image: ${BRISVOX_IMAGE:-ghcr.io/bilal07karadeniz/brisvox-server:v0.1.1@sha256:d48d8076a8c66382b9953df0ec9d180770689c3ebddbe23e395c2896ca05da06}
+    image: ${BRISVOX_IMAGE:-ghcr.io/bilal07karadeniz/brisvox-server:v0.1.2@sha256:601edc8043dda706f56895b127d8d9b51be29736cb5eaaf45b2345dd8d874c98}
     network_mode: "service:net"
     depends_on:
       net: { condition: service_started }
