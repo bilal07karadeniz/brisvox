@@ -98,8 +98,8 @@ pub fn parse_configs(text: &str) -> Result<Vec<OrtOptions>, BenchError> {
                 return Err(bad());
             };
             let graph = match parts.next() {
-                None | Some("fused") => SmartTurnGraph::Fused,
-                Some("original") => SmartTurnGraph::Original,
+                Some("fused") => SmartTurnGraph::Fused,
+                None | Some("original") => SmartTurnGraph::Original,
                 Some(_) => return Err(bad()),
             };
             if parts.next().is_some() {

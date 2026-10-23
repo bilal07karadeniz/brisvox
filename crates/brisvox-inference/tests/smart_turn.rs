@@ -326,19 +326,19 @@ mod ort {
 
     #[test]
     fn probabilities_match_the_reference_runtime() {
-        check_goldens(&model(), "default", SmartTurnGraph::Fused);
+        check_goldens(&model(), "default", SmartTurnGraph::Original);
     }
 
-    /// The published graph, as before the fusion: the goldens to their rounding.
+    /// The fused graph (opt-in): every golden verdict kept, within `FUSED_TOLERANCE`.
     #[test]
-    fn the_original_graph_matches_the_reference_exactly() {
+    fn the_fused_graph_keeps_every_golden_verdict() {
         let options = OrtOptions {
-            graph: SmartTurnGraph::Original,
+            graph: SmartTurnGraph::Fused,
             ..OrtOptions::default()
         };
         let model: Arc<dyn TurnModel> =
             SmartTurnOrt::load_with_options(&model_path(), options).unwrap();
-        check_goldens(&model, "original", SmartTurnGraph::Original);
+        check_goldens(&model, "fused", SmartTurnGraph::Fused);
     }
 
     /// The pinned file has exactly 8 exported GELUs and all of them are fused; reading and
@@ -370,7 +370,11 @@ mod ort {
             assert_eq!(model.intra_threads(), threads);
             model.warm(2).unwrap();
             let model: Arc<dyn TurnModel> = model;
-            check_goldens(&model, &format!("{threads} threads"), SmartTurnGraph::Fused);
+            check_goldens(
+                &model,
+                &format!("{threads} threads"),
+                SmartTurnGraph::Original,
+            );
         }
     }
 

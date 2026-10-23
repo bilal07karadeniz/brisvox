@@ -3,7 +3,7 @@
 `bench/capacity_linux.sh` with `PROVIDERS=fakes MODELS=1 SYSTEMS=brisvox CPUS=4 MEM=4g`: brisvox-server
 with its real provider clients against `bench/fake_providers` (860 ms floor), the real Silero VAD and Smart
 Turn v3.2 models, SLO p95 V2V <= 1110 ms, no failed call. The only difference between the two sides is
-`BRISVOX_SMART_TURN_GRAPH` (`original`: the pinned file as published; `fused`: the default, GELUs fused in
+`BRISVOX_SMART_TURN_GRAPH` (`original`: the pinned file as published, the default; `fused`: opt-in, GELUs fused in
 memory, docs/providers/smart-turn.md "Fused GELU"). Runs interleaved in pairs, the order swapped in every
 other pair. Host: the reference desktop (16 cores, one DDR5 channel), WSL2. Pairs 1-4 ran while other
 programs used the CPU and memory (pairs 3 and 4 heavily; a first pair-3 attempt, where the published-graph

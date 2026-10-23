@@ -35,14 +35,15 @@ named plain `brisvox` on crates.io, PyPI and npm, are released together under on
   failing, cost). Tested with Grafana 12.1 (UI import and file provisioning). A test checks every
   metric, label and label value it queries against the real `/metrics` output, and rejects
   quantiles without `le` and counters without a rate.
+- **Cheaper turn detection, opt-in**: `BRISVOX_SMART_TURN_GRAPH=fused` runs the Smart Turn model
+  with each GELU fused into one operation (rewritten in memory from the pinned file): about 40% less
+  memory traffic per analysis and more calls per core under load; on 4000 clips of the official
+  Smart Turn v3.2 test set the verdicts matched the published graph on 3997 and the accuracy did not
+  drop. It is not the default because on one abrupt cut of the test fixtures its early verdict ended
+  a turn that the published graph's did not (docs/providers/smart-turn.md, "Fused GELU").
 
 ### Changed
 
-- **Turn detection is cheaper**: the Smart Turn model runs with each GELU fused into one operation
-  (rewritten in memory from the pinned file), about 40% less memory traffic per analysis and up to a
-  third more analyses per second under load, with the same quality: on 4000 clips of the official
-  Smart Turn v3.2 test set the verdicts matched the published graph on 3997 and the accuracy did not
-  drop. `BRISVOX_SMART_TURN_GRAPH=original` runs the file as published.
 - **Benchmarks**: the capacity numbers in the README and the book now come from cloud containers
   (AMD EPYC 9655P, 4 vCPU / 4 GB and 8 vCPU / 8 GB) with every call going through each system's own
   provider client code to protocol-faithful fake providers over TLS, and the real Silero VAD and

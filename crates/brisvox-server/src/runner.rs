@@ -161,11 +161,11 @@ pub const ENV_MODELS_DIR: &str = "BRISVOX_MODELS_DIR";
 /// [`brisvox_engine::offload::default_smart_turn_threads`].
 pub const ENV_SMART_TURN_THREADS: &str = "BRISVOX_SMART_TURN_THREADS";
 
-/// `fused` (default) or `original`: the Smart Turn graph the sessions run
+/// `original` (default) or `fused`: the Smart Turn graph the sessions run
 /// (`brisvox_inference::smart_turn::fuse`; docs/OPERATIONS.md).
 pub const ENV_SMART_TURN_GRAPH: &str = "BRISVOX_SMART_TURN_GRAPH";
 
-/// The Smart Turn graph from [`ENV_SMART_TURN_GRAPH`] (default fused).
+/// The Smart Turn graph from [`ENV_SMART_TURN_GRAPH`] (default original).
 ///
 /// # Errors
 /// [`Error::Config`] for a value other than `fused` or `original`.
@@ -175,7 +175,7 @@ pub fn smart_turn_graph(
 ) -> Result<brisvox_inference::smart_turn::ort_backend::SmartTurnGraph> {
     use brisvox_inference::smart_turn::ort_backend::SmartTurnGraph;
     match var(env, ENV_SMART_TURN_GRAPH)?.as_deref().map(str::trim) {
-        None | Some("") => Ok(SmartTurnGraph::Fused),
+        None | Some("") => Ok(SmartTurnGraph::Original),
         Some(v) if v.eq_ignore_ascii_case("fused") => Ok(SmartTurnGraph::Fused),
         Some(v) if v.eq_ignore_ascii_case("original") => Ok(SmartTurnGraph::Original),
         Some(other) => Err(Error::Config(format!(
@@ -1061,9 +1061,12 @@ mod tests {
 
     #[cfg(feature = "smart-turn-ort")]
     #[test]
-    fn the_smart_turn_graph_defaults_to_fused_and_can_be_the_original() {
+    fn the_smart_turn_graph_defaults_to_the_original_and_can_be_fused() {
         use brisvox_inference::smart_turn::ort_backend::SmartTurnGraph;
-        assert_eq!(smart_turn_graph(&env(&[])).unwrap(), SmartTurnGraph::Fused);
+        assert_eq!(
+            smart_turn_graph(&env(&[])).unwrap(),
+            SmartTurnGraph::Original
+        );
         let set = |value: &str| smart_turn_graph(&env(&[(ENV_SMART_TURN_GRAPH, value)]));
         assert_eq!(set("fused").unwrap(), SmartTurnGraph::Fused);
         assert_eq!(set("Original").unwrap(), SmartTurnGraph::Original);
