@@ -5,7 +5,13 @@ all-features = true
 
 [advisories]
 yanked = "deny"
-ignore = []
+ignore = [
+    # basic-toml is unmaintained and has no successor release. It reaches the build only through
+    # age (the encrypted transcript sink): age's localisation macro (i18n-embed-fl -> i18n-config)
+    # reads its own i18n.toml at compile time. Nothing parses TOML with it at run time, and no
+    # untrusted input reaches it. Drop this entry when age moves off i18n-config.
+    { id = "RUSTSEC-2026-0374", reason = "build-time only, via age's i18n proc macro; no runtime TOML parsing" },
+]
 
 [licenses]
 # Permissive licenses only (CONTRIBUTING.md: prefer MIT/Apache-2.0/BSD).

@@ -53,6 +53,9 @@ named plain `brisvox` on crates.io, PyPI and npm, are released together under on
 
 ### Fixed
 
+- **TLS certificate checks**: rustls-webpki 0.103.16 and webpki-roots / webpki-root-certs 1.0.11, so
+  provider connections no longer trust the distrusted emSign intermediates and reject distrusted
+  intermediates in a chain (RUSTSEC-2026-0381, RUSTSEC-2026-0382, RUSTSEC-2026-0383).
 - **sherpa-onnx**: a hang-up ends the stream with `Done` and lets the server close the
   socket, so the Python server no longer logs a failed connection after every call.
 
