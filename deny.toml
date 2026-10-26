@@ -11,6 +11,13 @@ ignore = [
     # reads its own i18n.toml at compile time. Nothing parses TOML with it at run time, and no
     # untrusted input reaches it. Drop this entry when age moves off i18n-config.
     { id = "RUSTSEC-2026-0374", reason = "build-time only, via age's i18n proc macro; no runtime TOML parsing" },
+    # crypto-bigint 0.5 (timing variability in operations meant to be constant-time) is fixed only in
+    # 0.7.6. The 0.5 line comes in through elliptic-curve 0.13: the WebRTC DTLS stack (str0m 0.24.1 ->
+    # dimpl 0.7 / str0m-rust-crypto 0.6: ECDHE and ECDSA in the handshake) and age 0.12.1 (via hpke 0.12).
+    # No release of str0m or age moves to elliptic-curve 0.14 yet (dimpl 0.9 and hpke 0.15 did on
+    # 2026-10-25). Exploiting it needs fine timing of secret-dependent arithmetic on the server. Remove this
+    # entry when str0m and age release on the 0.14 curves, and update them.
+    { id = "RUSTSEC-2026-0387", reason = "no fixed version reachable: str0m and age still pin elliptic-curve 0.13; revisit on their next releases" },
 ]
 
 [licenses]
