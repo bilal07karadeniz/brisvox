@@ -28,6 +28,9 @@ pub(crate) struct Turn {
     /// End of the last word, in milliseconds of audio on this connection; `None` when the
     /// message has no words.
     pub(crate) last_word_end_ms: Option<f64>,
+    /// `language_code` and `language_confidence`: only present on a finished turn of a
+    /// connection opened with `language_detection=true`.
+    pub(crate) language: Option<crate::stt::SpokenLanguage>,
 }
 
 /// A parsed server message.
@@ -76,6 +79,10 @@ struct RawTurn {
     transcript: String,
     #[serde(default)]
     words: Option<Vec<RawWord>>,
+    #[serde(default)]
+    language_code: Option<String>,
+    #[serde(default)]
+    language_confidence: Option<f64>,
 }
 
 #[derive(Deserialize)]
@@ -139,6 +146,18 @@ pub(crate) fn parse(text: &str) -> Result<Incoming, ParseError> {
                 formatted: raw.turn_is_formatted,
                 transcript: raw.transcript.trim().to_owned(),
                 last_word_end_ms,
+                language: raw
+                    .language_code
+                    .as_deref()
+                    .filter(|code| !code.trim().is_empty())
+                    .map(|code| {
+                        let language = crate::stt::SpokenLanguage::new(code.trim());
+                        match raw.language_confidence {
+                            #[allow(clippy::cast_possible_truncation)] // a probability
+                            Some(confidence) => language.with_confidence(confidence as f32),
+                            None => language,
+                        }
+                    }),
             }))
         }
         Some("Begin") => {

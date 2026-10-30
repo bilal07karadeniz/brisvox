@@ -161,11 +161,11 @@ pub const ENV_MODELS_DIR: &str = "BRISVOX_MODELS_DIR";
 /// [`brisvox_engine::offload::default_smart_turn_threads`].
 pub const ENV_SMART_TURN_THREADS: &str = "BRISVOX_SMART_TURN_THREADS";
 
-/// `original` (default) or `fused`: the Smart Turn graph the sessions run
+/// `fused` (default) or `original`: the Smart Turn graph the sessions run
 /// (`brisvox_inference::smart_turn::fuse`; docs/OPERATIONS.md).
 pub const ENV_SMART_TURN_GRAPH: &str = "BRISVOX_SMART_TURN_GRAPH";
 
-/// The Smart Turn graph from [`ENV_SMART_TURN_GRAPH`] (default original).
+/// The Smart Turn graph from [`ENV_SMART_TURN_GRAPH`] (default fused).
 ///
 /// # Errors
 /// [`Error::Config`] for a value other than `fused` or `original`.
@@ -175,7 +175,7 @@ pub fn smart_turn_graph(
 ) -> Result<brisvox_inference::smart_turn::ort_backend::SmartTurnGraph> {
     use brisvox_inference::smart_turn::ort_backend::SmartTurnGraph;
     match var(env, ENV_SMART_TURN_GRAPH)?.as_deref().map(str::trim) {
-        None | Some("") => Ok(SmartTurnGraph::Original),
+        None | Some("") => Ok(SmartTurnGraph::Fused),
         Some(v) if v.eq_ignore_ascii_case("fused") => Ok(SmartTurnGraph::Fused),
         Some(v) if v.eq_ignore_ascii_case("original") => Ok(SmartTurnGraph::Original),
         Some(other) => Err(Error::Config(format!(
@@ -298,6 +298,20 @@ pub fn load_smart_turn(env: &dyn Env, agent: &AgentConfig) -> Result<Option<Arc<
         ))),
         None => Ok(None),
     }
+}
+
+/// Whether [`load_smart_turn`] would load a model for `agent`: its turn policy is adaptive, the
+/// model is not switched off and this build can run one. A reload uses it to tell that a changed
+/// definition needs a model (and the executor for it) the process was not started with.
+///
+/// # Errors
+/// [`Error::Config`] when [`ENV_SMART_TURN_MODEL`] is not valid.
+pub(crate) fn wants_smart_turn_model(env: &dyn Env, agent: &AgentConfig) -> Result<bool> {
+    if !matches!(agent.engine().turn, TurnPolicy::Adaptive { .. }) {
+        return Ok(false);
+    }
+    let off = var(env, ENV_SMART_TURN_MODEL)?.is_some_and(|v| v.eq_ignore_ascii_case("off"));
+    Ok(!off && cfg!(feature = "smart-turn-ort"))
 }
 
 /// Settings of an [`EngineRunner`] beyond the agent definition.
@@ -583,6 +597,14 @@ impl<F: ProviderFactory> EngineRunner<F> {
     /// The agent definition the calls run.
     pub const fn agent(&self) -> &AgentConfig {
         &self.agent
+    }
+
+    /// The connections to the agent's MCP servers, when it has any. The runner keeps them for
+    /// as long as it lives; they close when the last owner of the runner is gone (a reload keeps
+    /// the old runner for the calls that started on it, see [`crate::reload`]).
+    #[cfg(feature = "mcp")]
+    pub fn mcp_host(&self) -> Option<Arc<crate::mcp::McpHost>> {
+        self.tools.mcp_host()
     }
 
     /// Where the calls' providers come from.
@@ -1061,12 +1083,9 @@ mod tests {
 
     #[cfg(feature = "smart-turn-ort")]
     #[test]
-    fn the_smart_turn_graph_defaults_to_the_original_and_can_be_fused() {
+    fn the_smart_turn_graph_defaults_to_fused_and_can_be_the_original() {
         use brisvox_inference::smart_turn::ort_backend::SmartTurnGraph;
-        assert_eq!(
-            smart_turn_graph(&env(&[])).unwrap(),
-            SmartTurnGraph::Original
-        );
+        assert_eq!(smart_turn_graph(&env(&[])).unwrap(), SmartTurnGraph::Fused);
         let set = |value: &str| smart_turn_graph(&env(&[(ENV_SMART_TURN_GRAPH, value)]));
         assert_eq!(set("fused").unwrap(), SmartTurnGraph::Fused);
         assert_eq!(set("Original").unwrap(), SmartTurnGraph::Original);

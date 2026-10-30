@@ -384,6 +384,7 @@ impl<P: SttProvider, S: SttProvider> Relay<P, S> {
                     is_final,
                     speech_final,
                     from_finalize,
+                    language,
                 })) => {
                     if let Some(permit) = self.live.as_mut().and_then(|l| l.permit.take()) {
                         permit.success();
@@ -404,6 +405,7 @@ impl<P: SttProvider, S: SttProvider> Relay<P, S> {
                         is_final,
                         speech_final,
                         from_finalize,
+                        language,
                     };
                     if events.send(event).await.is_err() {
                         return;

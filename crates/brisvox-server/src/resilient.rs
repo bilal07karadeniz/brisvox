@@ -79,12 +79,26 @@ impl ResilienceSource for ResilienceHandle {
 pub struct OwnVoice<T> {
     inner: Arc<T>,
     voice: Option<Arc<str>>,
+    /// Voices per language code, for a call that switches language (`voice` is the fallback).
+    by_language: Vec<(Arc<str>, Arc<str>)>,
 }
 
 impl<T> OwnVoice<T> {
     /// `inner` speaking `voice`, or the engine's voice when `voice` is `None`.
     pub const fn new(inner: Arc<T>, voice: Option<Arc<str>>) -> Self {
-        Self { inner, voice }
+        Self {
+            inner,
+            voice,
+            by_language: Vec::new(),
+        }
+    }
+
+    /// Speaks `voices` (language code, voice id) when the session asks for that language, and
+    /// the voice of [`Self::new`] for any other.
+    #[must_use]
+    pub fn with_language_voices(mut self, voices: Vec<(Arc<str>, Arc<str>)>) -> Self {
+        self.by_language = voices;
+        self
     }
 }
 
@@ -94,9 +108,18 @@ impl<T: TtsProvider> TtsProvider for OwnVoice<T> {
     }
 
     async fn connect(&self, config: TtsConfig) -> brisvox_providers::Result<TtsSession> {
-        let config = match &self.voice {
+        let language_voice = config.language.as_deref().and_then(|language| {
+            self.by_language
+                .iter()
+                .find(|(code, _)| code.eq_ignore_ascii_case(language))
+                .map(|(_, voice)| voice)
+        });
+        let config = match language_voice.or(self.voice.as_ref()) {
+            // The model of a language belongs to the primary provider, like the voice: the
+            // secondary keeps its own configured model.
             Some(voice) => TtsConfig {
                 voice: Arc::clone(voice),
+                model: None,
                 ..config
             },
             None => config,
@@ -167,12 +190,22 @@ impl<S: SttProvider, L: LlmProvider, T: TtsProvider> ResilientProviders<S, L, T>
 
     /// Calls fail over to `tts`, speaking `voice`, when the primary TTS is down.
     #[must_use]
-    pub fn with_tts_secondary(mut self, tts: Arc<T>, voice: Arc<str>) -> Self {
+    pub fn with_tts_secondary(self, tts: Arc<T>, voice: Arc<str>) -> Self {
+        self.with_tts_secondary_languages(tts, voice, Vec::new())
+    }
+
+    /// [`Self::with_tts_secondary`], speaking `language_voices` (language code, voice id) in
+    /// those languages of a call that switches language, and `voice` in any other.
+    #[must_use]
+    pub fn with_tts_secondary_languages(
+        mut self,
+        tts: Arc<T>,
+        voice: Arc<str>,
+        language_voices: Vec<(Arc<str>, Arc<str>)>,
+    ) -> Self {
         let name = tts.name();
-        self.tts_secondary = Some(
-            self.resilience
-                .leg(name, Arc::new(OwnVoice::new(tts, Some(voice)))),
-        );
+        let own = OwnVoice::new(tts, Some(voice)).with_language_voices(language_voices);
+        self.tts_secondary = Some(self.resilience.leg(name, Arc::new(own)));
         self
     }
 

@@ -313,6 +313,8 @@ fn tts_config() -> TtsConfig {
     TtsConfig {
         sample_rate: SampleRate::Hz24000,
         voice: Arc::from("v"),
+        language: None,
+        model: None,
     }
 }
 
@@ -835,6 +837,7 @@ impl SttProvider for LaggingStt {
                         is_final: true,
                         speech_final: false,
                         from_finalize: false,
+                        language: None,
                     };
                     if events_tx.send(event).await.is_err() {
                         return;

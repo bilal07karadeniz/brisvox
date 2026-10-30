@@ -540,6 +540,7 @@ async fn stt_expect_final(
                 is_final: true,
                 speech_final,
                 from_finalize,
+                ..
             } => {
                 ensure(
                     &*text == expected,
@@ -1310,6 +1311,8 @@ fn tts_config() -> TtsConfig {
     TtsConfig {
         sample_rate: SampleRate::Hz16000,
         voice: Arc::from("contract"),
+        language: None,
+        model: None,
     }
 }
 
@@ -1978,6 +1981,7 @@ impl SttHarness for MockStt {
         self.push(SttUtterance {
             interims: utterance.interims,
             finals: utterance.finals,
+            language: None,
         });
     }
 

@@ -53,6 +53,9 @@ pub struct AgentFile {
     /// MCP servers whose tools the agent may call (`docs/TOOLS.md`, "MCP tools").
     #[serde(default)]
     pub mcp: McpSection,
+    /// The languages the agent follows the caller between (`docs/CONFIG.md`, "Languages").
+    #[serde(default)]
+    pub languages: LanguagesSection,
     /// Speech-to-text provider.
     pub stt: SttSection,
     /// LLM provider and the runner settings.
@@ -94,6 +97,59 @@ pub struct AgentSection {
     #[serde(default)]
     #[cfg_attr(feature = "schema", schemars(with = "Vec<Ident>"))]
     pub confirm_tools: Vec<Spanned<String>>,
+}
+
+/// `[languages]`: a call that follows the caller between several languages. Without any
+/// `[[languages.speak]]` entry the agent speaks `agent.language` only.
+///
+/// The STT is switched to its multilingual mode (Deepgram `language=multi` with the languages as
+/// hints, AssemblyAI `language_codes` and `language_detection`, Gladia `languages` with
+/// `code_switching`, OpenAI `languages`) and the language of each finished utterance is taken
+/// from the provider's report, else detected from its text. When the caller speaks another
+/// listed language on `switch_after` utterances in a row (or once, when the provider is
+/// confident), the next reply is in that language with that language's voice.
+#[derive(Debug, Clone, Default, PartialEq, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+#[serde(deny_unknown_fields)]
+pub struct LanguagesSection {
+    /// The language the call starts in. Default: `agent.language`. Must be listed.
+    #[cfg_attr(feature = "schema", schemars(with = "Option<LanguageTag>"))]
+    pub default: Option<Spanned<LanguageTag>>,
+    /// Consecutive utterances in another listed language before the agent follows (1..=10).
+    /// Default 2.
+    pub switch_after: Option<Count<1, 10>>,
+    /// Provider-reported confidence (0..=1) at which one utterance is enough to switch (only
+    /// AssemblyAI reports one). Default 0.9.
+    pub switch_confidence: Option<Real<0, 1_000>>,
+    /// Utterances with fewer words count as no evidence (a backchannel, a name). 1..=20. Default
+    /// 2.
+    pub min_words: Option<Count<1, 20>>,
+    /// The languages, at least two: `en` and `tr`, the engine's segmenter and speech normalizer
+    /// languages.
+    #[serde(default)]
+    pub speak: Vec<LanguageEntry>,
+}
+
+/// One `[[languages.speak]]` entry.
+#[derive(Debug, Clone, PartialEq, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+#[serde(deny_unknown_fields)]
+pub struct LanguageEntry {
+    /// The language: `en` or `tr` (a region is cut off).
+    #[cfg_attr(feature = "schema", schemars(with = "LanguageTag"))]
+    pub code: Spanned<LanguageTag>,
+    /// The TTS voice for this language (a voice id of the `[tts]` provider; for Deepgram Aura
+    /// the model string).
+    #[cfg_attr(feature = "schema", schemars(with = "Token"))]
+    pub voice: Spanned<Token>,
+    /// The TTS model for this language, when it differs from `[tts.<provider>].model`
+    /// (Cartesia, ElevenLabs).
+    #[cfg_attr(feature = "schema", schemars(with = "Option<Token>"))]
+    pub tts_model: Option<Spanned<Token>>,
+    /// The voice of `[tts.secondary]` for this language, when the failover provider needs
+    /// another voice per language. Default: `tts.secondary.voice` for every language.
+    #[cfg_attr(feature = "schema", schemars(with = "Option<Token>"))]
+    pub secondary_voice: Option<Spanned<Token>>,
 }
 
 /// `turn.policy`.

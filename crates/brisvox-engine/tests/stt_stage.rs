@@ -798,6 +798,7 @@ async fn only_an_answer_to_a_finalize_closes_an_utterance() {
         is_final,
         speech_final,
         from_finalize,
+        language: None,
     };
     // A provider-endpointed final: its text is forwarded but it closes nothing.
     events
@@ -1098,6 +1099,7 @@ async fn finalize_pending_after(segments: &[(&str, bool)]) -> Pending {
                 is_final: *is_final,
                 speech_final: false,
                 from_finalize: false,
+                language: None,
             })
             .await
             .unwrap();
@@ -1200,6 +1202,7 @@ async fn real_answer_after_a_mid_utterance_death(
             is_final: false,
             speech_final: false,
             from_finalize: false,
+            language: None,
         })
         .await
         .unwrap();
@@ -1228,6 +1231,7 @@ async fn real_answer_after_a_mid_utterance_death(
             is_final: true,
             speech_final: true,
             from_finalize: true,
+            language: None,
         })
         .await
         .unwrap();

@@ -670,6 +670,7 @@ fn flat(event: SttEvent) -> (String, bool, bool, bool) {
             is_final,
             speech_final,
             from_finalize,
+            ..
         } => (text.to_string(), is_final, speech_final, from_finalize),
         SttEvent::Error(e) => panic!("unexpected error event: {e:?}"),
     }
@@ -875,6 +876,58 @@ async fn every_server_message_type_is_handled() {
             t("merhaba dünya", false, false, false),
             t("Merhaba dünya.", true, true, false),
             t("iyiyim", false, false, false),
+        ]
+    );
+}
+
+/// A final transcript whose utterance language is `language`.
+fn transcript_in(id: &str, text: &str, language: &str) -> String {
+    json!({
+        "session_id": "sess", "created_at": "2026-10-08T00:00:00Z", "type": "transcript",
+        "data": {"id": id, "is_final": true, "utterance": {
+            "start": 0.0, "end": 1.0, "confidence": 0.9, "channel": 0,
+            "words": [], "text": text, "language": language}}
+    })
+    .to_string()
+}
+
+#[tokio::test]
+async fn several_languages_with_code_switching_are_requested_and_the_detected_language_reported() {
+    let server = MockServer::start(handler(|conn| async move {
+        let Some(mut s) = conn.accept().await else {
+            return;
+        };
+        s.until_audio(1).await;
+        s.send(transcript_in("u1", "siparişim nerede", "tr")).await;
+        s.send(transcript_in("u2", "where is it", "en")).await;
+        s.drain().await;
+    }))
+    .await;
+    let stt = adapter(&server, |c| {
+        c.languages = vec!["en".to_owned(), "tr-TR".to_owned()];
+        c.code_switching = true;
+    });
+    let mut session = connect(&stt).await;
+    session.input.send(chunk(1)).await.unwrap();
+    let body: serde_json::Value = serde_json::from_str(&server.inits()[0].body).unwrap();
+    assert_eq!(
+        body["language_config"],
+        json!({"languages": ["en", "tr"], "code_switching": true})
+    );
+    let mut seen = Vec::new();
+    for _ in 0..2 {
+        match event(&mut session).await {
+            SttEvent::Transcript { text, language, .. } => {
+                seen.push((text.to_string(), language.map(|l| l.code.to_string())));
+            }
+            other => panic!("unexpected {other:?}"),
+        }
+    }
+    assert_eq!(
+        seen,
+        [
+            ("siparişim nerede".to_owned(), Some("tr".to_owned())),
+            ("where is it".to_owned(), Some("en".to_owned())),
         ]
     );
 }
@@ -3341,6 +3394,7 @@ async fn live_session_transcribes_turkish_and_finalizes_without_errors() {
                 is_final,
                 speech_final,
                 from_finalize,
+                ..
             })) => {
                 if !is_final {
                     partials += 1;

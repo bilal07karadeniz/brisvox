@@ -150,6 +150,7 @@ impl Actions {
             is_final: false,
             speech_final: false,
             from_finalize: false,
+            language: None,
         });
     }
 
@@ -160,6 +161,7 @@ impl Actions {
             is_final: true,
             speech_final: true,
             from_finalize: false,
+            language: None,
         });
     }
 
@@ -177,6 +179,7 @@ pub(crate) fn finalize_answer(text: &str) -> SttEvent {
         is_final: true,
         speech_final: true,
         from_finalize: true,
+        language: None,
     }
 }
 

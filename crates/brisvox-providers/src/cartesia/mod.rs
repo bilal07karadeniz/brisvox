@@ -390,10 +390,18 @@ impl Inner {
         if encoding != OutputEncoding::Pcm16 && config.sample_rate != SampleRate::Hz8000 {
             return Err(invalid("mu-law and A-law output need an 8000 Hz session"));
         }
+        // The session's language and model (a call that switches language asks for another
+        // voice and possibly another model) win over the adapter's configured ones.
+        let session_language = config.language.as_deref().filter(|l| is_plain_code(l));
         Ok(RequestTemplate {
-            model_id: self.config.model_id.clone(),
+            model_id: match config.model.as_deref().filter(|m| is_plain_code(m)) {
+                Some(model) => model.to_owned(),
+                None => self.config.model_id.clone(),
+            },
             voice: config.voice.to_string(),
-            language: self.config.language.clone(),
+            language: session_language
+                .map(str::to_owned)
+                .or_else(|| self.config.language.clone()),
             encoding,
             sample_rate: config.sample_rate.hz(),
             max_buffer_delay_ms: self.config.max_buffer_delay_ms,
@@ -483,6 +491,16 @@ impl Inner {
 ///
 /// # Errors
 /// A static description of what is wrong; it never contains the URL.
+/// A model id or language code from the engine: letters, digits, `.`, `_` and `-`, so it can
+/// never break the request JSON or smuggle a field.
+fn is_plain_code(text: &str) -> bool {
+    !text.is_empty()
+        && text.len() <= 64
+        && text
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || matches!(c, '.' | '_' | '-'))
+}
+
 fn check_url(url: &str, allow_insecure: bool) -> std::result::Result<(), &'static str> {
     let uri: tokio_tungstenite::tungstenite::http::Uri =
         url.parse().map_err(|_| "the websocket url is not valid")?;

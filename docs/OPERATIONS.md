@@ -72,6 +72,8 @@ exit status 1 and a message naming the variable.
 | `BRISVOX_PROVIDER_LIMITS` | none | `name=n,...`: concurrent calls per provider, e.g. `deepgram=50,openai=100,cartesia=50`. Names are the agent file's `provider` values (`deepgram`, `assemblyai`, `gladia`, `sherpa_onnx`, `openai_realtime_stt`, `openai`, `anthropic`, `gemini`, `openai_compatible`, `cartesia`, `elevenlabs`, `deepgram_aura`, `openai_speech`). |
 | `BRISVOX_HEALTH_ADDR` | `0.0.0.0:8081` | Address of the `/healthz` + `/readyz` listener; `off` disables it; `${PORT}` is allowed (see "Port placeholder" below). On a non-loopback address `/metrics` needs `BRISVOX_METRICS_TOKEN` (below). |
 | `BRISVOX_METRICS_TOKEN` | unset | Bearer token `/metrics` requires when `BRISVOX_HEALTH_ADDR` is not loopback. Without it `/metrics` answers 404 there (a warning is logged at start). Never logged. |
+| `BRISVOX_ADMIN_TOKEN` | unset | Bearer token `POST /admin/reload` requires ("Reloading the agent", below). Without it the endpoint is open on a loopback `BRISVOX_HEALTH_ADDR` (not to browsers) and off (404) on any other address, whatever `BRISVOX_INSECURE_LISTENERS` says. A different secret from `BRISVOX_METRICS_TOKEN`. Never logged. |
+| `BRISVOX_AGENT_RELOAD_POLL_MS` | unset (off) | Check the agent file(s) for changes every this many milliseconds (100 to 86 400 000) and reload when the content changed. `0` or unset: no poll (the endpoint and `SIGHUP` still reload). "Reloading the agent", below. |
 | `BRISVOX_INSECURE_LISTENERS` | `false` | `1`/`true`: listeners that would refuse to start without authentication (generic websocket, RTVI, WebRTC signaling, Telnyx on a non-loopback address) start anyway, and `/metrics` is served without a token. Logged loudly. See "Authentication" below and `docs/SECURITY.md`. |
 | `BRISVOX_SESSION_SECRET` | unset | Signs the short-lived single-use session tokens the generic websocket, RTVI and WebRTC listeners accept (at least 32 bytes; shorter is refused). `docs/SECURITY.md`. |
 | `BRISVOX_SESSION_SECRET_PREV` | unset | The previous session secret, still verified while old tokens expire (rotation). Needs `BRISVOX_SESSION_SECRET`. |
@@ -161,7 +163,7 @@ exit status 1 and a message naming the variable.
 | `BRISVOX_MODELS_DIR` | `models` | Directory of the model files. |
 | `BRISVOX_EXTRA_CA_FILE` | unset | **Tests and benchmarks only.** PEM file of CA certificates that every provider adapter trusts besides the public roots (certificate and host name are still verified). It lets the adapters talk TLS to the fake providers of `bench/fake_providers`, whose certificate is signed by a throwaway CA. Read once, when the first TLS connection is set up; an unreadable or invalid file fails that connection. Not for production: use a real certificate, or `BRISVOX_AGENT_TLS_CA` for a private agent. |
 | `BRISVOX_SMART_TURN_THREADS` | the inference pool's threads (half the cores) | Threads of the Smart Turn executor: the 20-25 ms analyses run on their own threads so they never delay the VAD windows of other calls. `0` runs them on the VAD's pool as before (use it to compare). One thread is about 55% busy at 200 calls and delays verdicts when turns end together; the default carries ~180 calls per thread with headroom. Small machines: the default is half the cores (at least 1), so 1-3 cores give 1 executor thread; the server logs a warning at start when the VAD pool, the executor and the ONNX Runtime intra-op workers together exceed the available cores. |
-| `BRISVOX_SMART_TURN_GRAPH` | `original` | `original` runs the pinned model exactly as published; `fused` (opt-in) runs it with its GELUs fused into one operation each: about 40% less memory traffic per analysis and more calls per core under load, verdicts matching the published graph on 3997 of 4000 test clips, but one early verdict on an abrupt cut ended a turn the published graph did not (docs/providers/smart-turn.md "Fused GELU"). |
+| `BRISVOX_SMART_TURN_GRAPH` | `fused` | `fused` runs the pinned model with its GELUs fused into one operation each: about 40% less memory traffic per analysis and more calls per core under load; on the official test set its verdicts matched the published graph on 3997 of 4000 clips with the same accuracy, and its early verdicts ended as many turns too soon as the published graph's, with and without VNNI (docs/providers/smart-turn.md "Fused GELU"); `original` runs the file exactly as published. |
 
 A listener address is `host:port` or `off`. Without any listener (`BRISVOX_WS_ADDR=off` and
 the others unset) the binary serves its health endpoints only and needs no agent file.
@@ -373,8 +375,9 @@ counted by reason and is answered cleanly by the transport that met it.
 
 ## Health endpoints
 
-Served on `BRISVOX_HEALTH_ADDR` over plain HTTP/1.1, `GET` or `HEAD`, one request per
-connection (`Connection: close`), `Cache-Control: no-store`.
+Served on `BRISVOX_HEALTH_ADDR` over plain HTTP/1.1, `GET` or `HEAD` (and `POST /admin/reload`,
+see "Reloading the agent"), one request per connection (`Connection: close`),
+`Cache-Control: no-store`.
 
 | Path | 200 when | 503 when | Body |
 |---|---|---|---|
@@ -449,6 +452,7 @@ scrape time.
 | `brisvox_provider_errors_total` | counter | `stage`, `kind` | Provider failures the engine counted (connect failures, session deaths, LLM request/stream errors and timeouts, TTS send failures and stalls), added when a call ends. |
 | `brisvox_engine_events_total` | counter | `event` | Engine trouble of finished calls: queue and stale drops, pool trouble, finals-gate, settle and mark timeouts, truncations. |
 | `brisvox_calls_ended_total` | counter | | Calls whose end-of-call statistics were added. |
+| `brisvox_language_switches_total` | counter | | Times a call's agent followed the caller into another language (an agent with `[languages]`; added when the call ends). |
 | `brisvox_llm_tokens_total` | counter | `provider`, `model`, `kind` (`input`, `cached_input`, `output`) | LLM tokens the provider reported for finished calls, discarded speculative responses included. `cached_input` is part of `input`. |
 | `brisvox_stt_audio_seconds_total` | counter | `provider`, `model` | Seconds of audio sent to the STT provider by finished calls. |
 | `brisvox_tts_characters_total` | counter | `provider`, `model` | Characters sent to the TTS provider by finished calls. |
@@ -458,11 +462,14 @@ scrape time.
 | `brisvox_retry_budget_available`, `brisvox_retry_budget_total{outcome}` | gauge/counter | `outcome` (`granted`, `refused`) | The process retry budget. |
 | `brisvox_resilience_events_total` | counter | `stage`, `event` | Per-call resilience counters summed: `attempts`, `retries`, `failovers` (served by the secondary), `breaker_skips`, `budget_refusals`, `unavailable`, `recoveries`, `recovery_failures`, `replayed`, `idle_refreshes`. Added at every finished turn and when a call ends. |
 | `brisvox_traces_total`, `brisvox_trace_batches_total` | counter | `outcome` | Traces built and dropped; OTLP batches sent and failed. |
+| `brisvox_agent_reloads_total` | counter | `result` (`ok`, `unchanged`, `invalid`, `needs_restart`) | Agent definition reloads ("Reloading the agent"). |
+| `brisvox_agent_generation` | gauge | | The definition new calls run: 1 at start, one more per applied reload. |
 
 The usage families (`brisvox_llm_tokens_total` and the two after it) are labelled with the
-`provider` and `model` of the agent definitions the process runs (at most two: `BRISVOX_AGENT_FILE`
-and `BRISVOX_WS_AGENT_FILE`), never with anything a caller sends, so their cardinality is fixed; they
-exist at zero from startup. A call that failed over to a secondary provider is still counted under
+`provider` and `model` of the agent definitions the process runs (two at a time: `BRISVOX_AGENT_FILE`
+and `BRISVOX_WS_AGENT_FILE`; a reload that changes a model adds a series), never with anything a caller
+sends. The table is capped at 16 series per stage (the rest is added to `other`); the series of the
+start exist at zero from startup. A call that failed over to a secondary provider is still counted under
 the primary. See "Usage and cost".
 
 Useful alerts: `rate(brisvox_smart_turn_rejected_total[5m]) > 0` or
@@ -610,7 +617,10 @@ directory is a start error.
 | `BRISVOX_LOG_REDACT_KINDS` | `email,iban,id,card,phone` | The kinds the log scrub replaces; needs `BRISVOX_LOG_REDACT_PII=true`. |
 
 The agent file's `[recording]` table (`docs/CONFIG.md`) overrides the content settings above. Use a
-directory dedicated to the recordings: the retention sweeper reads every entry of it.
+directory dedicated to the recordings: the retention sweeper reads every entry of it. The sweeper
+starts once the server is fully up (providers built, MCP servers connected, listeners bound), so a
+start that fails never deletes anything.
+
 ## Provider resilience settings
 
 The circuit breakers and retry budgets of the resilience layer (`docs/PROVIDERS.md`).
@@ -631,6 +641,150 @@ The defaults are the ones in the table; each applies process-wide.
 The agent file names the secondaries (`[stt|llm|tts].secondary`, `docs/CONFIG.md`); these
 variables set how eagerly the process fails over to them. Breaker states, the budget and the
 failovers are on `/metrics` (above).
+
+## Reloading the agent
+
+Edit the agent file and the running server picks it up, without a restart: **new calls use the
+new definition, calls in progress keep theirs until they end.** Prompt, voice, providers, tools,
+MCP servers, turn settings and the rest of the file (`docs/CONFIG.md`) are reloaded; what the
+process is set up with at start (below) is not.
+
+### Triggers
+
+| Trigger | How | Where |
+|---|---|---|
+| Admin endpoint | `POST /admin/reload` on the health listener | everywhere; see "Access" |
+| `SIGHUP` | `kill -HUP <pid>` (`docker kill -s HUP <container>`) | Unix |
+| File poll | `BRISVOX_AGENT_RELOAD_POLL_MS=1000` (100 to 86 400 000; unset or `0`: off) | everywhere |
+
+The poll looks at the file's modification time and size each interval and, when they moved,
+at a hash of its content; a change is applied once the file stayed the same for one more interval,
+so an editor's two-step save is not read half-written. Its interval runs on the server's clock.
+**The poll asks for a reload once per change**: a text it asked for and that did not become live
+(invalid, needs a restart, held back, timed out) is not asked for again until the file changes
+again, so a refused file does not warn, count and rebuild every interval, and a reload that timed
+out on a slow MCP server does not start another 120 s attempt at once. The endpoint and `SIGHUP`
+always try again. On Windows, where there is no `SIGHUP`, use the endpoint or the poll. A
+Kubernetes ConfigMap mounted as a file is refreshed by the kubelet some time after it changes; the
+poll (or a `curl` in a sidecar) then reloads it.
+
+**`SIGHUP` is handled from the start**, so a closed terminal or a hung-up SSH session, which sends
+`SIGHUP` to a foreground process, reloads the agent instead of ending the server (previously it
+ended it). Run the server under a supervisor (systemd, Docker, Kubernetes) as usual.
+
+```sh
+brisvox-server check agent.toml            # optional: the same checks, offline
+curl -sS -X POST -H "Authorization: Bearer $BRISVOX_ADMIN_TOKEN" http://127.0.0.1:8081/admin/reload
+```
+
+```json
+{"result":"ok","generation":2,"message":"reloaded: new calls run generation 2; 3 call(s) in progress keep the previous definition until they end",
+ "agents":[{"slot":"agent","agent":"support-en-v2","result":"applied","detail":"support-en -> support-en-v2; 3 call(s) keep the old definition until they end"}]}
+```
+
+| `result` | HTTP | Meaning |
+|---|---|---|
+| `ok` | 200 | A new definition is live. |
+| `unchanged` | 200 | The file has not changed since it was loaded (or is the environment's, below); nothing was done. |
+| `invalid` | 422 | The new file is not valid, or its snapshot could not be built (a provider, a tool, an MCP server that does not answer). `message` and `detail` carry the error with the file position (`agent.toml:12:5: ...`). The old definition stays. |
+| `needs_restart` | 409 | The change touches something fixed while the process runs (below). The old definition stays. |
+| `timed_out` | 504 | The reload did not finish in 120 s (a slow MCP server). The old definition stays. Counted as `invalid`. Only the endpoint or `SIGHUP` tries again; the poll does not. |
+| `draining` | 503 | The server is shutting down; no reload. |
+
+Other answers: `401`/`403`/`404` (access, below), `405` (anything but `POST`), `413` (a request
+body over 4 KiB; the endpoint ignores bodies), `429` (two reloads are already running or waiting:
+the endpoint holds at most two connections so that probes keep theirs; retry in a few seconds).
+
+**What the operator sees.** Through the endpoint, the JSON above. Through `SIGHUP` or the poll
+there is no caller, so the answer is the log line (below) and the counter:
+
+| Outcome | Log (`brisvox::server`) | `brisvox_agent_reloads_total` |
+|---|---|---|
+| `ok` | info `agent reload`, `result=ok`, the new `generation` | `ok` |
+| `unchanged` | info `agent reload`, `result=unchanged` | `unchanged` |
+| `invalid` (also a file that could not be read in time, which says so in `problem`) | warn `agent reload refused: the old definition stays`, `problem` = the error with its file position | `invalid` |
+| `needs_restart` | the same warning, `problem` = what needs the restart | `needs_restart` |
+| `timed_out` | the same warning, `problem` = the timeout | `invalid` |
+| `draining` | info `agent reload`, `result=draining` | none |
+
+`agents` has one entry per reloadable definition: `agent` (`BRISVOX_AGENT_FILE`) and, when set,
+`websocket_agent` (`BRISVOX_WS_AGENT_FILE`), each `applied`, `unchanged`, `invalid`,
+`needs_restart` or `held`. **A reload applies completely or not at all**: when one of the two is
+not valid, the other is `held` and nothing changes. Reloads run one at a time.
+
+### What a reload does
+
+1. Reads the file(s) and parses and validates them exactly like the start (syntax, ranges,
+   cross-field checks, the secrets the file names from the environment). Any error: stop, keep
+   the old definition, log a warning, answer `invalid`, count `result="invalid"`.
+2. Builds a new *snapshot*: the definition's providers, its tools and its MCP servers. The MCP
+   servers are connected and their allowlists checked against what they offer with the start's
+   bounds (`startup_timeout_ms` of each server). A server that cannot be reached fails the reload
+   and nothing is left running from the attempt.
+3. Swaps the snapshot in with one step. A call is given the snapshot that is current when it is
+   accepted and holds it until it ends.
+4. Retires the old snapshot. It stays as long as any call runs on it; when the last of them ends,
+   its MCP connections are closed (a stdio server gets its standard input closed and a few seconds
+   to leave before it is killed; HTTP sessions are dropped) and its warm provider connections
+   stop. Nothing is closed while a call still uses it.
+
+While calls from before a reload are still running, both snapshots are live: the MCP servers of
+both definitions run, and the providers hold both sets of connections. A long call that keeps an
+old definition for an hour keeps its MCP servers for an hour.
+
+**A reload starts the new definition's providers from a clean state.** The circuit breakers
+(`brisvox_breaker_*`), the retry budget (`brisvox_retry_budget_*`) and the idle-refresh timers
+belong to the providers, and the new snapshot has new providers: a provider that was failing and
+had an open breaker is tried again by new calls, and `/metrics` shows the live snapshot's breakers
+and budget. Calls still running on the old snapshot keep theirs. The building of a snapshot runs
+on the blocking pool, off the threads that serve calls.
+
+### What cannot change at runtime
+
+A reload answers `needs_restart` (and changes nothing) when the new file would change
+- the `[recording]` table (recording is set up at the start: directory, retention sweeper,
+  encryption);
+- the providers a `BRISVOX_PROVIDER_LIMITS` limit applies to: a limit for a provider that no
+  definition used at the start was dropped then, and a reload cannot bring it back;
+- a Smart Turn model: a definition that becomes adaptive when the server started without a model
+  (`BRISVOX_SMART_TURN_MODEL=off`, or no model file) needs the model and its executor, which are
+  set up at the start. A model the process has is shared by the new definition.
+
+Not reloaded at all, because they belong to the process and not to the file: every `BRISVOX_*`
+setting (listener addresses, tokens, TLS, limits, timeouts), the secrets themselves (a definition
+reads its `api_key_env` values from the environment the process started with: a rotated key needs
+a restart, a file naming a variable that is not set is `invalid`), which file is used
+(`BRISVOX_AGENT_FILE` is read at the start), the application's own tools (`run_with_tools`) and
+the carriers' call control (`BRISVOX_CALL_CONTROL`): the file chooses among them with
+`agent.tools`. A definition given as `BRISVOX_AGENT_DEFINITION` is part of the environment and
+cannot change while the process runs: its reload is `unchanged`; restart to change it. A provider
+this binary was built without is an error of the new file, as it is at the start.
+
+### Access
+
+The endpoint changes what new calls run, so it has a credential of its own. It is **not** the
+metrics token.
+
+| Health address | `BRISVOX_ADMIN_TOKEN` | `POST /admin/reload` |
+|---|---|---|
+| any | set | requires `Authorization: Bearer <token>` (constant-time compare; 401 without) |
+| loopback | unset | open to local processes; a request with an `Origin` header (what a browser sends, so a web page) is refused with 403 |
+| not loopback | unset | off: 404 (`BRISVOX_INSECURE_LISTENERS` does not open it) |
+
+`SIGHUP` needs no endpoint: whoever can signal the process can reload it. The answer carries
+the file's error text, so keep the endpoint behind the token.
+
+### Observability
+
+| Metric | Meaning |
+|---|---|
+| `brisvox_agent_reloads_total{result}` | Reloads by result: `ok`, `unchanged`, `invalid` (a timeout counts here too), `needs_restart`. Alert on `increase(...{result="invalid"}[10m]) > 0`: a deploy that edited the file and did not take effect. |
+| `brisvox_agent_generation` | The definition new calls run: 1 at start, one more per applied reload. |
+
+Every reload writes one log line on `brisvox::server`: `agent reload` at info (`ok`, `unchanged`)
+or `agent reload refused: the old definition stays` at warn, with `trigger` (`endpoint`,
+`sighup`, `poll`), `result`, `generation`, `elapsed_ms`, `agents` and, for a refusal, `problem`.
+The call summaries and the usage metrics name the definition each call ran on.
 
 ## Shutdown
 

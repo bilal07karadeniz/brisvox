@@ -304,6 +304,8 @@ fn tts_config(voice: &str) -> TtsConfig {
     TtsConfig {
         sample_rate: SampleRate::Hz24000,
         voice: Arc::from(voice),
+        language: None,
+        model: None,
     }
 }
 
@@ -411,6 +413,7 @@ async fn run_stt(
                     is_final,
                     speech_final,
                     from_finalize,
+                    ..
                 } => out.push(Ev {
                     t: t0.elapsed(),
                     text: text.to_string(),

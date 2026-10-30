@@ -293,6 +293,7 @@ async fn the_exposition_parses_and_carries_the_stage_histograms() {
         "brisvox_provider_errors_total",
         "brisvox_engine_events_total",
         "brisvox_calls_ended_total",
+        "brisvox_language_switches_total",
         "brisvox_llm_tokens_total",
         "brisvox_stt_audio_seconds_total",
         "brisvox_tts_characters_total",
@@ -1134,6 +1135,7 @@ fn stats_with(tokens: [u64; 3], audio_ms: u64, chars: u64) -> brisvox_engine::se
             book: Default::default(),
             truncations: Default::default(),
             unnoted_clear_cuts: 0,
+            language: Default::default(),
         },
     }
 }

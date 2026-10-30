@@ -99,6 +99,305 @@ pub(crate) fn check(
     check_stt(file, issues, compiled);
     check_llm(file, issues, compiled);
     check_tts(file, issues, compiled);
+    check_languages(file, issues);
+}
+
+/// The listed languages whose primary code is `code`.
+fn has_language(file: &AgentFile, code: &str) -> bool {
+    file.languages
+        .speak
+        .iter()
+        .any(|entry| entry.code.get_ref().primary() == code)
+}
+
+/// Cartesia models without Turkish (docs/providers/language-switching.md, "Cartesia").
+const CARTESIA_NO_TURKISH: [&str; 3] = ["sonic-2", "sonic-turbo", "sonic"];
+
+/// `[languages]`: the list itself, the default, and that the chosen STT and TTS providers can
+/// follow a caller between the listed languages (docs/providers/language-switching.md).
+fn check_languages(file: &AgentFile, issues: &mut Issues<'_>) {
+    let section = &file.languages;
+    if section.speak.is_empty() {
+        if let Some(default) = &section.default {
+            issues.at(
+                "languages.default",
+                default.span(),
+                "has no effect without [[languages.speak]] entries".to_owned(),
+            );
+        }
+        return;
+    }
+    if section.speak.len() < 2
+        && let Some(only) = section.speak.first()
+    {
+        issues.at(
+            "languages.speak",
+            only.code.span(),
+            "lists one language; list at least two, or leave [languages] out".to_owned(),
+        );
+    }
+    if section.speak.len() > brisvox_engine::language::MAX_LANGUAGES {
+        issues.general(
+            "languages.speak",
+            format!(
+                "{} languages: at most {}",
+                section.speak.len(),
+                brisvox_engine::language::MAX_LANGUAGES
+            ),
+        );
+    }
+    let mut seen: Vec<String> = Vec::new();
+    for (i, entry) in section.speak.iter().enumerate() {
+        let code = entry.code.get_ref();
+        let primary = code.primary();
+        if !ENGINE_LANGUAGES.contains(&primary.as_str()) {
+            issues.at(
+                &format!("languages.speak[{i}].code"),
+                entry.code.span(),
+                format!(
+                    "`{code}` is not supported: the engine's segmenter and speech normalizer \
+                     support \"en\" and \"tr\""
+                ),
+            );
+        } else if seen.contains(&primary) {
+            issues.at(
+                &format!("languages.speak[{i}].code"),
+                entry.code.span(),
+                format!("`{primary}` is listed twice"),
+            );
+        }
+        seen.push(primary);
+    }
+    // The language the call starts in.
+    let default = section.default.as_ref().unwrap_or(&file.agent.language);
+    if !has_language(file, &default.get_ref().primary()) {
+        let key = if section.default.is_some() {
+            "languages.default"
+        } else {
+            "agent.language"
+        };
+        issues.at(
+            key,
+            default.span(),
+            format!(
+                "`{}` is not one of the [[languages.speak]] entries; the call starts in this \
+                 language, so list it",
+                default.get_ref()
+            ),
+        );
+    }
+    check_languages_stt(file, issues);
+    check_languages_tts(file, issues);
+}
+
+/// The STT side of `[languages]`.
+fn check_languages_stt(file: &AgentFile, issues: &mut Issues<'_>) {
+    let stt = &file.stt;
+    if let Some(language) = &stt.language {
+        issues.at(
+            "stt.language",
+            language.span(),
+            "conflicts with [languages]: the STT listens in all the listed languages; remove it"
+                .to_owned(),
+        );
+    }
+    let secondary = stt.secondary.as_ref().map(|s| s.get_ref().as_ref());
+    for (prefix, section) in
+        std::iter::once(("stt", stt)).chain(secondary.map(|s| ("stt.secondary", s)))
+    {
+        match *section.provider.get_ref() {
+            SttProviderKind::SherpaOnnx => issues.at(
+                &format!("{prefix}.provider"),
+                section.provider.span(),
+                "sherpa_onnx serves one model per language and reports no language, so it \
+                 cannot follow a caller between the [languages]; use deepgram, assemblyai, \
+                 gladia or openai_realtime_stt"
+                    .to_owned(),
+            ),
+            SttProviderKind::Deepgram => {
+                // `language=multi` is a Nova-3 / Nova-2 mode (Flux multilingual has no Turkish).
+                let model = section
+                    .deepgram
+                    .as_ref()
+                    .and_then(|o| o.get_ref().model.as_ref());
+                let name = model.map_or("nova-3", |m| m.get_ref().as_str());
+                // Exact names: `nova-3-medical` has a `multi` mode too, but of ten languages
+                // without Turkish (docs/providers/language-switching.md).
+                if !["nova-3", "nova-2"].contains(&name) {
+                    issues.at(
+                        &format!("{prefix}.deepgram.model"),
+                        model.map_or_else(|| section.provider.span(), Spanned::span),
+                        format!(
+                            "Deepgram model `{name}` has no multilingual mode for Turkish and \
+                             English (nova-3 and nova-2 do: `language=multi`)"
+                        ),
+                    );
+                }
+            }
+            SttProviderKind::Assemblyai
+            | SttProviderKind::Gladia
+            | SttProviderKind::OpenaiRealtimeStt => {}
+        }
+    }
+}
+
+/// The TTS side of `[languages]`: every listed language must be speakable by the provider.
+fn check_languages_tts(file: &AgentFile, issues: &mut Issues<'_>) {
+    let tts = &file.tts;
+    let secondary = tts.secondary.as_ref().map(|s| s.get_ref().as_ref());
+    for (i, entry) in file.languages.speak.iter().enumerate() {
+        let primary = entry.code.get_ref().primary();
+        let at = |field: &str| format!("languages.speak[{i}].{field}");
+        for (prefix, section) in
+            std::iter::once(("tts", tts)).chain(secondary.map(|s| ("tts.secondary", s)))
+        {
+            let primary_section = prefix == "tts";
+            // The model that speaks this language: the entry's (primary provider only), else the
+            // provider's configured one.
+            let entry_model = entry.tts_model.as_ref().filter(|_| primary_section);
+            match *section.provider.get_ref() {
+                TtsProviderKind::DeepgramAura => {
+                    if !AURA_LANGUAGES.contains(&primary.as_str()) {
+                        issues.at(
+                            &at("code"),
+                            entry.code.span(),
+                            format!(
+                                "{} has no voice for `{primary}` (Aura speaks {}); use Cartesia or \
+                                 ElevenLabs to speak this language",
+                                if primary_section {
+                                    "Deepgram Aura"
+                                } else {
+                                    "the secondary Deepgram Aura"
+                                },
+                                AURA_LANGUAGES.join(", ")
+                            ),
+                        );
+                    } else if primary_section {
+                        let voice = entry.voice.get_ref().as_str();
+                        let suffix = voice
+                            .rsplit(['-', '_'])
+                            .next()
+                            .unwrap_or("")
+                            .to_ascii_lowercase();
+                        if AURA_LANGUAGES.contains(&suffix.as_str()) && suffix != primary {
+                            issues.at(
+                                &at("voice"),
+                                entry.voice.span(),
+                                format!("voice `{voice}` speaks `{suffix}`, not `{primary}`"),
+                            );
+                        }
+                    }
+                }
+                TtsProviderKind::Elevenlabs => {
+                    let model = entry_model.or(section
+                        .elevenlabs
+                        .as_ref()
+                        .and_then(|o| o.get_ref().model.as_ref()));
+                    if primary != "en"
+                        && let Some(model) = model
+                        && model.get_ref().as_str() == "eleven_flash_v2"
+                    {
+                        issues.at(
+                            &if entry_model.is_some() {
+                                at("tts_model")
+                            } else {
+                                format!("{prefix}.elevenlabs.model")
+                            },
+                            model.span(),
+                            format!(
+                                "`eleven_flash_v2` is English only but `{primary}` is listed (use \
+                                 eleven_flash_v2_5)"
+                            ),
+                        );
+                    }
+                }
+                TtsProviderKind::Cartesia => {
+                    let model = entry_model.or(section
+                        .cartesia
+                        .as_ref()
+                        .and_then(|o| o.get_ref().model.as_ref()));
+                    if primary == "tr"
+                        && let Some(model) = model
+                        && CARTESIA_NO_TURKISH.contains(&model.get_ref().as_str())
+                    {
+                        issues.at(
+                            &if entry_model.is_some() {
+                                at("tts_model")
+                            } else {
+                                format!("{prefix}.cartesia.model")
+                            },
+                            model.span(),
+                            format!(
+                                "Cartesia model `{}` does not list Turkish (sonic-3 and later do)",
+                                model.get_ref()
+                            ),
+                        );
+                    }
+                }
+                TtsProviderKind::OpenaiSpeech => {
+                    let preset = section
+                        .openai_speech
+                        .as_ref()
+                        .and_then(|o| o.get_ref().preset);
+                    if primary == "tr" && preset == Some(super::schema::SpeechPreset::Kokoro) {
+                        issues.at(
+                            &at("code"),
+                            entry.code.span(),
+                            "Kokoro has no Turkish voice (docs/providers/language-switching.md); \
+                             use the chatterbox preset or another provider for Turkish"
+                                .to_owned(),
+                        );
+                    }
+                    if let Some(model) = entry_model {
+                        issues.at(
+                            &at("tts_model"),
+                            model.span(),
+                            "is not used with provider \"openai_speech\" (set `model` in \
+                             [tts.openai_speech])"
+                                .to_owned(),
+                        );
+                    }
+                }
+            }
+        }
+        if let Some(voice) = &entry.secondary_voice {
+            match secondary {
+                None => issues.at(
+                    &at("secondary_voice"),
+                    voice.span(),
+                    "needs a [tts.secondary]: it is the voice of the failover provider".to_owned(),
+                ),
+                Some(second)
+                    if matches!(*second.provider.get_ref(), TtsProviderKind::DeepgramAura) =>
+                {
+                    // An Aura voice id carries its language as the last `-` part.
+                    let name = voice.get_ref().as_str();
+                    let suffix = name
+                        .rsplit(['-', '_'])
+                        .next()
+                        .unwrap_or("")
+                        .to_ascii_lowercase();
+                    if AURA_LANGUAGES.contains(&suffix.as_str()) && suffix != primary {
+                        issues.at(
+                            &at("secondary_voice"),
+                            voice.span(),
+                            format!("voice `{name}` speaks `{suffix}`, not `{primary}`"),
+                        );
+                    }
+                }
+                Some(_) => {}
+            }
+        }
+        if let Some(model) = &entry.tts_model
+            && matches!(*tts.provider.get_ref(), TtsProviderKind::DeepgramAura)
+        {
+            issues.at(
+                &at("tts_model"),
+                model.span(),
+                "is not used with provider \"deepgram_aura\" (the voice is the model)".to_owned(),
+            );
+        }
+    }
 }
 
 /// The language a stage runs in: its own override, else the agent's.
@@ -599,7 +898,8 @@ fn check_secondary_fields(
 fn check_stt(file: &AgentFile, issues: &mut Issues<'_>, compiled: &dyn Fn(Provider) -> bool) {
     let stt = &file.stt;
     let language = stage_language(file, stt.language.as_ref());
-    check_stt_section(&file.stt, "stt", language, issues, compiled);
+    let also_turkish = has_language(file, "tr");
+    check_stt_section(&file.stt, "stt", (language, also_turkish), issues, compiled);
     if let Some(secondary) = &stt.secondary {
         let s = secondary.get_ref();
         check_secondary_fields(
@@ -620,7 +920,13 @@ fn check_stt(file: &AgentFile, issues: &mut Issues<'_>, compiled: &dyn Fn(Provid
             ],
         );
         // The secondary speaks the primary's language.
-        check_stt_section(s, "stt.secondary", language, issues, compiled);
+        check_stt_section(
+            s,
+            "stt.secondary",
+            (language, also_turkish),
+            issues,
+            compiled,
+        );
     }
 }
 
@@ -628,7 +934,7 @@ fn check_stt(file: &AgentFile, issues: &mut Issues<'_>, compiled: &dyn Fn(Provid
 fn check_stt_section(
     stt: &SttSection,
     prefix: &str,
-    language: &Spanned<LanguageTag>,
+    (language, also_turkish): (&Spanned<LanguageTag>, bool),
     issues: &mut Issues<'_>,
     compiled: &dyn Fn(Provider) -> bool,
 ) {
@@ -679,7 +985,8 @@ fn check_stt_section(
             ),
         );
     }
-    let turkish = language.get_ref().primary() == "tr";
+    // Turkish is spoken when it is the stage language or one of the `[languages]`.
+    let turkish = also_turkish || language.get_ref().primary() == "tr";
     match *stt.provider.get_ref() {
         SttProviderKind::Deepgram => {
             let options = stt.deepgram.as_ref().map(Spanned::get_ref);

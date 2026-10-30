@@ -810,6 +810,90 @@
       },
       "type": "object"
     },
+    "LanguageEntry": {
+      "additionalProperties": false,
+      "description": "One `[[languages.speak]]` entry.",
+      "properties": {
+        "code": {
+          "description": "The language: `en` or `tr` (a region is cut off).",
+          "examples": [
+            "en",
+            "tr",
+            "tr-TR"
+          ],
+          "pattern": "^[A-Za-z]{2,3}(-[A-Za-z0-9]{1,8})*$",
+          "type": "string"
+        },
+        "secondary_voice": {
+          "description": "The voice of `[tts.secondary]` for this language, when the failover provider needs\nanother voice per language. Default: `tts.secondary.voice` for every language.",
+          "maxLength": 256,
+          "minLength": 1,
+          "pattern": "^[^\\s\\u0000-\\u001f\\u007f-\\u009f]+$",
+          "type": "string"
+        },
+        "tts_model": {
+          "description": "The TTS model for this language, when it differs from `[tts.<provider>].model`\n(Cartesia, ElevenLabs).",
+          "maxLength": 256,
+          "minLength": 1,
+          "pattern": "^[^\\s\\u0000-\\u001f\\u007f-\\u009f]+$",
+          "type": "string"
+        },
+        "voice": {
+          "description": "The TTS voice for this language (a voice id of the `[tts]` provider; for Deepgram Aura\nthe model string).",
+          "maxLength": 256,
+          "minLength": 1,
+          "pattern": "^[^\\s\\u0000-\\u001f\\u007f-\\u009f]+$",
+          "type": "string"
+        }
+      },
+      "required": [
+        "code",
+        "voice"
+      ],
+      "type": "object"
+    },
+    "LanguagesSection": {
+      "additionalProperties": false,
+      "description": "`[languages]`: a call that follows the caller between several languages. Without any\n`[[languages.speak]]` entry the agent speaks `agent.language` only.\n\nThe STT is switched to its multilingual mode (Deepgram `language=multi` with the languages as\nhints, AssemblyAI `language_codes` and `language_detection`, Gladia `languages` with\n`code_switching`, OpenAI `languages`) and the language of each finished utterance is taken\nfrom the provider's report, else detected from its text. When the caller speaks another\nlisted language on `switch_after` utterances in a row (or once, when the provider is\nconfident), the next reply is in that language with that language's voice.",
+      "properties": {
+        "default": {
+          "description": "The language the call starts in. Default: `agent.language`. Must be listed.",
+          "examples": [
+            "en",
+            "tr",
+            "tr-TR"
+          ],
+          "pattern": "^[A-Za-z]{2,3}(-[A-Za-z0-9]{1,8})*$",
+          "type": "string"
+        },
+        "min_words": {
+          "description": "Utterances with fewer words count as no evidence (a backchannel, a name). 1..=20. Default\n2.",
+          "maximum": 20,
+          "minimum": 1,
+          "type": "integer"
+        },
+        "speak": {
+          "description": "The languages, at least two: `en` and `tr`, the engine's segmenter and speech normalizer\nlanguages.",
+          "items": {
+            "$ref": "#/$defs/LanguageEntry"
+          },
+          "type": "array"
+        },
+        "switch_after": {
+          "description": "Consecutive utterances in another listed language before the agent follows (1..=10).\nDefault 2.",
+          "maximum": 10,
+          "minimum": 1,
+          "type": "integer"
+        },
+        "switch_confidence": {
+          "description": "Provider-reported confidence (0..=1) at which one utterance is enough to switch (only\nAssemblyAI reports one). Default 0.9.",
+          "maximum": 1.0,
+          "minimum": 0.0,
+          "type": "number"
+        }
+      },
+      "type": "object"
+    },
     "LlmProviderKind": {
       "description": "`llm.provider`.",
       "oneOf": [
@@ -1861,6 +1945,10 @@
     "interruption": {
       "$ref": "#/$defs/InterruptionSection",
       "description": "Which barge-ins interrupt the bot."
+    },
+    "languages": {
+      "$ref": "#/$defs/LanguagesSection",
+      "description": "The languages the agent follows the caller between (`docs/CONFIG.md`, \"Languages\")."
     },
     "llm": {
       "$ref": "#/$defs/LlmSection",

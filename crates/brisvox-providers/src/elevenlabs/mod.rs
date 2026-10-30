@@ -507,7 +507,12 @@ impl TtsProvider for ElevenLabsTts {
     fn connect(&self, config: TtsConfig) -> impl Future<Output = Result<TtsSession>> + Send {
         let inner = Arc::clone(&self.inner);
         async move {
-            let template = inner.template(&config.voice, config.sample_rate)?;
+            let template = inner.template(
+                &config.voice,
+                config.sample_rate,
+                config.language.as_deref(),
+                config.model.as_deref(),
+            )?;
             let socket = inner.acquire(&template.url).await?;
             let id = SESSIONS.fetch_add(1, Ordering::Relaxed);
             Ok(session::spawn(inner, socket, template, id))
@@ -533,7 +538,7 @@ impl TtsProvider for ElevenLabsTts {
             let Some((voice, rate)) = inner.config.warm_target.clone() else {
                 return Ok(());
             };
-            let template = inner.template(&voice, rate)?;
+            let template = inner.template(&voice, rate, None, None)?;
             if inner.warm_is_ready(&template.url) {
                 return Ok(());
             }
@@ -551,7 +556,13 @@ impl TtsProvider for ElevenLabsTts {
 
 impl Inner {
     /// The session settings and handshake URL for `voice` at `rate`.
-    fn template(&self, voice: &str, rate: SampleRate) -> Result<Template> {
+    fn template(
+        &self,
+        voice: &str,
+        rate: SampleRate,
+        language: Option<&str>,
+        model: Option<&str>,
+    ) -> Result<Template> {
         let invalid = |detail: &str| Error::Protocol {
             provider: PROVIDER,
             detail: format!("invalid session configuration: {detail}"),
@@ -561,15 +572,23 @@ impl Inner {
         }
         let config = &self.config;
         let format = config.encoding.format_name(rate).map_err(invalid)?;
+        // The session's model (a language may need another one) wins over the configured one.
+        let model_id = model
+            .filter(|m| is_token(m, true))
+            .unwrap_or(config.model_id.as_str());
         let mut url = format!(
             "{}/v1/text-to-speech/{voice}/multi-stream-input?model_id={}&output_format={format}\
              &inactivity_timeout={}&sync_alignment={}",
             config.url.trim_end_matches('/'),
-            config.model_id,
+            model_id,
             config.inactivity_timeout_secs,
             config.sync_alignment,
         );
-        if let Some(language) = &config.language_code {
+        // `language_code` is not supported by the multilingual_v2 models: the language of the
+        // session is left to the model there (it infers it from the text).
+        let session_language =
+            language.filter(|l| is_token(l, false) && !model_id.contains("multilingual_v2"));
+        if let Some(language) = session_language.or(config.language_code.as_deref()) {
             url.push_str("&language_code=");
             url.push_str(language);
         }

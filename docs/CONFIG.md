@@ -50,6 +50,13 @@ Loading has three steps:
 
 After that the mapped `EngineConfig` goes through `EngineConfig::validate` as a last net.
 
+**Reloading.** The server loads the file(s) again, through these same steps, when asked to
+(`POST /admin/reload`, `SIGHUP`, or `BRISVOX_AGENT_RELOAD_POLL_MS`): new calls use the new file,
+calls in progress keep theirs, and a file that fails any step is reported (with the position
+above) and leaves the old definition running. Everything in the file is reloadable except the
+`[recording]` table; secrets are read from the environment the process started with. See
+`docs/OPERATIONS.md`, "Reloading the agent".
+
 ## Errors
 
 Every problem names the file, the line and column, the key path and what is wrong (the same
@@ -452,6 +459,89 @@ clashes with another MCP tool, a tool of `agent.tools`, a telephony tool or `con
 reported at its `tools[i]` entry with the advice to set `prefix`. MCP tools are not listed in
 `agent.tools`: listing them in the server's `tools` is what offers them.
 
+### `[languages]` (optional)
+
+A call that follows the caller from one language to the other, without a new call. Without
+`[[languages.speak]]` entries the agent speaks `agent.language` only and none of this applies.
+
+```toml
+[languages]
+default = "tr"        # the call starts here; default: agent.language. Must be listed
+switch_after = 2      # utterances in another listed language in a row before the agent follows (1-10, default 2)
+switch_confidence = 0.9   # provider-reported confidence at which one utterance is enough (default 0.9)
+min_words = 2         # utterances with fewer words are no evidence (1-20, default 2)
+
+[[languages.speak]]
+code = "tr"           # en or tr: the languages of the engine's segmenter and speech normalizer
+voice = "tr-voice-id" # the TTS voice for this language (for Deepgram Aura: the model string)
+
+[[languages.speak]]
+code = "en"
+voice = "en-voice-id"
+tts_model = "eleven_v3"   # optional: a TTS model for this language (Cartesia, ElevenLabs)
+```
+
+| key | type | notes |
+|---|---|---|
+| `default` | language tag | The language the call starts in. Default `agent.language`; it must be one of the entries |
+| `switch_after` | 1-10 | How many utterances in a row in another listed language it takes. Default 2 |
+| `switch_confidence` | 0-1 | One utterance is enough when the STT provider reports at least this confidence in its language (only AssemblyAI reports one). Default 0.9 |
+| `min_words` | 1-20 | A shorter utterance (a backchannel, a name, one foreign word) neither starts nor breaks a streak. Default 2 |
+| `speak` | array of tables | At least two, at most 8, each language once |
+| `speak[].code` | `en` or `tr` | A region is cut off (`tr-TR` is `tr`) |
+| `speak[].voice` | string | The voice of this language. `tts.voice` stays required; the call speaks with the voice of the language it is in (the default language's at the start). A secondary TTS has one voice of its own for every language |
+| `speak[].tts_model` | string | The TTS model for this language, when it differs from `[tts.<provider>].model`: Cartesia and ElevenLabs only |
+| `speak[].secondary_voice` | string | The voice of `[tts.secondary]` for this language. Default: `tts.secondary.voice` in every language, which suits a failover provider whose voice is multilingual and is wrong for one whose voices are bound to a language (Aura): set it there. Needs a `[tts.secondary]` |
+
+**What the server does with it**
+
+- *Hearing.* The STT is put in its multilingual mode and listens for all listed languages for the
+  whole call, so nothing reconnects when the caller switches:
+
+  | STT | what is sent | language reported per final segment |
+  |---|---|---|
+  | `deepgram` | `language=multi` plus a `language_hint` per language (Nova-3 and Nova-2; Deepgram recommends `endpointing_ms = 100` for code-switching) | yes: the language most words of the segment are in |
+  | `assemblyai` | `language_codes` (steering) and `language_detection=true` (`universal-3-6-pro`) | yes: `language_code` and `language_confidence` of the turn |
+  | `gladia` | `language_config.languages` with `code_switching = true` | yes: the utterance language |
+  | `openai_realtime_stt` | `languages` for `gpt-live-transcribe`; other models detect the language themselves | no |
+  | `sherpa_onnx` | refused: one model per language | |
+
+  `stt.language` must not be set. When the provider reports no language for an utterance, the
+  server detects it from the final text (a trigram detector restricted to the listed languages,
+  about 10 microseconds for a sentence; it says nothing when it is not sure).
+- *Deciding.* The language of an utterance is the provider's report (the language with the most
+  words), else the text detector's. A language that is not listed counts as no evidence. The
+  agent switches after `switch_after` utterances in a row in the same other language, or at once
+  on a provider-reported confidence of `switch_confidence` or more. It is logged
+  (`language switch`, target `brisvox::engine`), counted in `brisvox_language_switches_total`
+  (`docs/OPERATIONS.md`) and sent to a linked agent process as `language.switched`
+  (`docs/AGENT_PROTOCOL.md`).
+- *Replying.* Never in the middle of a response: the language is fixed for each response when its
+  turn starts. The LLM request of the turn gets the line `Reply in Turkish.` (or English)
+  appended to the leading system message of the request; the stored conversation is not
+  changed, and the system prompt should say that the replies follow that line. The text is cut
+  and normalized (numbers, dates, abbreviations) for that language, and spoken with that
+  language's voice and model: a TTS session that speaks another voice is replaced before the
+  response's first word (the new one is connected while the LLM works on its first token).
+
+**Limits to know**
+
+- *One turn of lag when the end of a turn is forced.* The language of an utterance is decided
+  when its final text arrives, just before the turn is answered. A turn that the engine closes on
+  a timeout (the STT final did not come in time, `final_wait_ms`) is answered before its text is
+  known, so a switch that utterance causes shows from the following reply.
+- *Phrases written once.* The tool filler (`[filler]`, clips) is in the agent's language, so it is
+  spoken only in responses in the default language; a response in another language has none. The
+  line said when the tool budget is spent is built in for English and Turkish (the runner's
+  default text; a custom text from `with_phrases` is used for every language).
+- *The failover provider.* It speaks `tts.secondary.voice` unless `secondary_voice` names one for
+  the language, and its own model (a language's `tts_model` belongs to the primary provider).
+
+**What it checks.** Every listed language must be speakable by the chosen TTS provider, or the
+file is refused at its position: Deepgram Aura (no Turkish voice), Kokoro (no Turkish voice),
+`eleven_flash_v2` (English only) and Cartesia `sonic-2`/`sonic-turbo` (no Turkish) cannot follow
+a caller into Turkish. Facts and sources: `docs/providers/language-switching.md`.
+
 ### `[stt]`, `[llm]`, `[tts]` (required)
 
 Each stage has `provider`, `api_key_env` and an optional options table named after the provider
@@ -676,6 +766,8 @@ variables of the server process, not keys of the agent file. They are all descri
 | `BRISVOX_WEBRTC_HTTP_MAX_PER_IP` | Signaling connections one address may hold (default 8, `0` = no limit; trusted proxies exempt). |
 | `BRISVOX_WEBRTC_MAX_CALLS_PER_IP` / `BRISVOX_WEBRTC_MAX_HANDSHAKING` / `BRISVOX_WEBRTC_OFFERS_PER_MINUTE` | WebRTC flood limits: calls per address, calls still handshaking, offers per address per minute. |
 | `BRISVOX_METRICS_TOKEN` | Bearer token `/metrics` requires when the health address is not loopback. |
+| `BRISVOX_ADMIN_TOKEN` | Bearer token `POST /admin/reload` (agent reload) requires; without it the endpoint is open on loopback only (not to browsers) and off elsewhere, even with `BRISVOX_INSECURE_LISTENERS`. |
+| `BRISVOX_AGENT_RELOAD_POLL_MS` | Poll the agent file(s) for changes at this interval and reload (default off). |
 
 A session token's `agent` and `meta` claims arrive in the call's metadata (`session.agent`,
 `session.meta.<key>`); the agent file is chosen by `BRISVOX_AGENT_FILE` as before.
@@ -735,6 +827,7 @@ from 1 to 65535, the start fails with a message naming both variables.
 | the chosen provider's cargo feature is compiled in | `<stage>.provider` |
 | no options table for another provider | `<stage>.<other>` |
 | `agent.language` is `en` or `tr` | `agent.language` |
+| `[languages]`: at least two entries, each of `en`/`tr` once; the default is listed; `stt.language` is not set; the STT can hear several languages (not `sherpa_onnx`, not a Deepgram model without `language=multi`); the TTS can speak every listed language (Aura, Kokoro, `eleven_flash_v2`, Cartesia `sonic-2` cannot speak Turkish) | `languages.*`, `stt.*` |
 | Deepgram Aura speaks the TTS language (en, es, de, fr, nl, it, ja; no Turkish) | `tts.language` or `agent.language` |
 | an Aura voice's language suffix matches the TTS language | `tts.voice` |
 | Aura delivers the `tts.sample_rate` (8000, 16000, 24000, 48000) | `tts.sample_rate` |

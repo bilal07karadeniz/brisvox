@@ -125,6 +125,7 @@ clock). The fields below are the body.
 | `bot.llm_stopped` | `epoch`, `usage` (optional) | The LLM finished the response of `epoch`: sent once, when the last round of the turn ended. `usage` is `{input_tokens, cached_input_tokens, output_tokens}`, the tokens the provider reported for the provider responses of the turn, summed over its rounds (a tool loop has several; for a one-round turn it is that round's usage). `cached_input_tokens` is part of `input_tokens`. It is absent when none of the turn's responses reported usage (never sent as zeros). |
 | `bot.tts_text` | `epoch`, `text` | A chunk sent to the TTS. |
 | `bot.tts_stopped` | `epoch` | The TTS produced the response's last audio. |
+| `language.switched` | `from`, `to` | An agent with `[languages]` follows the caller into another language (`en`, `tr`): the replies from the next turn on are in `to`. Sent when the decision is taken, before that turn reaches the LLM. |
 | `turn.bot_started` | `epoch` | The bot's audio of `epoch` started playing. |
 | `turn.bot_ended` | `epoch` | The bot's audio of `epoch` was played to its end. |
 | `turn.interrupted` | `epoch` | A barge-in: the call moved to `epoch`; everything older was dropped. |

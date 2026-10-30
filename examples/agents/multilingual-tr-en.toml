@@ -1,0 +1,58 @@
+# A Turkish and English agent that follows the caller from one language to the other:
+# Deepgram Nova-3 (STT, `language=multi`) + Anthropic (LLM) + Cartesia (TTS).
+# Reference: docs/CONFIG.md, "Languages". YAML twin: multilingual-tr-en.yaml.
+#
+# The call starts in Turkish. When the caller speaks English on two utterances in a row, the
+# next reply is in English and spoken with the English voice (and the other way round). The
+# speech-to-text listens to both languages the whole time, so nothing reconnects when the caller
+# switches; only the voice of the reply changes. Deepgram Aura and Kokoro have no Turkish voice:
+# a definition that lists Turkish on them is rejected at load time.
+
+[agent]
+name = "multilingual-tr-en"
+language = "tr"
+system_prompt = """
+Örnek Mağaza'nın sesli asistanısın (You are the voice assistant of Example Store).
+Kısa, konuşma diline uygun bir iki cümleyle yanıt ver; keep replies to a sentence or two.
+Reply in the language the line "Reply in ..." at the end of these instructions names.
+"""
+
+[languages]
+default = "tr"       # the call starts in Turkish (default: agent.language)
+switch_after = 2     # utterances in the other language in a row before the agent follows
+min_words = 2        # shorter utterances ("evet", "okay") count as no evidence
+
+[[languages.speak]]
+code = "tr"
+voice = "replace-with-a-cartesia-turkish-voice-id"
+
+[[languages.speak]]
+code = "en"
+voice = "replace-with-a-cartesia-english-voice-id"
+
+[turn]
+fallback_silence_ms = 2500
+require_final = true
+
+[stt]
+provider = "deepgram"
+api_key_env = "DEEPGRAM_API_KEY"
+# No `language` here: the languages above are what the STT listens for (`language=multi`).
+
+[stt.deepgram]
+model = "nova-3"
+endpointing_ms = 100   # Deepgram recommends 100 ms for code-switching
+
+[llm]
+provider = "anthropic"
+api_key_env = "ANTHROPIC_API_KEY"
+
+[llm.anthropic]
+max_tokens = 512
+thinking = "disabled"
+
+[tts]
+provider = "cartesia"
+api_key_env = "CARTESIA_API_KEY"
+voice = "replace-with-a-cartesia-turkish-voice-id"
+sample_rate = 24000

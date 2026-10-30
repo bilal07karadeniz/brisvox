@@ -105,6 +105,7 @@ use crate::config::EngineConfig;
 use crate::error::{Error, Result};
 use crate::events::{EngineEvents, Observed, Observer, Site};
 use crate::filler_clip::FillerClipStore;
+use crate::language::{LanguageSettings, LanguageStatsSnapshot, LanguageTracker};
 use crate::llm::{LlmStats, LlmStatsSnapshot};
 use crate::llm_runner::LlmRunner;
 use crate::offload::Offload;
@@ -224,6 +225,7 @@ pub struct SessionBuilder<S: SttProvider, L: LlmProvider, T: TtsProvider> {
     say_input: Option<SayReceiver>,
     edits: Option<EditReceiver>,
     s2s: Option<(Arc<dyn S2sConnect>, S2sOptions)>,
+    languages: Option<Arc<LanguageSettings>>,
 }
 
 impl SessionBuilder<Unused, Unused, Unused> {
@@ -309,7 +311,22 @@ impl<S: SttProvider, L: LlmProvider, T: TtsProvider> SessionBuilder<S, L, T> {
             say_input: None,
             edits: None,
             s2s: None,
+            languages: None,
         })
+    }
+
+    /// Lets the call follow the caller between several languages (`crate::language`): the
+    /// STT stage reports each finished utterance to a [`LanguageTracker`] over `settings`, which
+    /// decides when the agent switches; the next response then has the new language pinned in
+    /// its LLM request, is cut and normalized for that language and spoken with its voice and
+    /// TTS model. `with_voice` and `with_language` are replaced by the default language of
+    /// `settings`. Classic pipeline only (a speech-to-speech call ignores it). A switch is
+    /// published as [`EngineEvent::LanguageSwitched`](crate::EngineEvent::LanguageSwitched) when
+    /// [`Self::with_events`] is set.
+    #[must_use]
+    pub fn with_languages(mut self, settings: Arc<LanguageSettings>) -> Self {
+        self.languages = Some(settings);
+        self
     }
 
     /// Runs the call on a speech-to-speech model (`docs/S2S.md`): the pipeline becomes
@@ -584,6 +601,8 @@ pub struct SessionHandles {
     pub truncations: Arc<Mutex<TruncationStats>>,
     /// The turn machine's recent actions, when [`SessionBuilder::with_turn_probe`] was used.
     pub turn_probe: Option<TurnProbe>,
+    /// The language tracker, when [`SessionBuilder::with_languages`] was used.
+    pub language: Option<Arc<LanguageTracker>>,
     source: Arc<PlayoutTruncation>,
     tap_upstream_dropped: Arc<AtomicU64>,
 }
@@ -710,8 +729,16 @@ where
         say_input,
         edits,
         s2s,
+        languages,
     } = builder;
     let s2s_events = events.clone();
+    let tracker = languages.map(|settings| {
+        let tracker = LanguageTracker::new(settings);
+        Arc::new(match &events {
+            Some(events) => tracker.with_events(events.clone()),
+            None => tracker,
+        })
+    });
     let driver_events = events.clone();
     let mut observer = events.map(|events| Observer::new(events, timeline.clone()));
     let book = PlayoutBook::shared(book_capacity);
@@ -729,8 +756,11 @@ where
     let audio_stats = audio_in.stats();
     let vad_stats = audio_in.vad_stats();
 
-    let stt_stage = SttStage::new(stt, SttStageConfig::from_engine(&config), clock.clone())
+    let mut stt_stage = SttStage::new(stt, SttStageConfig::from_engine(&config), clock.clone())
         .with_timeline(timeline.clone());
+    if let Some(tracker) = &tracker {
+        stt_stage = stt_stage.with_languages(Arc::clone(tracker));
+    }
     let stt_stats = stt_stage.stats();
 
     let mut driver = TurnDriver::new(
@@ -798,6 +828,9 @@ where
     if let Some(edits) = edits {
         runner = runner.with_conversation_edits(edits);
     }
+    if let Some(tracker) = &tracker {
+        runner = runner.with_languages(Arc::clone(tracker));
+    }
     let llm_stage = runner.build();
     let llm_stats = llm_stage.stats();
     observer = observer.map(|observer| observer.with_llm(llm_stats.clone()));
@@ -810,8 +843,11 @@ where
     if let Some(words) = first_chunk_words {
         segmenter_config.segmenter.first_min_words = words;
     }
-    let segmenter =
+    let mut segmenter =
         SegmenterStage::new(segmenter_config).with_timeline(timeline.clone(), clock.clone());
+    if let Some(tracker) = &tracker {
+        segmenter = segmenter.with_languages(Arc::clone(tracker));
+    }
     let segmenter_stats = segmenter.stats();
 
     let mut tts_config = TtsStageConfig::from_engine(&config).with_language(language);
@@ -824,6 +860,9 @@ where
         .with_offload(offload.clone());
     if let Some(store) = filler_clips {
         tts_stage = tts_stage.with_clips(store);
+    }
+    if let Some(tracker) = &tracker {
+        tts_stage = tts_stage.with_languages(Arc::clone(tracker));
     }
     let tts_stats = tts_stage.stats();
 
@@ -913,6 +952,7 @@ where
             context,
             truncations,
             turn_probe: probe,
+            language: tracker,
             source,
             tap_upstream_dropped,
         },
@@ -990,6 +1030,8 @@ pub struct StageCounters {
     pub truncations: TruncationStats,
     /// See [`SessionHandles::unnoted_clear_cuts`] (always zero in an assembled call).
     pub unnoted_clear_cuts: u64,
+    /// The language tracker (all zero without [`SessionBuilder::with_languages`]).
+    pub language: LanguageStatsSnapshot,
 }
 
 impl StageCounters {
@@ -1012,6 +1054,11 @@ impl StageCounters {
                 .lock()
                 .unwrap_or_else(std::sync::PoisonError::into_inner),
             unnoted_clear_cuts: handles.unnoted_clear_cuts(),
+            language: handles
+                .language
+                .as_ref()
+                .map(|tracker| tracker.stats())
+                .unwrap_or_default(),
         }
     }
 

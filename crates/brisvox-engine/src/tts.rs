@@ -126,6 +126,7 @@ use tokio::time::Instant;
 use crate::config::EngineConfig;
 use crate::filler_clip::{FillerClip, FillerClipStore};
 use crate::guard::TaskGuard;
+use crate::language::LanguageTracker;
 use crate::offload::Offload;
 use crate::playout::{PlayoutBook, RoundKey};
 use crate::rates::CallRatesCell;
@@ -298,6 +299,7 @@ struct Counters {
     clips_dropped: AtomicU64,
     clip_waits: AtomicU64,
     clip_wait_timeouts: AtomicU64,
+    language_reconnects: AtomicU64,
 }
 
 fn bump(counter: &AtomicU64) {
@@ -398,6 +400,9 @@ pub struct TtsStatsSnapshot {
     pub clip_waits: u64,
     /// Of those, waits that reached [`CLIP_WAIT_LIMIT`] (the context was opened anyway).
     pub clip_wait_timeouts: u64,
+    /// Provider sessions replaced because the response is in another language than the
+    /// session (a different voice or model).
+    pub language_reconnects: u64,
 }
 
 /// Shared handle on the counters of one [`TtsStage`].
@@ -453,6 +458,7 @@ impl TtsStats {
             clips_dropped: get(&c.clips_dropped),
             clip_waits: get(&c.clip_waits),
             clip_wait_timeouts: get(&c.clip_wait_timeouts),
+            language_reconnects: get(&c.language_reconnects),
         }
     }
 }
@@ -685,11 +691,15 @@ struct TurnState {
     lead_round: u32,
     /// The clip of the open context when it is a clip context, until its flush queues it.
     clip: Option<Arc<FillerClip>>,
+    /// The language of this response (an index of the call languages), locked when the
+    /// epoch began.
+    language: Option<usize>,
 }
 
 impl TurnState {
-    fn new(epoch: TurnEpoch) -> Self {
+    fn new(epoch: TurnEpoch, language: Option<usize>) -> Self {
         Self {
+            language,
             epoch,
             rounds_started: 0,
             open: None,
@@ -733,6 +743,9 @@ struct Session {
     healthy: Arc<AtomicBool>,
     /// When the reader found the session dead (set once, by the reader).
     died: Arc<Mutex<Option<Instant>>>,
+    /// The index of the language the session speaks (its voice and model), when the call has
+    /// several languages.
+    language: Option<usize>,
 }
 
 /// The TTS stage. See the [module docs](self).
@@ -760,6 +773,8 @@ pub struct TtsStage<P: TtsProvider> {
     owed_ends: Vec<TurnEpoch>,
     /// Pre-rendered filler clips.
     clips: Option<Arc<FillerClipStore>>,
+    /// The call languages: the voice, model and normalizer per response.
+    languages: Option<Arc<LanguageTracker>>,
 }
 
 impl<P: TtsProvider> std::fmt::Debug for TtsStage<P> {
@@ -805,7 +820,23 @@ impl<P: TtsProvider> TtsStage<P> {
             degraded: false,
             owed_ends: Vec::new(),
             clips: None,
+            languages: None,
         }
+    }
+
+    /// Speaks each response in the language the call tracker locked for its epoch: that
+    /// language voice and TTS model (a session speaking another one is replaced before the
+    /// response first text) and its speech normalizer. The stage starts in the tracker current
+    /// language. See [`crate::language`].
+    #[must_use]
+    pub fn with_languages(mut self, tracker: Arc<LanguageTracker>) -> Self {
+        if let Some(profile) = tracker.current_profile() {
+            self.config.voice = Arc::clone(&profile.voice);
+            self.config.language = profile.language;
+            self.normalizer = Normalizer::new(profile.language);
+        }
+        self.languages = Some(tracker);
+        self
     }
 
     /// Registers utterances and sent text in `book` (shared with the LLM runner, the transport
@@ -863,9 +894,75 @@ impl<P: TtsProvider> TtsStage<P> {
         self.cancel_contexts(&stale);
         // A clip of the older epoch waiting in the reader is gone too.
         self.shared.owed.notify_one();
-        self.turn = Some(TurnState::new(epoch));
+        let language = self.languages.as_ref().map(|t| t.language_for(epoch));
+        self.turn = Some(TurnState::new(epoch, language));
         self.failures = 0;
         self.degraded = false;
+        self.apply_language(language);
+    }
+
+    /// The speech normalizer follows the language of the response.
+    fn apply_language(&mut self, language: Option<usize>) {
+        let Some(profile) = language.and_then(|i| self.languages.as_ref()?.profile(i)) else {
+            return;
+        };
+        if profile.language != self.config.language {
+            self.config.language = profile.language;
+            self.normalizer = Normalizer::new(profile.language);
+        }
+    }
+
+    /// The language the next session should speak: the response, else the call current one.
+    fn wanted_language(&self) -> Option<usize> {
+        let tracker = self.languages.as_ref()?;
+        Some(
+            self.turn
+                .as_ref()
+                .and_then(|turn| turn.language)
+                .unwrap_or_else(|| tracker.current()),
+        )
+    }
+
+    /// Replaces a live session that speaks another language than the response with a new one
+    /// (a voice and a model are fixed when a provider session opens). Only between responses:
+    /// the language is locked per epoch, so a session never changes under an open context of
+    /// the same epoch, and contexts of older epochs were cancelled by [`Self::sync_turn`].
+    async fn align_language(&mut self, ctx: &ProcessorContext, epoch: TurnEpoch) {
+        let Some(want) = self.wanted_language() else {
+            return;
+        };
+        let differs = self
+            .session
+            .as_ref()
+            .is_some_and(|session| session.language != Some(want));
+        if !differs {
+            return;
+        }
+        if self.turn.as_ref().is_some_and(|turn| turn.open.is_some()) {
+            return;
+        }
+        tracing::info!(
+            target: "brisvox::engine",
+            language = self
+                .languages
+                .as_ref()
+                .and_then(|t| t.profile(want))
+                .map_or("", |p| &*p.code),
+            "tts session replaced for the language of the response"
+        );
+        bump(&self.counters().language_reconnects);
+        // Dropping the session closes it at the provider; its cancelled contexts are gone from
+        // the ledger already. Replacing a session on purpose is not a death: it never counts
+        // against the reconnect budget, and a session that proved healthy renews it.
+        if let Some(old) = self.session.take() {
+            let lived = self.clock.now().saturating_duration_since(old.since);
+            if old.healthy.load(Ordering::Relaxed) || lived >= HEALTHY_SESSION {
+                self.failures = 0;
+            }
+        }
+        // The new session then connects like any other: a failure here starts the ordinary
+        // backoff, counts against the budget and drops this response's text.
+        self.ensure_session(ctx, Some(epoch)).await;
     }
 
     fn cancel_contexts(&self, ids: &[u64]) {
@@ -910,9 +1007,13 @@ impl<P: TtsProvider> TtsStage<P> {
         if self.retry_at.is_some_and(|at| now < at) {
             return false;
         }
+        let language = self.wanted_language();
+        let profile = language.and_then(|i| self.languages.as_ref()?.profile(i));
         let tts_config = TtsConfig {
             sample_rate: self.config.tts_rate,
-            voice: Arc::clone(&self.config.voice),
+            voice: profile.map_or_else(|| Arc::clone(&self.config.voice), |p| Arc::clone(&p.voice)),
+            language: profile.map(|p| Arc::clone(&p.code)),
+            model: profile.and_then(|p| p.tts_model.clone()),
         };
         let connect = self.provider.connect(tts_config);
         let timeout = self.clock.sleep(self.config.connect_timeout);
@@ -934,7 +1035,7 @@ impl<P: TtsProvider> TtsStage<P> {
                 // accepts the connection and drops it would be retried for ever); a healthy
                 // session does (`account_death`).
                 self.retry_at = None;
-                self.start_session(session, ctx);
+                self.start_session(session, ctx, language);
                 true
             }
             Some(Err(error)) => {
@@ -1000,7 +1101,12 @@ impl<P: TtsProvider> TtsStage<P> {
         }
     }
 
-    fn start_session(&mut self, session: TtsSession, ctx: &ProcessorContext) {
+    fn start_session(
+        &mut self,
+        session: TtsSession,
+        ctx: &ProcessorContext,
+        language: Option<usize>,
+    ) {
         bump(&self.counters().connects);
         self.generation = self.generation.saturating_add(1);
         let healthy = Arc::new(AtomicBool::new(false));
@@ -1041,6 +1147,7 @@ impl<P: TtsProvider> TtsStage<P> {
             since: self.clock.now(),
             healthy,
             died,
+            language,
         });
     }
 
@@ -1218,6 +1325,7 @@ impl<P: TtsProvider> TtsStage<P> {
         if !self.wait_for_clips(epoch, ctx).await {
             return false;
         }
+        self.align_language(ctx, epoch).await;
         if !self.ensure_session(ctx, Some(epoch)).await {
             return false;
         }
@@ -1304,6 +1412,7 @@ impl<P: TtsProvider> TtsStage<P> {
         ctx: &mut ProcessorContext,
     ) -> bool {
         self.flush_open(epoch, ctx).await;
+        self.align_language(ctx, epoch).await;
         if !self.ensure_session(ctx, Some(epoch)).await {
             return false;
         }
@@ -1620,6 +1729,9 @@ impl<P: TtsProvider> Processor for TtsStage<P> {
                 if self.session.is_some() && !self.session_alive() {
                     self.ensure_session(ctx, Some(epoch)).await;
                 }
+                // The caller switched language since the last response: the voice of the new
+                // one is connected now, while the LLM works on its first token.
+                self.align_language(ctx, epoch).await;
                 if let Some(turn) = &mut self.turn {
                     turn.rounds_started = turn.rounds_started.saturating_add(1);
                     turn.open = None;

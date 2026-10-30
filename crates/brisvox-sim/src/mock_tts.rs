@@ -48,12 +48,17 @@ struct State {
     chunk: Duration,
     texts: VecDeque<(ContextId, String)>,
     connects: usize,
+    /// The configuration of every session opened (the last [`CONFIG_LOG_CAPACITY`]).
+    configs: VecDeque<TtsConfig>,
     /// Whether word timestamps are reported (a provider without them when `false`).
     word_timings: bool,
 }
 
 /// Texts remembered by [`MockTts::texts`] (oldest dropped).
 const TEXT_LOG_CAPACITY: usize = 1_024;
+
+/// Session configurations remembered by [`MockTts::configs`] (oldest dropped).
+const CONFIG_LOG_CAPACITY: usize = 64;
 
 /// A mock [`TtsProvider`].
 #[derive(Clone)]
@@ -79,6 +84,7 @@ impl MockTts {
                 chunk: Duration::from_millis(40),
                 texts: VecDeque::new(),
                 connects: 0,
+                configs: VecDeque::new(),
                 word_timings: true,
             })),
         }
@@ -152,6 +158,12 @@ impl MockTts {
     pub fn connects(&self) -> usize {
         self.lock().connects
     }
+
+    /// The [`TtsConfig`] of each session opened, in order (the last 64): the voice, language
+    /// and model the engine asked for.
+    pub fn configs(&self) -> Vec<TtsConfig> {
+        self.lock().configs.iter().cloned().collect()
+    }
 }
 
 impl std::fmt::Debug for MockTts {
@@ -169,6 +181,10 @@ impl TtsProvider for MockTts {
         let (connect, faults, timeout) = {
             let mut state = self.lock();
             state.connects += 1;
+            if state.configs.len() >= CONFIG_LOG_CAPACITY {
+                state.configs.pop_front();
+            }
+            state.configs.push_back(config.clone());
             let faults = FaultPlan::new(state.faults.pop_front().unwrap_or_default());
             (
                 state

@@ -54,6 +54,7 @@ export const EVENT_TYPES = [
   "bot.llm_stopped",
   "bot.tts_text",
   "bot.tts_stopped",
+  "language.switched",
 ] as const;
 
 /** A subscribable event type (see {@link EVENT_TYPES}). */
@@ -380,6 +381,16 @@ export interface BotTtsStopped extends Envelope {
 }
 
 /**
+ * The agent follows the caller into another language: the replies from the next turn on are in
+ * `to` (language codes such as `en`, `tr`).
+ */
+export interface LanguageSwitched extends Envelope {
+  readonly type: "language.switched";
+  readonly from: string;
+  readonly to: string;
+}
+
+/**
  * A stage of the call reported an error, or the link refused something without a command id
  * (`stage === "agent_link"`, the message then starts with the error code).
  */
@@ -477,6 +488,7 @@ export type AgentEvent =
   | BotLlmStopped
   | BotTtsText
   | BotTtsStopped
+  | LanguageSwitched
   | ErrorEvent
   | EventsLost
   | Resumed;
@@ -507,6 +519,7 @@ export interface EventMap {
   "bot.llm_stopped": BotLlmStopped;
   "bot.tts_text": BotTtsText;
   "bot.tts_stopped": BotTtsStopped;
+  "language.switched": LanguageSwitched;
   error: ErrorEvent;
   "events.lost": EventsLost;
   "session.resumed": Resumed;
@@ -754,6 +767,8 @@ function parseBody(kind: string, obj: Obj, env: Envelope): ServerMessage {
     case "bot.llm_started":
     case "bot.tts_stopped":
       return { type: kind, ...env, epoch: epoch() };
+    case "language.switched":
+      return { type: kind, ...env, from: needStr(obj, "from", kind), to: needStr(obj, "to", kind) };
     case "turn.metrics":
       return { type: kind, ...env, epoch: epoch(), metrics: parseMetrics(obj["metrics"]) };
     case "user.transcript":

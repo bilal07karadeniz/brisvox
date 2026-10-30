@@ -176,6 +176,8 @@ pub struct EngineFactory {
     filler_policy: Option<FillerPolicy>,
     /// Pre-rendered filler clips shared by every call.
     filler_clips: Option<Arc<FillerClipStore>>,
+    /// The languages of every call (`SessionBuilder::with_languages`).
+    languages: Option<Arc<crate::language::LanguageSettings>>,
 }
 
 impl Default for EngineFactory {
@@ -209,7 +211,16 @@ impl EngineFactory {
             resilience: None,
             filler_policy: None,
             filler_clips: None,
+            languages: None,
         }
+    }
+
+    /// Lets every call follow the caller between the languages of `settings`
+    /// ([`SessionBuilder::with_languages`]).
+    #[must_use]
+    pub fn with_languages(mut self, settings: Arc<crate::language::LanguageSettings>) -> Self {
+        self.languages = Some(settings);
+        self
     }
 
     /// Ends turns after `silence` of quiet. The played-text suite barges in 0.4 s after the first
@@ -688,6 +699,9 @@ impl EngineFactory {
         }
         if let Some(store) = &self.filler_clips {
             builder = builder.with_filler_clips(Arc::clone(store));
+        }
+        if let Some(settings) = &self.languages {
+            builder = builder.with_languages(Arc::clone(settings));
         }
         build_session_pipeline(builder, commands).map_err(|e| setup_error("build", &e))
     }

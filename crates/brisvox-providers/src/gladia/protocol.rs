@@ -20,6 +20,9 @@ pub(crate) struct Transcript {
     pub(crate) text: String,
     /// End of the utterance in seconds from the session start.
     pub(crate) end: f64,
+    /// `data.utterance.language`: the language Gladia detected for the utterance (lowercase
+    /// primary code); `None` when absent or blank.
+    pub(crate) language: Option<String>,
 }
 
 /// What an acknowledgment acknowledges.
@@ -112,6 +115,8 @@ struct RawUtterance {
     text: Option<String>,
     #[serde(default, deserialize_with = "lenient")]
     end: Option<f64>,
+    #[serde(default, deserialize_with = "lenient")]
+    language: Option<String>,
 }
 
 #[derive(Deserialize)]
@@ -211,15 +216,20 @@ pub(crate) fn parse(text: &str) -> Result<Incoming, ParseError> {
             let Some(data) = raw.data else {
                 return Ok(Incoming::Ignored);
             };
-            let (text, end) = match data.utterance {
-                Some(u) => (u.text.unwrap_or_default(), u.end),
-                None => (String::new(), None),
+            let (text, end, language) = match data.utterance {
+                Some(u) => (u.text.unwrap_or_default(), u.end, u.language),
+                None => (String::new(), None, None),
             };
             Ok(Incoming::Transcript(Transcript {
                 id: data.id.map(NumOrText::into_text).unwrap_or_default(),
                 is_final: data.is_final.unwrap_or(false),
                 text: text.trim().to_owned(),
                 end: end.filter(|e| e.is_finite()).unwrap_or(0.0),
+                language: language
+                    .as_deref()
+                    .and_then(|l| l.split(['-', '_']).next())
+                    .map(|l| l.trim().to_ascii_lowercase())
+                    .filter(|l| !l.is_empty()),
             }))
         }
         Some("speech_start") => Ok(Incoming::SpeechStart),
@@ -279,7 +289,8 @@ mod tests {
                 id: "00-00000011".into(),
                 is_final: false,
                 text: "merhaba".into(),
-                end: 0.5
+                end: 0.5,
+                language: Some("tr".into()),
             }))
         );
         assert!(matches!(

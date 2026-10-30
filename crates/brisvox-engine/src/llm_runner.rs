@@ -50,6 +50,7 @@ pub struct LlmRunnerBuilder<P: LlmProvider> {
     filler: FillerPolicy,
     fallback: Arc<str>,
     edits: Option<EditReceiver>,
+    languages: Option<Arc<crate::language::LanguageTracker>>,
 }
 
 impl<P: LlmProvider> LlmRunnerBuilder<P> {
@@ -75,7 +76,18 @@ impl<P: LlmProvider> LlmRunnerBuilder<P> {
             filler: FillerPolicy::from_config(config.llm.filler).with_text(DEFAULT_FILLER),
             fallback: Arc::from(DEFAULT_FALLBACK),
             edits: None,
+            languages: None,
         }
+    }
+
+    /// Pins the reply language of each turn: the request of a turn gets the line
+    /// `Reply in <language>.` (appended to the leading system message of the provider request;
+    /// the stored context is not changed) for the language the `tracker` locked for the turn's
+    /// epoch. See [`crate::language`].
+    #[must_use]
+    pub fn with_languages(mut self, tracker: Arc<crate::language::LanguageTracker>) -> Self {
+        self.languages = Some(tracker);
+        self
     }
 
     /// Applies the conversation edits of `edits` (see [`crate::agent_input`]) at the
@@ -247,6 +259,7 @@ impl<P: LlmProvider> LlmRunnerBuilder<P> {
                 cancel: root.clone(),
                 summary_task: Mutex::new(None),
                 offered: Mutex::new(None),
+                languages: self.languages,
             }),
             edits: self.edits,
             task: None,
@@ -687,6 +700,15 @@ impl<P: LlmProvider> LlmRunner<P> {
             return None;
         }
         if normalize(text) != spec.norm {
+            spec.discard(counters, Discard::Changed);
+            return None;
+        }
+        // The language of the turn is locked here, once, before anything awaits (the turn
+        // that follows reads the same answer). A speculative request built for another
+        // language (this very turn made the switch) would be answered in the old one.
+        if let Some(tracker) = &self.shared.languages
+            && spec.language != Some(tracker.language_for(epoch))
+        {
             spec.discard(counters, Discard::Changed);
             return None;
         }

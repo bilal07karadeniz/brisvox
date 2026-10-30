@@ -438,11 +438,13 @@ async fn a_pipecat_client_sees_the_full_event_sequence_of_a_call_with_one_barge_
     sim.stt.push(SttUtterance {
         interims: vec![],
         finals: vec!["wait stop".to_owned()],
+        language: None,
     });
     // A cough: the VAD hears speech, STT returns an empty final.
     sim.stt.push(SttUtterance {
         interims: vec![],
         finals: vec![],
+        language: None,
     });
     sim.llm.push(LlmScript::text(LONG));
     sim.llm.push(LlmScript::text(["Okay, ", "I stopped."]));

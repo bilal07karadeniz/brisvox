@@ -32,7 +32,7 @@ use tokio::sync::mpsc;
 use tokio_util::sync::{CancellationToken, DropGuard};
 
 use crate::admission::AdmissionPolicy;
-use crate::health::{HealthConfig, HealthServer, MetricsAccess};
+use crate::health::{AdminAccess, HealthConfig, HealthServer, MetricsAccess};
 use crate::hosting::{HostSettings, LISTENER_STOP_TIMEOUT, ListenerAddrs, Listeners};
 use crate::runner::AcceptedCall;
 use crate::session::{SessionManager, SessionRunner, ShutdownPolicy};
@@ -432,12 +432,21 @@ impl Server {
                     ),
                     _ => {}
                 }
+                let admin = AdminAccess::for_listener(addr, settings.admin_token.as_ref());
+                if matches!(admin, AdminAccess::Disabled) {
+                    tracing::debug!(
+                        target: "brisvox::server",
+                        %addr,
+                        "POST /admin/reload is off: the health listener is not on loopback and BRISVOX_ADMIN_TOKEN is unset (SIGHUP and BRISVOX_AGENT_RELOAD_POLL_MS still work)"
+                    );
+                }
                 Some(
-                    HealthServer::bind_with_metrics_access(
+                    HealthServer::bind_with_access(
                         HealthConfig::new(addr),
                         manager.clone(),
                         clock.clone(),
                         metrics,
+                        admin,
                     )
                     .await?,
                 )
@@ -585,6 +594,11 @@ impl Server {
                 None => pending::<()>().await,
             }
         };
+        // No reload from now on: new calls are not admitted, so a new definition has no use, and
+        // its MCP connections would only have to be closed again.
+        if let Some(reload) = self.manager.reload() {
+            reload.close();
+        }
         let report = drain(&self.manager, self.policy, &*self.clock, force).await;
         // After the drain: every session has ended, so stopping the transports cuts no call.
         if let Some(listeners) = self.listeners
@@ -601,6 +615,11 @@ impl Server {
         #[cfg(feature = "mcp")]
         for mcp in self.mcp {
             mcp.shutdown().await;
+        }
+        // The agent snapshots the reload hub manages: the live one's connections close now (an
+        // older one closed when its last call ended).
+        if let Some(reload) = self.manager.reload() {
+            reload.shutdown().await;
         }
         if let Some(health) = self.health
             && !health.shutdown(HEALTH_STOP_TIMEOUT).await

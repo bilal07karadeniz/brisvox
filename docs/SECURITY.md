@@ -274,7 +274,11 @@ put one in the proxy.
 a container runtime probes from outside the network namespace, so binding the health listener to
 loopback would break them. `/metrics` carries call counts, error rates and latencies; it is
 **off (404) on a non-loopback health address unless `BRISVOX_METRICS_TOKEN` is set**, and then
-requires `Authorization: Bearer <token>` (constant time, `401` without it). Prometheus:
+requires `Authorization: Bearer <token>` (constant time, `401` without it). The one endpoint
+that changes anything, `POST /admin/reload` (agent reload, `docs/OPERATIONS.md`), has its own
+token, `BRISVOX_ADMIN_TOKEN`: a scrape token never opens it, and without a token it is served
+only on a loopback address, to local processes and not to a browser (`Origin` is refused), and
+is off on any other address. Prometheus:
 
 ```yaml
 scrape_configs:
@@ -393,3 +397,4 @@ replay set and the Twilio used-set live in one process's memory (see above).
 | `BRISVOX_WEBRTC_MAX_HANDSHAKING` | a quarter of `BRISVOX_MAX_SESSIONS` | Calls in their ICE/DTLS handshake at once. |
 | `BRISVOX_WEBRTC_OFFERS_PER_MINUTE` | `5` | Offers per client address per minute, or `off`. |
 | `BRISVOX_METRICS_TOKEN` | unset | Bearer token `/metrics` requires on a non-loopback health address. |
+| `BRISVOX_ADMIN_TOKEN` | unset | Bearer token `POST /admin/reload` requires. Not the metrics token. Unset: open on a loopback health address (a request with an `Origin` header is refused), off (404) elsewhere, `BRISVOX_INSECURE_LISTENERS` does not open it. |

@@ -21,6 +21,8 @@ fn config() -> TtsConfig {
     TtsConfig {
         sample_rate: SampleRate::Hz24000,
         voice: Arc::from("test"),
+        language: None,
+        model: None,
     }
 }
 

@@ -108,6 +108,15 @@ pub struct AssemblyAiConfig {
     /// makes a monolingual session. The value is sent as a JSON array string
     /// (`language_codes=["tr"]`); that serialisation is UNVERIFIED (see `extra_params`).
     pub language: Option<String>,
+    /// Languages the speaker is expected to use (`language_codes`, e.g. `["en", "tr"]`): the
+    /// model is steered towards them while it may still switch between them mid-session
+    /// (Universal-3.6 Pro code-switches by default). Used when the session has no language;
+    /// takes the place of [`Self::language`]. Empty by default.
+    pub language_codes: Vec<String>,
+    /// `language_detection`: each final turn then reports `language_code` and
+    /// `language_confidence`, which the adapter hands on as the transcript language. Reporting
+    /// only: it does not change how the model transcribes. Default `false`.
+    pub language_detection: bool,
     /// Encoding of the audio bytes. Default [`Encoding::Pcm16`].
     pub encoding: Encoding,
     /// Sample rate override in Hz (8000..=96000). `None` uses the [`SttConfig`] sample rate.
@@ -205,6 +214,8 @@ impl AssemblyAiConfig {
             api_key,
             speech_model: "universal-3-6-pro".to_owned(),
             language: None,
+            language_codes: Vec::new(),
+            language_detection: false,
             encoding: Encoding::Pcm16,
             sample_rate_hz: None,
             format_turns: false,
@@ -271,6 +282,11 @@ impl AssemblyAiConfig {
         }
         if self.language.as_deref().is_some_and(|l| !is_token(l)) {
             return bad("language must be letters, digits, '.', '_' or '-'");
+        }
+        if self.language_codes.len() > 16 || self.language_codes.iter().any(|l| !is_token(l)) {
+            return bad(
+                "language_codes: at most 16 language codes of letters, digits, '.', '_' or '-'",
+            );
         }
         if self
             .sample_rate_hz
@@ -381,10 +397,25 @@ impl AssemblyAiConfig {
         let language = stt
             .language
             .as_deref()
-            .or(self.language.as_deref())
+            .or(if self.language_codes.is_empty() {
+                self.language.as_deref()
+            } else {
+                None
+            })
             .map(primary_language);
         if let Some(language) = language.filter(|l| !l.is_empty()) {
             add("language_codes", &json_array(&[language]));
+        } else if stt.language.is_none() && !self.language_codes.is_empty() {
+            let mut codes: Vec<String> = Vec::new();
+            for code in self.language_codes.iter().map(|c| primary_language(c)) {
+                if !code.is_empty() && !codes.contains(&code) {
+                    codes.push(code);
+                }
+            }
+            add("language_codes", &json_array(&codes));
+        }
+        if self.language_detection {
+            add("language_detection", "true");
         }
         if self.waits_for_formatted() {
             add("format_turns", "true");
@@ -571,6 +602,27 @@ mod tests {
         assert!(c.query(&stt(None)).contains("%5B%22en%22%5D"));
         c.language = None;
         assert!(!c.query(&stt(None)).contains("language_codes"));
+    }
+
+    #[test]
+    fn several_language_codes_steer_the_model_and_detection_is_reported() {
+        let mut c = config();
+        c.language_codes = vec!["en".to_owned(), "tr-TR".to_owned(), "EN".to_owned()];
+        c.language_detection = true;
+        let q = c.query(&stt(None));
+        // `["en","tr"]` percent-encoded, de-duplicated and reduced to bare codes.
+        assert!(
+            q.contains("language_codes=%5B%22en%22%2C%22tr%22%5D"),
+            "{q}"
+        );
+        assert!(q.contains("&language_detection=true"), "{q}");
+        // A language the session names wins; the list is for sessions without one.
+        assert!(
+            c.query(&stt(Some("tr")))
+                .contains("language_codes=%5B%22tr%22%5D")
+        );
+        c.language_codes = vec!["en&x=1".to_owned()];
+        assert!(c.validate().is_err());
     }
 
     #[test]

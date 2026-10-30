@@ -19,6 +19,7 @@ pub mod mcp;
 pub mod observability;
 pub mod privacy;
 pub mod providers;
+pub mod reload;
 pub mod resilient;
 pub mod runner;
 pub mod session;
@@ -40,6 +41,7 @@ pub use lifecycle::{
 pub use observability::{Observability, ObservabilitySettings};
 pub use privacy::{Recording, RecordingSettings};
 pub use providers::{CallProviders, ConfiguredProviders, ProviderFactory};
+pub use reload::{AgentSet, ReloadHub, ReloadReport, ReloadResult, ReloadSettings, SwapRunner};
 pub use resilient::ResilientProviders;
 pub use runner::{AcceptedCall, EngineRunner, RunnerConfig, Vad};
 pub use session::{

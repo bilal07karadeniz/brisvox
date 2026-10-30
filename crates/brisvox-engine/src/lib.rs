@@ -66,6 +66,7 @@ pub mod event_slot;
 pub mod events;
 pub mod filler_clip;
 pub mod guard;
+pub mod language;
 pub mod llm;
 mod llm_runner;
 mod llm_spec;
@@ -110,8 +111,13 @@ pub use events::{
 };
 pub use filler_clip::{ClipError, ClipWord, FillerClip, FillerClipStore};
 pub use guard::{Delivery, GuardedSender, JoinOutcome, TaskGuard};
+pub use language::{
+    LanguageProfile, LanguageSettings, LanguageSource, LanguageStatsSnapshot, LanguageSwitch,
+    LanguageTracker, Utterance,
+};
 pub use llm::{
-    DEFAULT_FALLBACK, DEFAULT_FILLER, LlmStats, LlmStatsSnapshot, MAX_PROVIDER_DATA_BYTES,
+    DEFAULT_FALLBACK, DEFAULT_FALLBACK_TR, DEFAULT_FILLER, LlmStats, LlmStatsSnapshot,
+    MAX_PROVIDER_DATA_BYTES,
 };
 pub use llm_runner::{FlowProbe, LlmRunner, LlmRunnerBuilder};
 pub use offload::{Offload, WARM_COOLDOWN, WARM_MAX_QUEUE_PER_THREAD, WarmClaim, WarmReport};

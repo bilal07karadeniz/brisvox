@@ -1127,10 +1127,68 @@ impl AgentConfig {
         L: LlmProvider,
         T: TtsProvider,
     {
-        builder
+        let builder = builder
             .with_language(self.language)
             .with_voice(self.voice())
-            .with_system_prompt(self.system_prompt())
+            .with_system_prompt(self.system_prompt());
+        match self.languages() {
+            Some(settings) => builder.with_languages(settings),
+            None => builder,
+        }
+    }
+
+    /// The languages the call follows the caller between (`[languages]`), or `None` when the
+    /// definition lists none (a single-language agent).
+    pub fn languages(&self) -> Option<Arc<brisvox_engine::LanguageSettings>> {
+        use brisvox_engine::{LanguageProfile, LanguageSettings};
+
+        let section = &self.file.languages;
+        if section.speak.is_empty() {
+            return None;
+        }
+        let profiles: Vec<LanguageProfile> = section
+            .speak
+            .iter()
+            .map(|entry| {
+                let code = entry.code.get_ref().primary();
+                let profile = LanguageProfile::new(
+                    &code,
+                    map::engine_language(entry.code.get_ref()),
+                    entry.voice.get_ref().as_str(),
+                );
+                match &entry.tts_model {
+                    Some(model) => profile.with_tts_model(model.get_ref().as_str()),
+                    None => profile,
+                }
+            })
+            .collect();
+        let default = section
+            .default
+            .as_ref()
+            .unwrap_or(&self.file.agent.language)
+            .get_ref()
+            .primary();
+        let mut settings = LanguageSettings::new(profiles, &default).ok()?;
+        if let Some(n) = section.switch_after {
+            settings.switch_after = n.get();
+        }
+        if let Some(c) = section.switch_confidence {
+            settings.switch_confidence = c.get();
+        }
+        if let Some(n) = section.min_words {
+            settings.min_words = n.as_usize();
+        }
+        Some(Arc::new(settings))
+    }
+
+    /// The codes of the listed languages (`[]` for a single-language agent).
+    fn language_codes(&self) -> Vec<String> {
+        self.file
+            .languages
+            .speak
+            .iter()
+            .map(|entry| entry.code.get_ref().primary())
+            .collect()
     }
 
     /// The error for a provider whose adapter is not compiled in (validation reports it first,
@@ -1190,6 +1248,19 @@ impl AgentConfig {
     ) -> Result<SttProviderConfig, ConfigError> {
         let language = self.stt_language();
         let missing_key = || self.missing_key(&format!("{prefix}.api_key_env"));
+        let config = self.stt_adapter(stt, key, prefix, language, missing_key)?;
+        Ok(map::multilingual_stt(config, &self.language_codes()))
+    }
+
+    /// The adapter configuration of the STT table `stt`, in one language.
+    fn stt_adapter(
+        &self,
+        stt: &SttSection,
+        key: Option<Secret<String>>,
+        prefix: &str,
+        language: &LanguageTag,
+        missing_key: impl Fn() -> ConfigError,
+    ) -> Result<SttProviderConfig, ConfigError> {
         match *stt.provider.get_ref() {
             #[cfg(feature = "provider-deepgram")]
             SttProviderKind::Deepgram => Ok(SttProviderConfig::Deepgram(map::deepgram(
@@ -1338,6 +1409,24 @@ impl AgentConfig {
             .map(|s| s.get_ref().voice.get_ref().as_str().into())
     }
 
+    /// The voices of `[tts.secondary]` per language (`[[languages.speak]].secondary_voice`), as
+    /// (language code, voice id). Empty when the definition lists none: the secondary then
+    /// speaks [`Self::tts_secondary_voice`] in every language.
+    pub fn tts_secondary_language_voices(&self) -> Vec<(Arc<str>, Arc<str>)> {
+        self.file
+            .languages
+            .speak
+            .iter()
+            .filter_map(|entry| {
+                let voice = entry.secondary_voice.as_ref()?;
+                Some((
+                    Arc::from(entry.code.get_ref().primary().as_str()),
+                    Arc::from(voice.get_ref().as_str()),
+                ))
+            })
+            .collect()
+    }
+
     /// The adapter configuration of the TTS table `tts` (written at `prefix`).
     fn tts_of(
         &self,
@@ -1420,6 +1509,19 @@ mod secondary_tests;
 mod local_stt_tests;
 #[cfg(test)]
 mod tests;
+// The `[languages]` table.
+#[cfg(test)]
+#[cfg(all(
+    feature = "provider-deepgram",
+    feature = "provider-assemblyai",
+    feature = "provider-gladia",
+    feature = "provider-openai",
+    feature = "provider-cartesia",
+    feature = "provider-elevenlabs",
+    feature = "provider-deepgram-aura",
+    feature = "provider-sherpa-onnx"
+))]
+mod languages_tests;
 // The `[[mcp.servers]]` tables.
 #[cfg(test)]
 mod mcp_tests;

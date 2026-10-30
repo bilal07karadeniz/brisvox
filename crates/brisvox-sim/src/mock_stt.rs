@@ -23,7 +23,9 @@ use std::time::Duration;
 use brisvox_core::SharedClock;
 use brisvox_core::clock::deadline_after;
 use brisvox_providers::stt::STT_CHANNEL_CAPACITY;
-use brisvox_providers::{Error, Result, SttConfig, SttEvent, SttInput, SttProvider, SttSession};
+use brisvox_providers::{
+    Error, Result, SpokenLanguage, SttConfig, SttEvent, SttInput, SttProvider, SttSession,
+};
 use tokio::sync::mpsc;
 
 use crate::latency::{LatencyProfile, LatencySampler};
@@ -38,6 +40,9 @@ pub struct SttUtterance {
     pub interims: Vec<String>,
     /// Final segments, in order (the last ends the utterance).
     pub finals: Vec<String>,
+    /// The language the mock reports on every final segment of the utterance (as a provider
+    /// with language detection does), e.g. `"tr"`; `None` reports none.
+    pub language: Option<String>,
 }
 
 impl SttUtterance {
@@ -50,7 +55,15 @@ impl SttUtterance {
         Self {
             interims,
             finals: vec![text.to_owned()],
+            language: None,
         }
+    }
+
+    /// The same utterance, with the final segments reported as spoken in `language`.
+    #[must_use]
+    pub fn in_language(mut self, language: &str) -> Self {
+        self.language = Some(language.to_owned());
+        self
     }
 }
 
@@ -347,7 +360,13 @@ async fn run_session(
                         }
                         let last = utterance.finals.len().saturating_sub(1);
                         for (i, text) in utterance.finals.iter().enumerate() {
-                            outbox.push(at, transcript(text, true, i == last, true));
+                            let mut event = transcript(text, true, i == last, true);
+                            if let (SttEvent::Transcript { language, .. }, Some(code)) =
+                                (&mut event, &utterance.language)
+                            {
+                                *language = Some(SpokenLanguage::new(code));
+                            }
+                            outbox.push(at, event);
                         }
                     }
                 }
@@ -407,5 +426,6 @@ fn transcript(text: &str, is_final: bool, speech_final: bool, from_finalize: boo
         is_final,
         speech_final,
         from_finalize,
+        language: None,
     }
 }

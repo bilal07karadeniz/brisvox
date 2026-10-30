@@ -853,6 +853,8 @@ impl<P: TtsProvider> TtsStage<P> {
         let config = TtsConfig {
             sample_rate: self.sample_rate,
             voice: Arc::from("reference"),
+            language: None,
+            model: None,
         };
         let connected = tokio::time::timeout(CONNECT_TIMEOUT, self.provider.connect(config)).await;
         let Ok(Ok(session)) = connected else {

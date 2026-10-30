@@ -69,6 +69,7 @@ function sample(kind: string): string {
     "user.text": { epoch: 1, text: "hi" },
     "bot.text": { epoch: 1, text: "hi" },
     "bot.tts_text": { epoch: 1, text: "hi" },
+    "language.switched": { from: "en", to: "tr" },
     "turn.metrics": { epoch: 1, metrics: { response_ms: 400.5 } },
     error: { stage: "llm", message: "boom", fatal: false },
     "events.lost": { count: 3 },

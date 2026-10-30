@@ -249,6 +249,7 @@ mod tests {
                     is_final,
                     speech_final,
                     from_finalize,
+                    ..
                 } => Some((text.to_string(), *is_final, *speech_final, *from_finalize)),
                 SttEvent::Error(_) => None,
             })

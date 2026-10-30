@@ -47,15 +47,13 @@ fn model_error(e: impl std::fmt::Display) -> Error {
 /// Which graph of the pinned model the sessions run.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum SmartTurnGraph {
-    /// The file exactly as published (the graph the goldens were recorded with).
-    #[default]
-    Original,
     /// The exported graph with each GELU fused into one node ([`super::fuse`]): about 40% less
     /// memory traffic per analysis; the probabilities differ from [`Self::Original`] only by
-    /// rounding (verdicts matched on 3997 of 4000 test clips), but on the model's decision edge
-    /// that rounding can move a verdict, and an early verdict once ended a turn the verdict at
-    /// the stop did not (docs/providers/smart-turn.md, "Fused GELU"). Opt-in.
+    /// rounding (verdicts matched on 3997 of 4000 test clips, docs/providers/smart-turn.md).
+    #[default]
     Fused,
+    /// The file exactly as published (the graph the goldens were recorded with).
+    Original,
 }
 
 /// How a Smart Turn session is configured. The thread fields change only scheduling, never
@@ -69,7 +67,7 @@ pub struct OrtOptions {
     /// `session.intra_op.allow_spinning`: whether the intra-op worker threads busy-wait for the
     /// next piece of work instead of sleeping. ONNX Runtime's own default is on, and so is ours.
     pub intra_op_spinning: bool,
-    /// The graph to run: the file as published (default) or fused.
+    /// The graph to run: fused (default) or the file as published.
     pub graph: SmartTurnGraph,
 }
 

@@ -68,6 +68,7 @@ __all__ = [
     "BotLlmStopped",
     "BotTtsText",
     "BotTtsStopped",
+    "LanguageSwitched",
     "ErrorEvent",
     "EventsLost",
     "ToolCall",
@@ -127,6 +128,7 @@ EVENT_TYPES: tuple[str, ...] = (
     "bot.llm_stopped",
     "bot.tts_text",
     "bot.tts_stopped",
+    "language.switched",
 )
 """The event types an agent may subscribe to in ``session.accept.events``."""
 
@@ -491,6 +493,16 @@ class BotTtsStopped(Event):
 
 
 @dataclass(frozen=True, slots=True, kw_only=True)
+class LanguageSwitched(Event):
+    """The agent follows the caller into another language: the replies from the next turn on are
+    in ``to`` (language codes such as ``en``, ``tr``)."""
+
+    TYPE: ClassVar[str] = "language.switched"
+    from_language: str
+    to: str
+
+
+@dataclass(frozen=True, slots=True, kw_only=True)
 class ErrorEvent(Event):
     """A stage of the call reported an error, or the link refused something without a command
     id (``stage == "agent_link"``, the message then starts with the error code)."""
@@ -774,6 +786,12 @@ def _parse_body(kind: str, obj: Mapping[str, Any], env: dict[str, int]) -> Messa
         return BotTtsText(**env, epoch=epoch(), text=text())
     if kind == "bot.tts_stopped":
         return BotTtsStopped(**env, epoch=epoch())
+    if kind == "language.switched":
+        return LanguageSwitched(
+            **env,
+            from_language=_need(obj, "from", str, what),
+            to=_need(obj, "to", str, what),
+        )
     if kind == "error":
         return ErrorEvent(
             **env,

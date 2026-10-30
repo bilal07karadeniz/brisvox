@@ -191,6 +191,15 @@ pub enum ServerBody {
         /// The response's epoch.
         epoch: u32,
     },
+    /// The agent follows the caller into another language: the replies from the next turn on
+    /// are in `to`.
+    #[serde(rename = "language.switched")]
+    LanguageSwitched {
+        /// The language code before (`en`).
+        from: Arc<str>,
+        /// The language code now (`tr`).
+        to: Arc<str>,
+    },
     /// A stage of the call reported an error.
     #[serde(rename = "error")]
     Error {
@@ -798,6 +807,7 @@ pub const EVENT_TYPES: &[&str] = &[
     "bot.llm_stopped",
     "bot.tts_text",
     "bot.tts_stopped",
+    "language.switched",
 ];
 
 impl ServerBody {
@@ -820,6 +830,7 @@ impl ServerBody {
             Self::BotLlmStopped { .. } => "bot.llm_stopped",
             Self::BotTtsText { .. } => "bot.tts_text",
             Self::BotTtsStopped { .. } => "bot.tts_stopped",
+            Self::LanguageSwitched { .. } => "language.switched",
             Self::Error { .. } => "error",
             Self::EventsLost { .. } => "events.lost",
             Self::ToolCall { .. } => "tool.call",
@@ -1159,6 +1170,10 @@ mod tests {
                 text: Arc::from(""),
             },
             ServerBody::BotTtsStopped { epoch: 0 },
+            ServerBody::LanguageSwitched {
+                from: Arc::from("en"),
+                to: Arc::from("tr"),
+            },
         ];
         assert_eq!(bodies.len(), EVENT_TYPES.len());
         for (body, name) in bodies.iter().zip(EVENT_TYPES) {

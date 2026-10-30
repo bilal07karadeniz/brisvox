@@ -45,6 +45,7 @@ async fn next(
             is_final,
             speech_final,
             from_finalize,
+            ..
         } => Some((
             (clock.now() - start).as_millis(),
             text.to_string(),
@@ -102,6 +103,7 @@ async fn several_final_segments_end_with_speech_final_and_the_next_utterance_fol
     stt.push(SttUtterance {
         interims: Vec::new(),
         finals: vec!["I'd like".into(), "a coffee".into()],
+        language: None,
     });
     stt.push(SttUtterance::words("thanks"));
     let start = clock.now();

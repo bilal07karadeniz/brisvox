@@ -200,22 +200,29 @@ Tolerances (measured, then enforced): features bit-identical on all 12 cases; pr
 
 ## Fused GELU (measured 2026-10-23)
 
-With `BRISVOX_SMART_TURN_GRAPH=fused` (opt-in; the default runs the file as published) brisvox runs the
-pinned int8 file with one change made in memory when a session is created
+brisvox runs the pinned int8 file with one change made in memory when a session is created
 (`crates/brisvox-inference/src/smart_turn/fuse.rs`): each of the 8 exact GELUs, exported as five
 element-wise passes over a `[400, 1536]` float tensor (`x / √2`, `Erf`, `+ 1`, `· 0.5`, `· x`), becomes
 one `com.microsoft.Gelu` node, which ONNX Runtime then fuses with the preceding bias add. The file on
 disk and its pin are unchanged.
 
-Why it is not the default: the early verdict. The engine takes a verdict 64 ms into the silence and
-completes the turn on it when it says "complete" (docs/LATENCY.md); a test pins that this early verdict
-never says "complete" where the verdict at the stop (160 ms of silence) says "incomplete", on every cut of
-the fixtures (`crates/brisvox-engine/tests/early_analysis_realtime.rs`). With the fused graph one abrupt
-cut of 23 broke it, on the reference desktop and on GitHub's runners alike: early 0.530 (published graph
-0.288), at the stop 0.296. The verdicts on whole test clips agree (below), but on the model's decision edge
-the fused rounding can move a probability by 0.2-0.3, and that one case would end a turn too soon. Until
-the early verdict is shown safe with the fused graph on far more than 23 cuts, the published graph stays
-the default.
+The early verdict (measured 2026-10-31). The engine takes a verdict 64 ms into the silence and completes the
+turn on it when it says "complete" (docs/LATENCY.md). In 0.1.2 the fused graph was opt-in because on one abrupt
+cut of the 23 in `crates/brisvox-engine/tests/early_analysis_realtime.rs` its early verdict said "complete"
+(0.530; published graph 0.288) where the verdict at the stop said "incomplete" (0.296). Measured on the official
+test set (each clip + 96 ms vs + 160 ms of silence, `bench/results/smart-turn-early-verdict-2026-10-31.md`),
+that case is a small rate both graphs share, not something the published graph never does:
+
+| CPU | clips | early and stop agree | complete early, incomplete at the stop | turns ended too soon (of the incomplete clips) |
+|---|---|---|---|---|
+| with VNNI (reference desktop) | 4000 | 96.75% / 96.75% | 63 / 63 | 315 / 313 of 2022 |
+| without VNNI (emulated Haswell) | 1000 | 97.3% / 97.4% | 8 / 8 | 97 / 98 of 524 |
+
+(published / fused; "ended too soon" counts the early and the stop verdict together.) Since 0.1.3 the fused graph
+is the default again; the test bounds the rate on its 23 cuts (at most one) instead of requiring none, and keeps
+none on the real utterance ends. A stricter early rule (commit only at p >= 0.5 + margin) trades the same way for
+both graphs: a margin of 0.2 ends 296 instead of 315 turns too soon but takes about 40 turns off the fast path and
+misses 9 more complete ones, so the rule is unchanged.
 
 Why: an analysis is bound by memory traffic, not arithmetic. ONNX Runtime's profile counts about
 330 MB of tensor output per analysis for the published graph and about 200 MB for the fused one; with
@@ -230,7 +237,7 @@ Pipecat's pinned extractor on the last 8 s; ONNX Runtime 1.28.0, verdict `p > 0.
 | graph | accuracy against the labels | same verdict as the published graph | mean / max \|Δp\| |
 |---|---|---|---|
 | published int8 (`smart-turn-v3.2-cpu.onnx`) | 92.67% | 100% | - |
-| **fused int8 (opt-in)** | **92.70%** | **99.92%** (3 clips differ) | 0.0023 / 0.74 |
+| **fused int8 (brisvox's default)** | **92.70%** | **99.92%** (3 clips differ) | 0.0023 / 0.74 |
 | published fp32 (`smart-turn-v3.2-gpu.onnx`) | 93.62% | 96.0% (160 differ) | 0.042 / 0.92 |
 
 The fused graph's three changed verdicts: one Vietnamese clip corrected, and in Bengali one corrected and one

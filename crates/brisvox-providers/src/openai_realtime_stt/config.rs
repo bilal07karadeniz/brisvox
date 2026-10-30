@@ -129,6 +129,12 @@ pub struct OpenAiRealtimeSttConfig {
     /// field out (the server detects, or defaults to English). A language from the session
     /// (BCP-47) is mapped to that form instead.
     pub language: Option<String>,
+    /// The languages the speaker is expected to use, when the session and [`Self::language`]
+    /// name none: OpenAI's `gpt-live-transcribe` takes them as `languages` ("add `languages`
+    /// when more than one input language is expected"); every other model and dialect detects
+    /// the language itself when none is sent. This provider reports no language on streaming
+    /// transcripts, so the engine falls back to text detection. Empty by default.
+    pub languages: Vec<String>,
     /// Transcription prompt (OpenAI, NIM). `None` sends none.
     pub prompt: Option<String>,
     /// NIM: `enable_automatic_punctuation`. Default `true`.
@@ -182,6 +188,7 @@ impl OpenAiRealtimeSttConfig {
             path_and_query: None,
             model: None,
             language: None,
+            languages: Vec::new(),
             prompt: None,
             punctuation: true,
             delta_replaces: None,
@@ -247,6 +254,9 @@ impl OpenAiRealtimeSttConfig {
             && !is_token(language)
         {
             return bad("language must be letters, digits, '.', '_' or '-'");
+        }
+        if self.languages.len() > 16 || self.languages.iter().any(|l| !is_token(l)) {
+            return bad("languages: at most 16 codes of letters, digits, '.', '_' or '-'");
         }
         if let Some(path) = &self.path_and_query
             && (!path.starts_with('/')

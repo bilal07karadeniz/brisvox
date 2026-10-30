@@ -24,9 +24,11 @@ use brisvox_agent::tools::{SessionId, ToolEngine, ToolKind};
 use brisvox_core::frame::{ControlFrame, ControlKind, Frame, SystemFrame};
 use brisvox_core::{Clock, SharedClock, SimClock, TurnEpoch};
 use brisvox_engine::{
-    BoxFuture, Cut, CutRequest, EngineConfig, SpeculationConfig, SpeculationStatsSnapshot,
-    TruncationSource, candidate_frame, withdrawal_frame,
+    BoxFuture, Cut, CutRequest, EngineConfig, LanguageProfile, LanguageSettings, LanguageTracker,
+    SpeculationConfig, SpeculationStatsSnapshot, TruncationSource, Utterance, candidate_frame,
+    withdrawal_frame,
 };
+use brisvox_providers::SpokenLanguage;
 use brisvox_providers::{FinishReason, LlmEvent, LlmProvider, LlmRequest, LlmStream};
 use brisvox_sim::leak::TaskCounter;
 use brisvox_sim::mock_llm::{LlmFault, LlmScript};
@@ -1431,4 +1433,147 @@ async fn a_helper_whose_stream_goes_quiet_after_output_times_out_and_the_partial
     let llm = rig.stats.snapshot();
     assert_eq!((llm.failed_rounds, llm.retries), (1, 0), "{llm:?}");
     assert_eq!(requests(&rig), 1);
+}
+
+// ---- language switches ----------------------------------------------------------------------
+
+fn tracker() -> Arc<LanguageTracker> {
+    let profiles = vec![
+        LanguageProfile::new("en", Language::En, "en-voice"),
+        LanguageProfile::new("tr", Language::Tr, "tr-voice"),
+    ];
+    Arc::new(LanguageTracker::new(Arc::new(
+        LanguageSettings::new(profiles, "en").unwrap(),
+    )))
+}
+
+/// The caller said two Turkish utterances: the tracker switches.
+fn caller_switches_to_turkish(tracker: &LanguageTracker) {
+    for text in ["bana yardım eder misin", "siparişim nerede acaba"] {
+        let mut utterance = Utterance::new();
+        utterance.push(text, Some(&SpokenLanguage::new("tr")));
+        let _ = tracker.observe(&utterance);
+    }
+    assert_eq!(tracker.current_code(), "tr");
+}
+
+fn system_of(request: &LlmRequest) -> String {
+    request.messages.first().unwrap().content.to_string()
+}
+
+#[tokio::test(start_paused = true)]
+async fn a_speculation_started_before_a_language_switch_is_discarded_and_the_turn_asks_again() {
+    let tracker = tracker();
+    let rig = Rig::new(spec_config(), {
+        let tracker = Arc::clone(&tracker);
+        move |b, _| b.with_system_prompt("Be brief.").with_languages(tracker)
+    })
+    .await;
+    rig.llm.push(LlmScript::text(["Of course."])); // the speculative answer, in English
+    rig.llm.push(LlmScript::text(["Tabii."])); // the real answer
+    candidate(&rig, 1, "siparişim nerede acaba").await;
+    rig.settle(100 * MS).await;
+    assert_eq!(requests(&rig), 1);
+
+    // The turn's own final reaches the language tracker before the turn ends: this very turn
+    // makes the second Turkish utterance in a row.
+    caller_switches_to_turkish(&tracker);
+    rig.turn(1, "siparişim nerede acaba").await;
+    rig.until_label("llm_response_ended").await;
+
+    let spec = stats(&rig);
+    assert_eq!(
+        (spec.started, spec.hits, spec.misses),
+        (1, 0, 1),
+        "{spec:?}"
+    );
+    let sent = rig.llm.requests();
+    assert_eq!(sent.len(), 2, "the turn asked again");
+    assert!(system_of(&sent[0]).ends_with("Reply in English."));
+    assert!(system_of(&sent[1]).ends_with("Reply in Turkish."));
+    // What was said is in the context, with no trace of the pinned line.
+    assert_eq!(
+        rig.conversation(),
+        [
+            "system:Be brief.",
+            "user:siparişim nerede acaba",
+            "assistant:Tabii."
+        ]
+    );
+}
+
+#[tokio::test(start_paused = true)]
+async fn a_switch_after_the_turn_ended_is_for_the_next_turn_and_the_speculation_stands() {
+    let tracker = tracker();
+    let rig = Rig::new(spec_config(), {
+        let tracker = Arc::clone(&tracker);
+        move |b, _| b.with_system_prompt("Be brief.").with_languages(tracker)
+    })
+    .await;
+    for reply in ["Of course.", "Tabii."] {
+        rig.llm.push(LlmScript::text([reply]));
+    }
+    candidate(&rig, 1, "where is my order").await;
+    rig.settle(100 * MS).await;
+    rig.turn(1, "where is my order").await;
+    rig.settle(5 * MS).await;
+    // The language of epoch 1 was locked when its speculation was judged.
+    caller_switches_to_turkish(&tracker);
+    rig.until_label("llm_response_ended").await;
+    let spec = stats(&rig);
+    assert_eq!((spec.hits, spec.misses), (1, 0), "{spec:?}");
+
+    rig.turn(2, "siparişim nerede acaba").await;
+    rig.settle(100 * MS).await;
+    let sent = rig.llm.requests();
+    assert_eq!(sent.len(), 2);
+    assert!(system_of(&sent[0]).ends_with("Reply in English."));
+    assert!(system_of(&sent[1]).ends_with("Reply in Turkish."));
+}
+
+/// A slow tool and a rig whose call has two languages; `turkish` switches the tracker first.
+async fn filler_run(turkish: bool) -> Vec<String> {
+    let tracker = tracker();
+    if turkish {
+        caller_switches_to_turkish(&tracker);
+    }
+    let probe = Arc::new(ToolProbe::default());
+    let rig = Rig::new(EngineConfig::DEFAULT, {
+        let (tracker, probe) = (Arc::clone(&tracker), Arc::clone(&probe));
+        move |builder, clock| {
+            let (registry, engine) = lookup_tools(
+                clock,
+                &probe,
+                ToolKind::ReadOnly,
+                3 * SECOND,
+                Some(500 * MS),
+            );
+            builder.with_tools(registry, engine).with_languages(tracker)
+        }
+    })
+    .await;
+    rig.llm.push(tool_script("Let me look."));
+    rig.llm.push(LlmScript::text(["Done."]));
+    rig.turn(1, "find my table").await;
+    rig.settle(6 * SECOND).await;
+    rig.labels()
+}
+
+#[tokio::test(start_paused = true)]
+async fn the_tool_filler_is_spoken_in_the_default_language_and_skipped_in_another() {
+    let english = filler_run(false).await;
+    assert!(
+        english
+            .iter()
+            .any(|l| l.contains(brisvox_engine::DEFAULT_FILLER)),
+        "{english:?}"
+    );
+    let turkish = filler_run(true).await;
+    assert!(
+        !turkish
+            .iter()
+            .any(|l| l.contains(brisvox_engine::DEFAULT_FILLER)),
+        "{turkish:?}"
+    );
+    assert!(turkish.iter().any(|l| l.contains("Done.")), "{turkish:?}");
 }

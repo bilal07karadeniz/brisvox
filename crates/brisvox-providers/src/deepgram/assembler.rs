@@ -31,7 +31,7 @@
 use std::sync::Arc;
 
 use super::protocol::Results;
-use crate::stt::SttEvent;
+use crate::stt::{SpokenLanguage, SttEvent};
 
 /// How many results after a non-final `speech_final=true` may still inherit that flag. The final
 /// of the same segment follows immediately in practice; the bound stops a flag that no final ever
@@ -133,12 +133,11 @@ impl Assembler {
             return;
         }
         self.synthetic_text.clear();
-        out.push(transcript(
-            &r.transcript,
-            true,
-            ends,
-            r.from_finalize || answers,
-        ));
+        let mut event = transcript(&r.transcript, true, ends, r.from_finalize || answers);
+        if let SttEvent::Transcript { language, .. } = &mut event {
+            *language = r.language.as_deref().map(SpokenLanguage::new);
+        }
+        out.push(event);
         self.open_finals = !ends;
         if ends {
             self.inherit_left = 0;
@@ -219,6 +218,7 @@ fn transcript(text: &str, is_final: bool, speech_final: bool, from_finalize: boo
         is_final,
         speech_final,
         from_finalize,
+        language: None,
     }
 }
 
@@ -234,7 +234,30 @@ mod tests {
             from_finalize,
             start: 0.0,
             duration: 1.0,
+            language: None,
         }
+    }
+
+    #[test]
+    fn the_reported_language_goes_to_final_segments_only() {
+        let mut a = Assembler::default();
+        let mut out = Vec::new();
+        let mut interim = res("merhaba", false, false, false);
+        interim.language = Some(Arc::from("tr"));
+        a.on_results(&interim, false, &mut out);
+        let mut done = res("merhaba dünya", true, true, false);
+        done.language = Some(Arc::from("tr"));
+        a.on_results(&done, false, &mut out);
+        let languages: Vec<Option<String>> = out
+            .iter()
+            .map(|e| match e {
+                SttEvent::Transcript { language, .. } => {
+                    language.as_ref().map(|l| l.code.to_string())
+                }
+                SttEvent::Error(_) => None,
+            })
+            .collect();
+        assert_eq!(languages, [None, Some("tr".to_owned())]);
     }
 
     /// (text, is_final, speech_final, from_finalize)
@@ -249,6 +272,7 @@ mod tests {
                     is_final,
                     speech_final,
                     from_finalize,
+                    ..
                 } => (text.to_string(), *is_final, *speech_final, *from_finalize),
                 SttEvent::Error(e) => panic!("unexpected error event {e}"),
             })

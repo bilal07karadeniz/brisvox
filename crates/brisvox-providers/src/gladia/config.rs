@@ -102,7 +102,15 @@ pub struct GladiaConfig {
     /// suffix such as `tr-TR` is cut off). `None` lets Gladia detect the language, which is less
     /// accurate for partials than naming it.
     pub language: Option<String>,
+    /// The languages the speaker is expected to use (`language_config.languages`, e.g.
+    /// `["en", "tr"]`), when the session names no language of its own: Gladia then detects the
+    /// language among them (with [`Self::code_switching`] on each utterance) and reports it on
+    /// every transcript. Takes the place of [`Self::language`]. Gladia advises a small set;
+    /// empty by default.
+    pub languages: Vec<String>,
     /// `language_config.code_switching`. Default `false`; only meaningful with a language set.
+    /// With `false` Gladia detects the language on the first utterance and keeps it for the
+    /// whole session.
     pub code_switching: bool,
     /// Encoding of the audio bytes. Default [`Encoding::Pcm16`].
     pub encoding: Encoding,
@@ -186,6 +194,7 @@ impl GladiaConfig {
             api_key,
             model: "solaria-1".to_owned(),
             language: None,
+            languages: Vec::new(),
             code_switching: false,
             encoding: Encoding::Pcm16,
             sample_rate_hz: None,
@@ -246,6 +255,9 @@ impl GladiaConfig {
         };
         if !is_token(&self.model) {
             return bad("model must be letters, digits, '.', '_' or '-'");
+        }
+        if self.languages.len() > 8 || self.languages.iter().any(|l| !is_language(l)) {
+            return bad("languages: at most 8 codes such as 'tr' or 'tr-TR'");
         }
         if let Some(language) = &self.language
             && !is_language(language)
@@ -352,7 +364,27 @@ impl GladiaConfig {
     /// [`Error::Protocol`] if serialisation fails (not expected: the body holds only strings,
     /// numbers and booleans).
     pub(crate) fn init_body(&self, stt: &SttConfig) -> Result<Vec<u8>> {
-        let language = self.language_for(stt);
+        let single = self.language_for(stt);
+        let several: Vec<String> = if single.is_none() {
+            let mut codes: Vec<String> = Vec::new();
+            for code in &self.languages {
+                let primary = code
+                    .split(['-', '_'])
+                    .next()
+                    .unwrap_or(code)
+                    .to_ascii_lowercase();
+                if !primary.is_empty() && !codes.contains(&primary) {
+                    codes.push(primary);
+                }
+            }
+            codes
+        } else {
+            Vec::new()
+        };
+        let languages: Vec<&str> = match &single {
+            Some(language) => vec![language.as_str()],
+            None => several.iter().map(String::as_str).collect(),
+        };
         let body = InitBody {
             encoding: self.encoding.param(),
             bit_depth: self.encoding.bit_depth(),
@@ -361,8 +393,8 @@ impl GladiaConfig {
             model: &self.model,
             endpointing: self.endpointing,
             maximum_duration_without_endpointing: self.maximum_duration_without_endpointing,
-            language_config: language.as_deref().map(|l| LanguageConfig {
-                languages: [l],
+            language_config: (!languages.is_empty()).then_some(LanguageConfig {
+                languages,
                 code_switching: self.code_switching,
             }),
             realtime_processing: (!self.vocabulary.is_empty()).then(|| RealtimeProcessing {
@@ -408,7 +440,7 @@ struct InitBody<'a> {
 
 #[derive(Serialize)]
 struct LanguageConfig<'a> {
-    languages: [&'a str; 1],
+    languages: Vec<&'a str>,
     code_switching: bool,
 }
 
@@ -484,6 +516,24 @@ mod tests {
 
     fn body(c: &GladiaConfig, s: &SttConfig) -> serde_json::Value {
         serde_json::from_slice(&c.init_body(s).unwrap()).unwrap()
+    }
+
+    #[test]
+    fn a_language_list_is_sent_when_the_session_names_none() {
+        let mut c = cfg();
+        c.languages = vec!["en".to_owned(), "TR-tr".to_owned(), "en_US".to_owned()];
+        c.code_switching = true;
+        assert_eq!(
+            body(&c, &stt(None))["language_config"],
+            serde_json::json!({"languages": ["en", "tr"], "code_switching": true})
+        );
+        // The session's own language wins: one language, no list.
+        assert_eq!(
+            body(&c, &stt(Some("tr")))["language_config"]["languages"],
+            serde_json::json!(["tr"])
+        );
+        c.languages = vec!["tr&x".to_owned()];
+        assert!(c.validate().is_err());
     }
 
     #[test]

@@ -58,6 +58,8 @@ fn tts_config() -> TtsConfig {
     TtsConfig {
         sample_rate: SampleRate::Hz16000,
         voice: Arc::from("voice-1"),
+        language: None,
+        model: None,
     }
 }
 
@@ -303,6 +305,8 @@ async fn optional_settings_reach_the_url() {
         .connect(TtsConfig {
             sample_rate: SampleRate::Hz24000,
             voice: Arc::from("tr_voice-2"),
+            language: None,
+            model: None,
         })
         .await
         .unwrap();
@@ -311,6 +315,42 @@ async fn optional_settings_reach_the_url() {
         "/v1/text-to-speech/tr_voice-2/multi-stream-input?model_id=eleven_multilingual_v2\
          &output_format=pcm_24000&inactivity_timeout=60&sync_alignment=false&language_code=tr\
          &apply_text_normalization=on&enable_logging=false"
+    );
+}
+
+#[tokio::test]
+async fn the_session_language_and_model_reach_the_url() {
+    let mock = Mock::start();
+    let provider = ElevenLabsTts::new(config(&mock)).unwrap();
+    let open = |language: Option<&'static str>, model: Option<&'static str>| {
+        provider.connect(TtsConfig {
+            sample_rate: SampleRate::Hz16000,
+            voice: Arc::from("tr_voice"),
+            language: language.map(Arc::from),
+            model: model.map(Arc::from),
+        })
+    };
+    let _a = open(Some("tr"), None).await.unwrap();
+    let _b = open(Some("tr"), Some("eleven_v3")).await.unwrap();
+    // The multilingual_v2 models do not take `language_code`: it is left out.
+    let _c = open(Some("tr"), Some("eleven_multilingual_v2"))
+        .await
+        .unwrap();
+    let uris: Vec<String> = mock.handshakes().into_iter().map(|h| h.uri).collect();
+    assert_eq!(
+        uris[0],
+        "/v1/text-to-speech/tr_voice/multi-stream-input?model_id=eleven_flash_v2_5\
+         &output_format=pcm_16000&inactivity_timeout=180&sync_alignment=false&language_code=tr"
+    );
+    assert!(
+        uris[1].contains("model_id=eleven_v3&") && uris[1].ends_with("&language_code=tr"),
+        "{}",
+        uris[1]
+    );
+    assert!(
+        uris[2].contains("model_id=eleven_multilingual_v2&") && !uris[2].contains("language_code"),
+        "{}",
+        uris[2]
     );
 }
 
@@ -413,6 +453,8 @@ async fn mulaw_telephony_output_is_requested_and_counted_per_byte() {
         .connect(TtsConfig {
             sample_rate: SampleRate::Hz8000,
             voice: Arc::from("tel"),
+            language: None,
+            model: None,
         })
         .await
         .unwrap();
@@ -2062,6 +2104,8 @@ async fn live_elevenlabs_session() {
     let config = TtsConfig {
         sample_rate: SampleRate::Hz24000,
         voice: Arc::from(voice.as_str()),
+        language: None,
+        model: None,
     };
 
     let warm_started = tokio::time::Instant::now();

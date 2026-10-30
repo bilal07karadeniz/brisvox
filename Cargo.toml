@@ -35,6 +35,9 @@ jsonschema = { version = "0.58.6", default-features = false }
 # transport is the server's own rustls/ring config (brisvox-providers `net`), not rmcp's aws-lc.
 rmcp = { version = "3.7.0", default-features = false }
 rubato = "5.0.1"
+# Text-based language identification (the fallback of language switching when the STT provider
+# reports no language): MIT, crates.io 0.18.0 (2025-10-16), one small dependency (hashbrown).
+whatlang = { version = "0.18.0", default-features = false }
 # WebRTC transport: sans-IO str0m with the pure-Rust crypto backend (no C toolchain
 # for DTLS/SRTP; the default aws-lc-rs needs cmake/nasm on Windows) and no default features
 # (`examples` pulls an HTTP server). Exact pin: breaking changes land in minor versions. Opus is

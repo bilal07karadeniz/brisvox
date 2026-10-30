@@ -29,6 +29,13 @@ pub struct TtsConfig {
     pub sample_rate: SampleRate,
     /// Provider voice id.
     pub voice: Arc<str>,
+    /// BCP-47 language the session speaks (a lowercase primary code such as `"tr"`), for
+    /// providers that take a language next to the voice (Cartesia `language`, ElevenLabs
+    /// `language_code`, Chatterbox `language_id`); `None` keeps the adapter's own setting.
+    pub language: Option<Arc<str>>,
+    /// Model id overriding the adapter's configured one for this session (a language may need
+    /// another model); `None` keeps the adapter's.
+    pub model: Option<Arc<str>>,
 }
 
 /// What the engine sends to a TTS session (cancel goes through [`TtsSession::cancel`]).

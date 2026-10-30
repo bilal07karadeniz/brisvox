@@ -71,6 +71,8 @@ use brisvox_core::{
     TimelineRecorder, TurnEpoch, TurnEvent,
 };
 
+use crate::language::LanguageTracker;
+
 /// Retained raw text above which [`SegmenterStage`] ends the stream (see "Memory bound" in the
 /// [module docs](self)), as a multiple of `max_chunk_chars` bytes.
 pub const RAW_CAP_FACTOR: usize = 64;
@@ -211,6 +213,10 @@ pub struct SegmenterStage {
     /// The epoch whose first chunk is marked already: the mark is made once per response, so
     /// the chunks after it pay one comparison and no lock.
     marked: Option<TurnEpoch>,
+    /// The settings the segmenter was built with (rebuilt for another language).
+    config: SegmenterStageConfig,
+    /// The call languages: a response is cut with the abbreviations of its own language.
+    languages: Option<Arc<LanguageTracker>>,
 }
 
 impl SegmenterStage {
@@ -230,6 +236,35 @@ impl SegmenterStage {
             counters: Arc::new(Counters::default()),
             timeline: None,
             marked: None,
+            config,
+            languages: None,
+        }
+    }
+
+    /// Cuts each response with the language the call tracker locked for its epoch
+    /// (abbreviations, first-chunk words). See [`crate::language`].
+    #[must_use]
+    pub fn with_languages(mut self, tracker: Arc<LanguageTracker>) -> Self {
+        self.languages = Some(tracker);
+        self
+    }
+
+    /// A stream of `epoch` starts: cuts it in the language of the response.
+    fn follow_language(&mut self, epoch: TurnEpoch) {
+        let Some(tracker) = &self.languages else {
+            return;
+        };
+        let Some(profile) = tracker.profile(tracker.language_for(epoch)) else {
+            return;
+        };
+        if profile.language != self.config.segmenter.language {
+            let first_min_words = self.config.segmenter.first_min_words;
+            self.config.segmenter = SegmenterConfig {
+                language: profile.language,
+                first_min_words,
+                ..self.config.segmenter
+            };
+            self.segmenter = Segmenter::new(self.config.segmenter);
         }
     }
 
@@ -368,6 +403,9 @@ impl Processor for SegmenterStage {
                 if self.epoch.is_some_and(|current| current != text.epoch) {
                     bump(&self.counters.foreign_epoch_resets);
                     self.reset();
+                }
+                if self.epoch.is_none() {
+                    self.follow_language(text.epoch);
                 }
                 self.epoch = Some(text.epoch);
                 self.raw.push_str(&text.text);

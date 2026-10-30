@@ -111,6 +111,11 @@ impl SttProvider for DeepgramStt {
             cfg: Arc::clone(&self.cfg),
             clock: Arc::clone(&self.clock),
             bytes_per_second: self.cfg.bytes_per_second(&config),
+            multi: config
+                .language
+                .as_deref()
+                .or(self.cfg.language.as_deref())
+                .is_some_and(|language| language == "multi"),
             target,
         };
         // Ends when the caller drops the input sender or the events receiver (see `session`).

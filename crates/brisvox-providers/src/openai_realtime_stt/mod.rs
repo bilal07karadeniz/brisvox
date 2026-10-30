@@ -83,6 +83,7 @@ impl SttProvider for OpenAiRealtimeStt {
             dialect: self.cfg.dialect,
             model: self.cfg.model().map(str::to_owned),
             language,
+            languages: self.cfg.languages.clone(),
             prompt: self.cfg.prompt.clone(),
             punctuation: self.cfg.punctuation,
             replaces: self.cfg.replaces(),

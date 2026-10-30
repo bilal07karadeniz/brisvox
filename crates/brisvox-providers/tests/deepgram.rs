@@ -422,6 +422,7 @@ fn flat(event: SttEvent) -> (String, bool, bool, bool) {
             is_final,
             speech_final,
             from_finalize,
+            ..
         } => (text.to_string(), is_final, speech_final, from_finalize),
         SttEvent::Error(e) => panic!("unexpected error event: {e:?}"),
     }
@@ -578,6 +579,110 @@ async fn every_server_message_type_is_handled() {
     // The trailing blank speech_final closes nothing (the utterance already ended): no event.
     let extra = tokio::time::timeout(Duration::from_millis(200), session.events.recv()).await;
     assert!(extra.is_err(), "unexpected event {extra:?}");
+}
+
+/// A final `Results` message of `language=multi`: every word carries its language.
+fn multi_results(text: &str, word_languages: &[&str], speech_final: bool) -> String {
+    let words: Vec<_> = text
+        .split_whitespace()
+        .zip(word_languages)
+        .map(|(word, language)| json!({"word": word, "language": language, "confidence": 0.9}))
+        .collect();
+    json!({
+        "type": "Results",
+        "is_final": true,
+        "speech_final": speech_final,
+        "from_finalize": false,
+        "start": 0.0,
+        "duration": 1.0,
+        "channel": {"alternatives": [{
+            "transcript": text,
+            "confidence": 0.95,
+            "languages": ["tr", "en"],
+            "words": words,
+        }]},
+    })
+    .to_string()
+}
+
+#[tokio::test]
+async fn multi_language_asks_for_hints_and_reports_the_language_of_final_segments() {
+    let server = MockServer::start(handler(|conn| async move {
+        let Some(mut s) = conn.accept().await else {
+            return;
+        };
+        s.until_audio(1).await;
+        // A Turkish sentence with an English word (code-switching), then an English one.
+        s.send(&multi_results(
+            "bana order durumunu göster",
+            &["tr", "en", "tr", "tr"],
+            false,
+        ))
+        .await;
+        s.send(&multi_results(
+            "where is my order",
+            &["en", "en", "en", "en"],
+            true,
+        ))
+        .await;
+        s.drain().await;
+    }))
+    .await;
+    let stt = adapter(&server, |c| {
+        c.language = Some("multi".to_owned());
+        c.language_hints = vec!["en".to_owned(), "tr".to_owned()];
+    });
+    let mut session = stt
+        .connect(SttConfig {
+            sample_rate: SampleRate::Hz16000,
+            language: None,
+        })
+        .await
+        .unwrap();
+    session.input.send(chunk(1)).await.unwrap();
+    let uri = server.requests()[0].uri.clone();
+    assert!(uri.contains("&language=multi&"), "{uri}");
+    assert!(uri.ends_with("&language_hint=en&language_hint=tr"), "{uri}");
+    let mut got = Vec::new();
+    for _ in 0..2 {
+        match event(&mut session).await {
+            SttEvent::Transcript { text, language, .. } => {
+                got.push((text.to_string(), language.map(|l| l.code.to_string())));
+            }
+            other => panic!("unexpected {other:?}"),
+        }
+    }
+    assert_eq!(
+        got,
+        [
+            (
+                "bana order durumunu göster".to_owned(),
+                Some("tr".to_owned())
+            ),
+            ("where is my order".to_owned(), Some("en".to_owned())),
+        ]
+    );
+}
+
+#[tokio::test]
+async fn a_monolingual_session_reports_no_language() {
+    let server = MockServer::start(handler(|conn| async move {
+        let Some(mut s) = conn.accept().await else {
+            return;
+        };
+        s.until_audio(1).await;
+        s.send(&results("merhaba", true, true, false, 0.0, 1.0))
+            .await;
+        s.drain().await;
+    }))
+    .await;
+    let stt = adapter(&server, |_| {});
+    let mut session = connect(&stt).await;
+    session.input.send(chunk(1)).await.unwrap();
+    match event(&mut session).await {
+        SttEvent::Transcript { language, .. } => assert!(language.is_none()),
+        other => panic!("unexpected {other:?}"),
+    }
 }
 
 #[tokio::test]

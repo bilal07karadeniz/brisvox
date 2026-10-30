@@ -149,6 +149,10 @@ pub const DEFAULT_FILLER: &str = brisvox_agent::tools::DEFAULT_FILLER_TEXT;
 /// What the runner says by default when the tool budget is spent (English).
 pub const DEFAULT_FALLBACK: &str = "Sorry, I could not complete that. Could you say it again?";
 
+/// [`DEFAULT_FALLBACK`] in Turkish: said instead of it in a Turkish response of a call with
+/// several languages (`crate::language`) when the runner's fallback was left at its default.
+pub const DEFAULT_FALLBACK_TR: &str = "Üzgünüm, bunu tamamlayamadım. Tekrar söyler misiniz?";
+
 /// Rounds remembered for truncation; older ones are dropped (counted). A turn has a handful.
 pub(crate) const MAX_RECORDS: usize = 128;
 
@@ -489,6 +493,8 @@ pub(crate) struct Shared<P: LlmProvider> {
     /// ([`ConversationEdit::SetTools`](crate::agent_input::ConversationEdit::SetTools));
     /// `None`: every registered tool. Changed only at a safe point (no round task alive).
     pub(crate) offered: Mutex<Option<Arc<BTreeSet<Arc<str>>>>>,
+    /// The call languages (`crate::language`): each turn pins the reply language in its request.
+    pub(crate) languages: Option<Arc<crate::language::LanguageTracker>>,
 }
 
 pub(crate) fn lock<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {

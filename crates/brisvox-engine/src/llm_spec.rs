@@ -221,6 +221,10 @@ pub(crate) struct SpecRun {
     pub(crate) basis_fp: u64,
     /// The helper ends by itself at this instant unless committed.
     pub(crate) deadline: Instant,
+    /// The language (an index of the call's languages, `crate::language`) the request was
+    /// built for, when the call has several: the turn's own language must be the same, or the
+    /// reply would be in the wrong one.
+    pub(crate) language: Option<usize>,
     token: CancellationToken,
     shared: Arc<SpecShared>,
     rx: mpsc::Receiver<SpecItem>,
@@ -352,9 +356,20 @@ pub(crate) fn start<P: LlmProvider>(
     let capacity = buffered.clamp(2, SpeculationConfig::MAX_BUFFERED_EVENTS_LIMIT);
     let (tx, rx) = mpsc::channel(capacity);
     bump(&counters.started);
+    // One read of the current language gives both the index kept for the check at commit and
+    // the line pinned in the request.
+    let (language, instruction) = match s.languages.as_ref().map(|t| t.instruction_now()) {
+        Some((index, instruction)) => (Some(index), instruction),
+        None => (None, None),
+    };
     let task = Task {
         s: Arc::clone(s),
         counters: Arc::clone(counters),
+        instruction,
+        default_language: match (&s.languages, language) {
+            (Some(tracker), Some(index)) => tracker.is_default(index),
+            _ => true,
+        },
         epoch,
         context: Mutex::new(Some(Arc::new(Mutex::new(context)))),
         token: token.clone(),
@@ -368,6 +383,7 @@ pub(crate) fn start<P: LlmProvider>(
         norm,
         basis_fp,
         deadline,
+        language,
         token,
         shared,
         rx,
@@ -378,6 +394,10 @@ pub(crate) fn start<P: LlmProvider>(
 struct Task<P: LlmProvider> {
     s: Arc<Shared<P>>,
     counters: Arc<SpecCounters>,
+    /// The reply-language line for the request, when the call has several languages.
+    instruction: Option<Arc<str>>,
+    /// The request is for the language the call started in (the filler phrases' language).
+    default_language: bool,
     epoch: TurnEpoch,
     /// The context the request is built from; taken (and freed) when the request is built.
     context: Mutex<Option<Arc<Mutex<Context>>>>,
@@ -446,7 +466,13 @@ impl<P: LlmProvider> Task<P> {
             return;
         };
         let request = match s.builder.build_offloaded(&scratch, &tools).await {
-            Ok(built) => built.request,
+            Ok(built) => {
+                let mut request = built.request;
+                if let Some(instruction) = &self.instruction {
+                    crate::language::pin_language(&mut request.messages, instruction);
+                }
+                request
+            }
             Err(error) => {
                 bump_llm(&s.count().request_build_errors);
                 tracing::error!(target: "brisvox::engine", %error, "cannot build the speculative LLM request");
@@ -609,7 +635,10 @@ impl<P: LlmProvider> Task<P> {
             // A flow screens the calls against the node and may enter another one; the runner
             // never starts a speculation with a flow, this arm is only a guard.
             Some(tools) if s.flow.is_none() => {
-                done.filler = s.filler.plan(&tools.registry, &calls);
+                done.filler = self
+                    .default_language
+                    .then(|| s.filler.plan(&tools.registry, &calls))
+                    .flatten();
                 if !self.send(SpecItem::ToolsStarted).await {
                     return;
                 }

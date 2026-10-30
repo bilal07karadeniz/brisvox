@@ -28,6 +28,11 @@ pub(crate) struct Results {
     pub(crate) start: f64,
     /// Duration of the segment in seconds.
     pub(crate) duration: f64,
+    /// The language Deepgram reports for the segment with `language=multi`: the one most of the
+    /// first alternative's words are in (`words[].language`), else the first of its `languages`
+    /// (sorted by descending word count). Lowercase primary code. `None` when it reports none
+    /// (a monolingual `language`).
+    pub(crate) language: Option<std::sync::Arc<str>>,
 }
 
 /// A parsed server message.
@@ -90,6 +95,34 @@ struct RawAlternative {
     transcript: String,
 }
 
+/// The language fields of a `language=multi` result, borrowed from the message text (a word
+/// that has none is skipped; nothing here allocates per word).
+#[derive(Deserialize)]
+struct RawLanguageChannel<'a> {
+    #[serde(borrow, default)]
+    alternatives: Vec<RawLanguageAlternative<'a>>,
+}
+
+#[derive(Deserialize)]
+struct RawLanguageAlternative<'a> {
+    #[serde(borrow, default)]
+    words: Vec<RawWord<'a>>,
+    #[serde(borrow, default)]
+    languages: Vec<std::borrow::Cow<'a, str>>,
+}
+
+#[derive(Deserialize)]
+struct RawWord<'a> {
+    #[serde(borrow, default)]
+    language: Option<std::borrow::Cow<'a, str>>,
+}
+
+#[derive(Deserialize)]
+struct RawMultiResults<'a> {
+    #[serde(borrow)]
+    channel: RawLanguageChannel<'a>,
+}
+
 #[derive(Deserialize)]
 struct RawUtteranceEnd {
     #[serde(default)]
@@ -110,7 +143,14 @@ const MAX_DESCRIPTION: usize = 200;
 /// Parses one text frame.
 ///
 /// A missing `type` is treated as `Results`: the documented interim example omits it.
+#[cfg(test)]
 pub(crate) fn parse(text: &str) -> Result<Incoming, ParseError> {
+    parse_with(text, true)
+}
+
+/// [`parse`], reading the language fields of the results only when `multi` (a `language=multi`
+/// session): a monolingual session parses and allocates nothing for them.
+pub(crate) fn parse_with(text: &str, multi: bool) -> Result<Incoming, ParseError> {
     let peek: Peek =
         serde_json::from_str(text).map_err(|_| ParseError("not a JSON object with a type"))?;
     match peek.kind.as_deref() {
@@ -125,6 +165,7 @@ pub(crate) fn parse(text: &str) -> Result<Incoming, ParseError> {
                 from_finalize: raw.from_finalize,
                 start: finite_non_negative(raw.start),
                 duration: finite_non_negative(raw.duration),
+                language: if multi { language_of(text) } else { None },
             }))
         }
         Some("UtteranceEnd") => {
@@ -159,6 +200,55 @@ impl RawResults {
     }
 }
 
+/// The primary subtag of a language code (`en-GB` is `en`), borrowed.
+fn primary_code(code: &str) -> &str {
+    code.split(['-', '_']).next().unwrap_or("").trim()
+}
+
+/// The most distinct languages counted for one segment; a segment mixes two in practice.
+const MAX_SEGMENT_LANGUAGES: usize = 4;
+
+/// The language a `language=multi` result reports for its segment (see [`Results::language`]):
+/// the one most words of the first alternative are in, else the first of its `languages`.
+/// Reads the message a second time, borrowing its strings: the only allocation is the answer.
+fn language_of(text: &str) -> Option<std::sync::Arc<str>> {
+    let raw: RawMultiResults<'_> = serde_json::from_str(text).ok()?;
+    let alternative = raw.channel.alternatives.first()?;
+    let mut seen: [(&str, usize); MAX_SEGMENT_LANGUAGES] = [("", 0); MAX_SEGMENT_LANGUAGES];
+    let mut used = 0;
+    for code in alternative
+        .words
+        .iter()
+        .filter_map(|word| word.language.as_deref())
+    {
+        let code = primary_code(code);
+        if code.is_empty() {
+            continue;
+        }
+        if let Some((_, count)) = seen
+            .iter_mut()
+            .take(used)
+            .find(|(known, _)| known.eq_ignore_ascii_case(code))
+        {
+            *count += 1;
+        } else if let Some(slot) = seen.get_mut(used) {
+            *slot = (code, 1);
+            used += 1;
+        }
+    }
+    let mut best: Option<&(&str, usize)> = None;
+    for entry in seen.iter().take(used) {
+        if best.is_none_or(|b| entry.1 > b.1) {
+            best = Some(entry);
+        }
+    }
+    let code = match best {
+        Some((code, _)) => *code,
+        None => primary_code(alternative.languages.first()?),
+    };
+    (!code.is_empty()).then(|| std::sync::Arc::from(code.to_ascii_lowercase().as_str()))
+}
+
 fn finite_non_negative(value: f64) -> f64 {
     if value.is_finite() && value > 0.0 {
         value
@@ -176,6 +266,57 @@ mod tests {
             Ok(Incoming::Results(r)) => r,
             other => panic!("expected Results, got {other:?}"),
         }
+    }
+
+    #[test]
+    fn the_language_of_a_multi_result_is_the_majority_of_its_words() {
+        // `language=multi`: every word carries its language (Deepgram's multilingual page).
+        let r = results(
+            r#"{"type":"Results","is_final":true,"channel":{"alternatives":[{"transcript":
+            "bana order status göster","languages":["tr","en"],"words":[
+            {"word":"bana","language":"tr"},{"word":"order","language":"en"},
+            {"word":"status","language":"en-GB"},{"word":"göster","language":"tr"},
+            {"word":"lütfen","language":"tr"}]}]}}"#,
+        );
+        assert_eq!(r.language.as_deref(), Some("tr"));
+        let r = results(
+            r#"{"type":"Results","is_final":true,"channel":{"alternatives":[{"transcript":
+            "where is my order","words":[{"word":"where","language":"EN"},
+            {"word":"is","language":"en"},{"word":"my"},{"word":"order","language":"tr"}]}]}}"#,
+        );
+        assert_eq!(r.language.as_deref(), Some("en"));
+    }
+
+    #[test]
+    fn without_word_languages_the_segment_languages_list_decides() {
+        let r = results(
+            r#"{"type":"Results","is_final":true,"channel":{"alternatives":[{"transcript":
+            "merhaba","languages":["tr","en"],"languages_hinted":["en","tr"],"words":[]}]}}"#,
+        );
+        assert_eq!(r.language.as_deref(), Some("tr"));
+    }
+
+    #[test]
+    fn a_monolingual_session_does_not_read_languages_at_all() {
+        let text = r#"{"type":"Results","is_final":true,"channel":{"alternatives":[{"transcript":
+            "hello","words":[{"word":"hello","language":"en"}]}]}}"#;
+        let Ok(Incoming::Results(r)) = parse_with(text, false) else {
+            panic!("Results expected");
+        };
+        assert_eq!(r.language, None);
+        let Ok(Incoming::Results(r)) = parse_with(text, true) else {
+            panic!("Results expected");
+        };
+        assert_eq!(r.language.as_deref(), Some("en"));
+    }
+
+    #[test]
+    fn a_monolingual_result_reports_no_language() {
+        let r = results(
+            r#"{"type":"Results","is_final":true,"channel":{"alternatives":[{"transcript":"hello",
+            "words":[{"word":"hello","confidence":0.9}]}]}}"#,
+        );
+        assert_eq!(r.language, None);
     }
 
     #[test]

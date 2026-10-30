@@ -178,6 +178,8 @@ fn tts_config() -> TtsConfig {
     TtsConfig {
         sample_rate: brisvox_core::frame::SampleRate::Hz16000,
         voice: Arc::from("contract"),
+        language: None,
+        model: None,
     }
 }
 
@@ -397,6 +399,7 @@ fn emits_after_hang_up(
                 is_final: false,
                 speech_final: false,
                 from_finalize: false,
+                language: None,
             };
             if tx.send(ghost).await.is_err() {
                 return;

@@ -31,6 +31,35 @@ pub enum SttInput {
     Finalize,
 }
 
+/// The spoken language of a transcript segment as the provider reports it.
+#[derive(Debug, Clone, PartialEq)]
+pub struct SpokenLanguage {
+    /// Lowercase primary language code (`"tr"`, `"en"`); a regional tag from the provider
+    /// (`"en-GB"`) is reduced to its primary subtag by the adapter.
+    pub code: Arc<str>,
+    /// The provider's confidence in `code`, `0.0..=1.0`, when it gives one (AssemblyAI).
+    pub confidence: Option<f32>,
+}
+
+impl SpokenLanguage {
+    /// A language without a confidence. The code is lower-cased and cut at the first `-` or
+    /// `_` (`"en-GB"` becomes `"en"`).
+    pub fn new(code: &str) -> Self {
+        let primary = code.split(['-', '_']).next().unwrap_or("");
+        Self {
+            code: Arc::from(primary.to_ascii_lowercase().as_str()),
+            confidence: None,
+        }
+    }
+
+    /// The same with the provider's `confidence` (clamped to `0.0..=1.0`; NaN is dropped).
+    #[must_use]
+    pub fn with_confidence(mut self, confidence: f32) -> Self {
+        self.confidence = (!confidence.is_nan()).then(|| confidence.clamp(0.0, 1.0));
+        self
+    }
+}
+
 /// What an STT session produces.
 #[derive(Debug)]
 pub enum SttEvent {
@@ -46,6 +75,11 @@ pub enum SttEvent {
         speech_final: bool,
         /// Produced in response to [`SttInput::Finalize`].
         from_finalize: bool,
+        /// The language the provider reports for this segment, when it reports one on streaming
+        /// transcripts (Deepgram with `language=multi`, AssemblyAI with language detection,
+        /// Gladia); `None` for interim hypotheses and for providers that do not detect the
+        /// language.
+        language: Option<SpokenLanguage>,
     },
     /// The session failed; no further events follow.
     Error(Error),

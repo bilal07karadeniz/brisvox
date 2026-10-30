@@ -349,6 +349,8 @@ async fn a_call_fails_over_to_the_secondary_tts_which_speaks_its_own_voice() {
     let config = TtsConfig {
         sample_rate: SampleRate::Hz24000,
         voice: "voice-123".into(),
+        language: None,
+        model: None,
     };
     let mut session = tts.connect(config.clone()).await.unwrap();
     // The primary was tried (once), the secondary took over with its own voice, not the
@@ -379,6 +381,67 @@ async fn a_call_fails_over_to_the_secondary_tts_which_speaks_its_own_voice() {
         }
     }
     assert!(audio);
+}
+
+#[tokio::test(start_paused = true)]
+async fn the_secondary_tts_speaks_the_voice_of_the_language_the_call_is_in() {
+    let clock = SimClock::shared();
+    let down = Arc::new(Down::default());
+    let mock = MockTts::new(clock.clone());
+    let recording = Recording {
+        mock: mock.clone(),
+        voices: Arc::default(),
+    };
+    let providers = ResilientProviders::new(
+        Resilience::new(ResilienceConfig::DEFAULT, clock.clone()),
+        CallProviders {
+            stt: Arc::new(MockStt::new(clock.clone())),
+            llm: Arc::new(MockLlm::new(clock.clone())),
+            tts: Arc::new(Either::Down(down)),
+        },
+    )
+    .with_tts_secondary_languages(
+        Arc::new(Either::Recording(recording)),
+        "voice-b".into(),
+        vec![("tr".into(), "voice-b-tr".into())],
+    );
+    let CallProviders { tts, .. } = providers.providers();
+    for (language, model) in [
+        (Some("tr"), Some("primary-model")),
+        (Some("en"), None),
+        (None, None),
+    ] {
+        let _session = tts
+            .connect(TtsConfig {
+                sample_rate: SampleRate::Hz24000,
+                voice: "primary-voice".into(),
+                language: language.map(Into::into),
+                model: model.map(Into::into),
+            })
+            .await
+            .unwrap();
+    }
+    let seen: Vec<(String, Option<String>, Option<String>)> = mock
+        .configs()
+        .into_iter()
+        .map(|c| {
+            (
+                c.voice.to_string(),
+                c.language.map(|l| l.to_string()),
+                c.model.map(|m| m.to_string()),
+            )
+        })
+        .collect();
+    // The Turkish call gets the Turkish secondary voice; the other languages the secondary's
+    // default voice; the primary's model never reaches the secondary.
+    assert_eq!(
+        seen,
+        [
+            ("voice-b-tr".to_owned(), Some("tr".to_owned()), None),
+            ("voice-b".to_owned(), Some("en".to_owned()), None),
+            ("voice-b".to_owned(), None, None),
+        ]
+    );
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]

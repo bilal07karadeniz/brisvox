@@ -51,6 +51,8 @@ pub enum Step {
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct Scenario {
     steps: Vec<Step>,
+    /// The language the mock STT reports for each `Speak` step, in order (`None`: none).
+    languages: Vec<Option<String>>,
 }
 
 impl Scenario {
@@ -66,6 +68,18 @@ impl Scenario {
             text: text.to_owned(),
             duration,
         });
+        self.languages.push(None);
+        self
+    }
+
+    /// Appends speech that the mock STT reports as spoken in `language` (`"tr"`), as a
+    /// provider with language detection does.
+    #[must_use]
+    pub fn speak_in(mut self, language: &str, text: &str, duration: Duration) -> Self {
+        self = self.speak(text, duration);
+        if let Some(last) = self.languages.last_mut() {
+            *last = Some(language.to_owned());
+        }
         self
     }
 
@@ -89,14 +103,22 @@ impl Scenario {
 
     /// What the mock STT should recognise, one utterance per `Speak`, in order.
     pub fn utterances(&self) -> Vec<SttUtterance> {
+        let mut languages = self.languages.iter();
         self.steps
             .iter()
             .filter_map(|step| match step {
-                // Steps shorter than one frame produce no audio, so no utterance either.
-                Step::Speak { text, duration } if frames(*duration) > 0 => {
-                    Some(SttUtterance::words(text))
+                Step::Speak { text, duration } => {
+                    let language = languages.next().cloned().flatten();
+                    // Steps shorter than one frame produce no audio, so no utterance either.
+                    (frames(*duration) > 0).then(|| {
+                        let utterance = SttUtterance::words(text);
+                        match language {
+                            Some(language) => utterance.in_language(&language),
+                            None => utterance,
+                        }
+                    })
                 }
-                _ => None,
+                Step::Silence(_) => None,
             })
             .collect()
     }

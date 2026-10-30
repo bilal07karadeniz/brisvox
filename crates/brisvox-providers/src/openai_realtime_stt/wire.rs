@@ -46,6 +46,8 @@ pub(super) struct SessionParams {
     pub(super) dialect: Dialect,
     pub(super) model: Option<String>,
     pub(super) language: Option<String>,
+    /// Expected languages, used by `gpt-live-transcribe` when `language` is `None`.
+    pub(super) languages: Vec<String>,
     pub(super) prompt: Option<String>,
     pub(super) punctuation: bool,
     pub(super) replaces: bool,
@@ -67,17 +69,19 @@ pub(super) fn session_messages(p: &SessionParams) -> Vec<String> {
             if let Some(model) = &p.model {
                 transcription.insert("model".into(), json!(model));
             }
+            // `gpt-live-transcribe` takes `languages` and refuses the singular field.
+            let live = p
+                .model
+                .as_deref()
+                .is_some_and(|m| m.starts_with("gpt-live"));
             if let Some(language) = &p.language {
-                // `gpt-live-transcribe` takes `languages` and refuses the singular field.
-                let live = p
-                    .model
-                    .as_deref()
-                    .is_some_and(|m| m.starts_with("gpt-live"));
                 if live {
                     transcription.insert("languages".into(), json!([language]));
                 } else {
                     transcription.insert("language".into(), json!(language));
                 }
+            } else if live && !p.languages.is_empty() {
+                transcription.insert("languages".into(), json!(p.languages));
             }
             if let Some(prompt) = &p.prompt {
                 transcription.insert("prompt".into(), json!(prompt));
@@ -496,6 +500,7 @@ mod tests {
             dialect,
             model: dialect.default_model().map(str::to_owned),
             language: None,
+            languages: Vec::new(),
             prompt: None,
             punctuation: true,
             replaces: false,
@@ -530,6 +535,7 @@ mod tests {
                     is_final,
                     speech_final,
                     from_finalize,
+                    ..
                 } => Some((text.to_string(), *is_final, *speech_final, *from_finalize)),
                 SttEvent::Error(_) => None,
             })
@@ -541,6 +547,20 @@ mod tests {
             Some(Message::Text(t)) => t.as_str().to_owned(),
             other => format!("{other:?}"),
         }
+    }
+
+    #[test]
+    fn several_expected_languages_go_to_gpt_live_transcribe_as_languages() {
+        let mut p = params(Dialect::OpenAi);
+        p.languages = vec!["en".to_owned(), "tr".to_owned()];
+        let v: Value = serde_json::from_str(&session_messages(&p)[0]).unwrap_or_default();
+        let t = &v["session"]["audio"]["input"]["transcription"];
+        assert_eq!(t["languages"], json!(["en", "tr"]));
+        // Another model detects the language itself: nothing is sent.
+        p.model = Some("gpt-transcribe".to_owned());
+        let v: Value = serde_json::from_str(&session_messages(&p)[0]).unwrap_or_default();
+        let t = &v["session"]["audio"]["input"]["transcription"];
+        assert!(t.get("languages").is_none() && t.get("language").is_none());
     }
 
     #[test]

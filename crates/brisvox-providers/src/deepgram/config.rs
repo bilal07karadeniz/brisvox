@@ -124,6 +124,11 @@ pub struct DeepgramConfig {
     pub punctuate: bool,
     /// Nova-3 keyterm prompting (`keyterm`, repeated). Empty by default.
     pub keyterms: Vec<String>,
+    /// Languages the speaker is expected to use (`language_hint`, repeated), e.g. `["en", "tr"]`.
+    /// Deepgram biases `language=multi` detection towards them ("hints bias detection; they do
+    /// not restrict it"); with any other `language` the parameter is left out (Deepgram ignores
+    /// it there). Empty by default.
+    pub language_hints: Vec<String>,
     /// Hosting region. Default [`Region::Global`].
     pub region: Region,
     /// Replaces `wss://<region host>` (no path), e.g. `ws://127.0.0.1:9000` for tests. Plain
@@ -184,6 +189,7 @@ impl DeepgramConfig {
             smart_format: true,
             punctuate: false,
             keyterms: Vec::new(),
+            language_hints: Vec::new(),
             region: Region::Global,
             base_url: None,
             io_timeout: Duration::from_secs(10),
@@ -222,6 +228,11 @@ impl DeepgramConfig {
         }
         if self.language.as_deref().is_some_and(|l| !is_token(l)) {
             return bad("language must be letters, digits, '.', '_' or '-'");
+        }
+        if self.language_hints.len() > 16 || self.language_hints.iter().any(|l| !is_token(l)) {
+            return bad(
+                "language_hints: at most 16 language codes of letters, digits, '.', '_' or '-'",
+            );
         }
         if let Some(ms) = self.utterance_end_ms {
             if !(1000..=5000).contains(&ms) {
@@ -301,7 +312,8 @@ impl DeepgramConfig {
             q.push_str(&percent_encode(value));
         };
         add("model", &self.model);
-        if let Some(lang) = stt.language.as_deref().or(self.language.as_deref()) {
+        let language = stt.language.as_deref().or(self.language.as_deref());
+        if let Some(lang) = language {
             add("language", lang);
         }
         add("encoding", self.encoding.param());
@@ -320,6 +332,11 @@ impl DeepgramConfig {
         }
         for term in &self.keyterms {
             add("keyterm", term);
+        }
+        if language == Some("multi") {
+            for hint in &self.language_hints {
+                add("language_hint", hint);
+            }
         }
         q
     }
@@ -445,6 +462,20 @@ mod tests {
         );
         // The session language wins over the configured default.
         assert!(c.query(&stt(Some("tr"))).contains("language=tr"));
+    }
+
+    #[test]
+    fn multi_language_sends_the_hints_and_a_fixed_language_does_not() {
+        let mut c = config();
+        c.language = Some("multi".to_owned());
+        c.language_hints = vec!["en".to_owned(), "tr".to_owned()];
+        let q = c.query(&stt(None));
+        assert!(q.contains("&language=multi&"), "{q}");
+        assert!(q.ends_with("&language_hint=en&language_hint=tr"), "{q}");
+        // Hints do nothing with another language and are left out.
+        assert!(!c.query(&stt(Some("tr"))).contains("language_hint"));
+        c.language_hints = vec!["en&x=1".to_owned()];
+        assert!(c.validate().is_err());
     }
 
     #[test]

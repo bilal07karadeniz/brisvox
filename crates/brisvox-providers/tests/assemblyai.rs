@@ -486,6 +486,7 @@ fn flat(event: SttEvent) -> (String, bool, bool, bool) {
             is_final,
             speech_final,
             from_finalize,
+            ..
         } => (text.to_string(), is_final, speech_final, from_finalize),
         SttEvent::Error(e) => panic!("unexpected error event: {e:?}"),
     }
@@ -545,6 +546,76 @@ async fn the_handshake_carries_the_bare_key_and_the_documented_query() {
     assert!(
         !requests[0].uri.contains(KEY),
         "the key must not be in the URL"
+    );
+}
+
+#[tokio::test]
+async fn language_detection_asks_for_the_codes_and_reports_the_language_of_each_final_turn() {
+    let server = MockServer::start(handler(|conn| async move {
+        let Some(mut s) = conn.accept().await else {
+            return;
+        };
+        s.until_audio(1).await;
+        // Recorded shape: the language fields appear on the finished turn only.
+        s.send(&turn(0, "siparişim", false, 400)).await;
+        s.send(
+            &json!({"type": "Turn", "turn_order": 0, "turn_is_formatted": true,
+                    "end_of_turn": true, "transcript": "siparişim nerede",
+                    "language_code": "tr", "language_confidence": 0.97,
+                    "words": [{"text": "siparişim", "start": 0, "end": 900, "confidence": 0.9}]})
+            .to_string(),
+        )
+        .await;
+        s.send(
+            &json!({"type": "Turn", "turn_order": 1, "turn_is_formatted": true,
+                    "end_of_turn": true, "transcript": "where is it",
+                    "language_code": "en", "language_confidence": 0.41,
+                    "words": [{"text": "where", "start": 1000, "end": 1900, "confidence": 0.9}]})
+            .to_string(),
+        )
+        .await;
+        s.drain().await;
+    }))
+    .await;
+    let stt = adapter(&server, |c| {
+        c.language_codes = vec!["en".to_owned(), "tr".to_owned()];
+        c.language_detection = true;
+    });
+    let mut session = connect(&stt).await;
+    session.input.send(chunk(1)).await.unwrap();
+    let uri = server.requests()[0].uri.clone();
+    assert!(
+        uri.contains("&language_codes=%5B%22en%22%2C%22tr%22%5D&"),
+        "{uri}"
+    );
+    assert!(uri.contains("&language_detection=true"), "{uri}");
+    let mut finals = Vec::new();
+    while finals.len() < 2 {
+        if let SttEvent::Transcript {
+            text,
+            is_final: true,
+            language,
+            ..
+        } = event(&mut session).await
+        {
+            finals.push((
+                text.to_string(),
+                language.map(|l| (l.code.to_string(), l.confidence)),
+            ));
+        }
+    }
+    assert_eq!(
+        finals,
+        [
+            (
+                "siparişim nerede".to_owned(),
+                Some(("tr".to_owned(), Some(0.97)))
+            ),
+            (
+                "where is it".to_owned(),
+                Some(("en".to_owned(), Some(0.41)))
+            ),
+        ]
     );
 }
 

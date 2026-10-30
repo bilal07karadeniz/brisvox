@@ -612,6 +612,8 @@ impl Mapper {
                     }
                 }
             }
+            // RTVI has no message for it.
+            EngineEvent::LanguageSwitched { .. } => {}
             EngineEvent::Error {
                 stage,
                 message,

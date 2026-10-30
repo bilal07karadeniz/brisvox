@@ -64,6 +64,8 @@ fn tts_config() -> TtsConfig {
     TtsConfig {
         sample_rate: SampleRate::Hz24000,
         voice: Arc::from("af_heart"),
+        language: None,
+        model: None,
     }
 }
 
@@ -303,6 +305,8 @@ async fn the_session_rate_must_match_the_server_rate_unless_the_preset_sends_it(
     let at_16k = TtsConfig {
         sample_rate: SampleRate::Hz16000,
         voice: Arc::from("af_heart"),
+        language: None,
+        model: None,
     };
     assert!(matches!(
         kokoro.connect(at_16k.clone()).await,
@@ -561,6 +565,8 @@ async fn the_warm_up_uses_the_latest_sessions_voice_and_empty_text_turns_it_off(
         .connect(TtsConfig {
             sample_rate: SampleRate::Hz24000,
             voice: Arc::from("bf_emma"),
+            language: None,
+            model: None,
         })
         .await
         .unwrap();
@@ -1101,6 +1107,8 @@ async fn live_local_tts_server() {
         .connect(TtsConfig {
             sample_rate: SampleRate::Hz24000,
             voice: Arc::from(voice.as_str()),
+            language: None,
+            model: None,
         })
         .await
         .unwrap();

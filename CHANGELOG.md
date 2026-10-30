@@ -8,6 +8,56 @@ named plain `brisvox` on crates.io, PyPI and npm, are released together under on
 
 ## [Unreleased]
 
+### Added
+
+- **Reload the agent file without a restart.** Edit the agent file and `POST /admin/reload` on
+  the health listener (or `kill -HUP` the server on Unix, or set `BRISVOX_AGENT_RELOAD_POLL_MS` to
+  have the file polled for changes): new calls run the new definition, calls in progress keep
+  theirs until they end. The new file is validated like the start validates it, MCP servers
+  included; an invalid file, an MCP server that cannot be reached or a change that needs a restart
+  (the `[recording]` table, a provider limit or Smart Turn model the start did not set up) leaves
+  the old definition running and is reported with the file position. The MCP servers and provider
+  connections of the old definition close when its last call ends. The endpoint answers JSON and
+  needs `BRISVOX_ADMIN_TOKEN` (a separate secret from the metrics token) unless the health
+  listener is on loopback; off a loopback address without a token it is off. The file poll asks
+  for a reload once per change, so a refused file is not retried every interval. The server now
+  handles `SIGHUP` (a closed terminal reloads instead of ending it). New metrics
+  `brisvox_agent_reloads_total{result}` and `brisvox_agent_generation`, one log line per reload.
+  See `docs/OPERATIONS.md` ("Reloading the agent") and `docs/CONFIG.md`. For embedders, the new
+  `brisvox_server::reload` module has the pieces (`SwapRunner`, `RunnerRecipe`, `AgentSet`,
+  `ReloadHub`).
+- **Language switching mid-call.** An agent file can list several languages with `[languages]` and
+  `[[languages.speak]]` (a voice, and optionally a TTS model, for each). The speech-to-text then
+  listens to all of them for the whole call (Deepgram `language=multi`, AssemblyAI language
+  detection, Gladia code switching, OpenAI `languages`), and when the caller speaks another
+  listed language on two utterances in a row (configurable, or once when the provider is
+  confident) the next reply is in that language, with that language's voice, without a new call.
+  The language comes from the STT provider's report (new `language` field on
+  `SttEvent::Transcript`) or, when it reports none, from a text detector. The reply language is
+  pinned per turn with a `Reply in <language>.` line, never in the middle of a response. A file
+  that lists a language its TTS provider cannot speak (Deepgram Aura, Kokoro and Turkish) is
+  refused at its position. New metric `brisvox_language_switches_total`, new agent protocol
+  event `language.switched`, new `TtsConfig::language` and `TtsConfig::model` for adapters,
+  example `examples/agents/multilingual-tr-en.toml`. See `docs/CONFIG.md`, "Languages".
+
+### Changed
+
+- **Cheaper turn detection is the default**: the Smart Turn model runs with each GELU fused into one
+  operation (`BRISVOX_SMART_TURN_GRAPH=fused`; about 40% less memory traffic per analysis and more
+  calls per core under load). In 0.1.2 it was opt-in because one early verdict on a test cut ended a
+  turn the published graph did not; measured on the official test set, both graphs do that at the same
+  small rate and end the same number of turns too soon (4000 clips with VNNI, 1000 without;
+  `bench/results/smart-turn-early-verdict-2026-10-31.md`). `BRISVOX_SMART_TURN_GRAPH=original` runs
+  the file as published.
+
+- **Adapter API (library users)**: `SttEvent::Transcript` has a new field `language:
+  Option<SpokenLanguage>` (the language the STT provider reported for a final segment; `None` when
+  it reports none), and `TtsConfig` has two new fields, `language` and `model` (the language and
+  TTS model a session should speak, `None` to keep the adapter's own). Code that builds these
+  values with struct literals must add the fields; code that matches `SttEvent::Transcript`
+  without `..` must name the new field. The agent protocol gains the `language.switched` event
+  (new `LanguageSwitched` message in the Python and TypeScript SDKs).
+
 ### Fixed
 
 - **tokio 1.53.3** in the lock file (RUSTSEC-2026-0386, `AsyncFd::new` and related constructors violate

@@ -1098,6 +1098,43 @@ impl HostSettings {
             .map(|path| config::load_file(path, env))
     }
 
+    /// [`Self::load_websocket_agent`] that also returns the hash of the file's text
+    /// ([`crate::reload::text_hash`]): the reload tells by it whether the file changed since.
+    ///
+    /// # Errors
+    /// As [`Self::load_websocket_agent`].
+    pub fn load_websocket_agent_hashed(
+        &self,
+        env: &dyn Env,
+    ) -> Option<std::result::Result<(AgentConfig, u64), crate::config::ConfigError>> {
+        self.websocket_agent_file.as_ref().map(|path| {
+            let (hash, agent) = crate::reload::load_file_hashed(path, env);
+            agent.map(|agent| (agent, hash.unwrap_or_default()))
+        })
+    }
+
+    /// [`Self::load_agent`] that also returns the hash of the definition's text (of the
+    /// file's, or of the inline one) for the reload.
+    ///
+    /// # Errors
+    /// As [`Self::load_agent`].
+    pub fn load_agent_hashed(
+        &self,
+        env: &dyn Env,
+    ) -> Option<std::result::Result<(AgentConfig, u64), crate::config::ConfigError>> {
+        match (&self.agent_file, &self.agent_inline) {
+            (Some(path), _) => {
+                let (hash, agent) = crate::reload::load_file_hashed(path, env);
+                Some(agent.map(|agent| (agent, hash.unwrap_or_default())))
+            }
+            (None, Some(inline)) => Some(
+                config::load_inline(&inline.text, inline.format, env)
+                    .map(|agent| (agent, crate::reload::text_hash(&inline.text))),
+            ),
+            (None, None) => None,
+        }
+    }
+
     /// An agent definition is configured: a file or the inline text.
     pub fn has_agent(&self) -> bool {
         self.agent_file.is_some() || self.agent_inline.is_some()

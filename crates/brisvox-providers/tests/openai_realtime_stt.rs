@@ -110,6 +110,7 @@ fn flat(event: SttEvent) -> (String, bool, bool, bool) {
             is_final,
             speech_final,
             from_finalize,
+            ..
         } => (text.to_string(), is_final, speech_final, from_finalize),
         SttEvent::Error(e) => panic!("unexpected error event: {e:?}"),
     }

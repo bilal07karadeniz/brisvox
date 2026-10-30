@@ -156,5 +156,10 @@ required-features = ["mcp"]
 name = "mcp_tools"
 required-features = ["mcp", "provider-deepgram", "provider-openai", "provider-cartesia"]
 
+# The reload tests with real MCP servers (`tests/reload_mcp.rs`).
+[[test]]
+name = "reload_mcp"
+required-features = ["mcp", "provider-deepgram", "provider-openai", "provider-cartesia"]
+
 [lints]
 workspace = true

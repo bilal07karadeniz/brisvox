@@ -7,6 +7,7 @@
 //! | `BRISVOX_MAX_SESSIONS` | 256 per core (at least 256) | sessions live or reserved at once |
 //! | `BRISVOX_HEALTH_ADDR` | `0.0.0.0:8081` | `/healthz` + `/readyz` listener; `off` disables it; `${PORT}` stands for the `PORT` variable |
 //! | `BRISVOX_METRICS_TOKEN` | unset | bearer token for `/metrics` when the health address is not loopback; without it `/metrics` is off there |
+//! | `BRISVOX_ADMIN_TOKEN` | unset | bearer token for `POST /admin/reload` when the health address is not loopback; without it the endpoint is off there |
 //! | `BRISVOX_INSECURE_LISTENERS` | `false` | accept listeners without authentication on non-loopback addresses (logged loudly) |
 //! | `BRISVOX_DRAIN_TIMEOUT` | `30s` | how long a drain waits for calls to end by themselves |
 //! | `BRISVOX_CANCEL_GRACE` | `5s` | how long cancelled sessions get to return |
@@ -31,6 +32,10 @@ pub const ENV_HEALTH_ADDR: &str = "BRISVOX_HEALTH_ADDR";
 /// Environment variable: bearer token that `/metrics` requires on a health address that is not
 /// loopback.
 pub const ENV_METRICS_TOKEN: &str = "BRISVOX_METRICS_TOKEN";
+/// Environment variable: bearer token that `POST /admin/reload` (the agent reload,
+/// `docs/OPERATIONS.md`) requires on a health address that is not loopback. Without it the
+/// endpoint is off there, whatever `BRISVOX_INSECURE_LISTENERS` says.
+pub const ENV_ADMIN_TOKEN: &str = "BRISVOX_ADMIN_TOKEN";
 /// Environment variable: `1` lets listeners without authentication bind non-loopback addresses
 /// (and `/metrics` be served without a token there). Development and private networks only.
 pub const ENV_INSECURE_LISTENERS: &str = "BRISVOX_INSECURE_LISTENERS";
@@ -58,6 +63,9 @@ pub struct ServerSettings {
     /// Bearer token `/metrics` requires on a health address that is not loopback.
     /// Without one `/metrics` is off there (unless `insecure_listeners`). Never logged.
     pub metrics_token: Option<Secret<String>>,
+    /// Bearer token `POST /admin/reload` requires on a health address that is not loopback
+    /// (`BRISVOX_ADMIN_TOKEN`). Without one the endpoint is off there. Never logged.
+    pub admin_token: Option<Secret<String>>,
     /// `BRISVOX_INSECURE_LISTENERS`: serve `/metrics` without a token on a non-loopback health
     /// address (and, in [`HostSettings`](crate::HostSettings), listeners without authentication).
     pub insecure_listeners: bool,
@@ -72,6 +80,7 @@ impl Default for ServerSettings {
             manager: ManagerConfig::for_this_machine(),
             health_addr: DEFAULT_HEALTH_ADDR.parse().ok(),
             metrics_token: None,
+            admin_token: None,
             insecure_listeners: false,
             shutdown: ShutdownPolicy::default(),
         }
@@ -112,6 +121,16 @@ impl ServerSettings {
         {
             return Err(Error::Config(format!(
                 "{ENV_METRICS_TOKEN} must not contain whitespace"
+            )));
+        }
+        settings.admin_token = var(env, ENV_ADMIN_TOKEN)?.map(Secret::new);
+        if settings
+            .admin_token
+            .as_ref()
+            .is_some_and(|t| t.expose().chars().any(char::is_whitespace))
+        {
+            return Err(Error::Config(format!(
+                "{ENV_ADMIN_TOKEN} must not contain whitespace"
             )));
         }
         settings.insecure_listeners = flag_var(env, ENV_INSECURE_LISTENERS)?.unwrap_or(false);
@@ -331,6 +350,24 @@ mod tests {
             assert!(err.to_string().contains(name), "{err}");
             assert!(!err.to_string().contains("a b"), "{err}");
         }
+    }
+
+    #[test]
+    fn reads_the_admin_token_and_never_prints_it() {
+        let s = ServerSettings::from_env(&env(&[(ENV_ADMIN_TOKEN, "admin-secret-456")])).unwrap();
+        assert_eq!(s.admin_token.as_ref().unwrap().expose(), "admin-secret-456");
+        assert!(!format!("{s:?}").contains("admin-secret-456"));
+        // The scrape token is a different credential.
+        assert!(s.metrics_token.is_none());
+        assert!(
+            ServerSettings::from_env(&env(&[]))
+                .unwrap()
+                .admin_token
+                .is_none()
+        );
+        let err = ServerSettings::from_env(&env(&[(ENV_ADMIN_TOKEN, "a b")])).unwrap_err();
+        assert!(err.to_string().contains(ENV_ADMIN_TOKEN), "{err}");
+        assert!(!err.to_string().contains("a b"), "{err}");
     }
 
     #[test]

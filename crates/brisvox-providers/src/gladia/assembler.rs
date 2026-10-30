@@ -34,7 +34,7 @@
 use std::sync::Arc;
 
 use super::protocol::Transcript;
-use crate::stt::SttEvent;
+use crate::stt::{SpokenLanguage, SttEvent};
 
 /// Most `Finalize` requests counted while one waits. Equals the engine's default
 /// `finalize_capacity` (32), so a caller that respects its ledger bound never exceeds it; it
@@ -193,7 +193,11 @@ impl Assembler {
             }
             return;
         }
-        out.push(transcript(&t.text, true, true, answers));
+        let mut event = transcript(&t.text, true, true, answers);
+        if let SttEvent::Transcript { language, .. } = &mut event {
+            *language = t.language.as_deref().map(SpokenLanguage::new);
+        }
+        out.push(event);
         push_extra_answers(extra, out);
     }
 
@@ -229,6 +233,7 @@ fn transcript(text: &str, is_final: bool, speech_final: bool, from_finalize: boo
         is_final,
         speech_final,
         from_finalize,
+        language: None,
     }
 }
 
@@ -248,6 +253,7 @@ mod tests {
                     is_final,
                     speech_final,
                     from_finalize,
+                    ..
                 } => (text.to_string(), *is_final, *speech_final, *from_finalize),
                 SttEvent::Error(e) => panic!("unexpected error event {e}"),
             })
@@ -264,7 +270,30 @@ mod tests {
             is_final,
             text: text.to_owned(),
             end: 1.0,
+            language: None,
         }
+    }
+
+    #[test]
+    fn the_utterance_language_goes_to_the_final_only() {
+        let mut a = Assembler::default();
+        let mut out = Vec::new();
+        let mut partial = msg("u1", "merhaba", false);
+        partial.language = Some("tr".to_owned());
+        a.on_transcript(&partial, &mut out);
+        let mut done = msg("u1", "merhaba dünya", true);
+        done.language = Some("tr".to_owned());
+        a.on_transcript(&done, &mut out);
+        let found: Vec<Option<String>> = out
+            .iter()
+            .map(|e| match e {
+                SttEvent::Transcript { language, .. } => {
+                    language.as_ref().map(|l| l.code.to_string())
+                }
+                SttEvent::Error(_) => None,
+            })
+            .collect();
+        assert_eq!(found, [None, Some("tr".to_owned())]);
     }
 
     fn run(a: &mut Assembler, m: Transcript) -> Vec<Flat> {

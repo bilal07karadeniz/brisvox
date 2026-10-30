@@ -765,3 +765,52 @@ pub fn deepgram_aura(
     }
     c
 }
+
+/// Switches the STT adapter configuration `config` to its multilingual mode for the `[languages]`
+/// `codes` (empty: no change). What each provider gets (docs/CONFIG.md, "Languages"):
+/// - Deepgram: `language=multi` with `language_hint` for each code; the transcripts then carry
+///   the language of each word, which the adapter reports per final segment.
+/// - AssemblyAI: `language_codes` steering and `language_detection=true` (the final turn reports
+///   `language_code` and `language_confidence`).
+/// - Gladia: `language_config.languages` with `code_switching` (every utterance is detected).
+/// - OpenAI Realtime transcription: the codes as `languages` for `gpt-live-transcribe`; other
+///   models detect the language themselves. No language is reported (the engine falls back to
+///   text detection).
+/// - sherpa-onnx: unchanged (validation refuses it with languages).
+pub fn multilingual_stt(
+    config: super::SttProviderConfig,
+    codes: &[String],
+) -> super::SttProviderConfig {
+    #[allow(unused_mut)] // no adapter compiled in: nothing to change
+    let mut config = config;
+    if codes.is_empty() {
+        return config;
+    }
+    match &mut config {
+        #[cfg(feature = "provider-deepgram")]
+        super::SttProviderConfig::Deepgram(c) => {
+            c.language = Some("multi".to_owned());
+            c.language_hints = codes.to_vec();
+        }
+        #[cfg(feature = "provider-assemblyai")]
+        super::SttProviderConfig::AssemblyAi(c) => {
+            c.language = None;
+            c.language_codes = codes.to_vec();
+            c.language_detection = true;
+        }
+        #[cfg(feature = "provider-gladia")]
+        super::SttProviderConfig::Gladia(c) => {
+            c.language = None;
+            c.languages = codes.to_vec();
+            c.code_switching = true;
+        }
+        #[cfg(feature = "provider-openai-realtime-stt")]
+        super::SttProviderConfig::OpenAiRealtimeStt(c) => {
+            c.language = None;
+            c.languages = codes.to_vec();
+        }
+        #[allow(unreachable_patterns)] // a build with only one adapter has no other variant
+        _ => {}
+    }
+    config
+}

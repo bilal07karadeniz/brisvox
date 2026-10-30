@@ -26,7 +26,7 @@ use std::time::Duration;
 use tokio::time::Instant;
 
 use super::protocol::Turn;
-use crate::stt::SttEvent;
+use crate::stt::{SpokenLanguage, SttEvent};
 
 /// How long after a synthetic final a real final still counts as the late answer to the
 /// `Finalize` (and gets `from_finalize`): well past the service's typical turn-completion time,
@@ -124,7 +124,13 @@ impl Assembler {
             self.on_interim(turn.order, &turn.transcript, out);
             return false;
         }
-        self.on_final(turn.order, &turn.transcript, now, out)
+        self.on_final(
+            turn.order,
+            &turn.transcript,
+            turn.language.as_ref(),
+            now,
+            out,
+        )
     }
 
     fn on_interim(&mut self, order: u64, text: &str, out: &mut Vec<SttEvent>) {
@@ -146,7 +152,14 @@ impl Assembler {
         out.push(transcript(text, false, false, false));
     }
 
-    fn on_final(&mut self, order: u64, text: &str, now: Instant, out: &mut Vec<SttEvent>) -> bool {
+    fn on_final(
+        &mut self,
+        order: u64,
+        text: &str,
+        language: Option<&SpokenLanguage>,
+        now: Instant,
+        out: &mut Vec<SttEvent>,
+    ) -> bool {
         if text.is_empty() {
             // An empty final matters only to a Finalize that is waiting for its answer.
             if self.finalize_pending {
@@ -170,7 +183,14 @@ impl Assembler {
             .as_ref()
             .is_some_and(|s| s.turn.is_none() || s.turn == Some(order));
         let from_finalize = self.finalize_pending || answers_late;
-        out.push(transcript(text, true, true, from_finalize));
+        let mut event = transcript(text, true, true, from_finalize);
+        if let SttEvent::Transcript {
+            language: reported, ..
+        } = &mut event
+        {
+            reported.clone_from(&language.cloned());
+        }
+        out.push(event);
         self.last_final_turn = Some(order);
         self.interim.clear();
         self.open_turn = None;
@@ -233,6 +253,7 @@ fn transcript(text: &str, is_final: bool, speech_final: bool, from_finalize: boo
         is_final,
         speech_final,
         from_finalize,
+        language: None,
     }
 }
 
@@ -254,7 +275,30 @@ mod tests {
             formatted,
             transcript: text.to_owned(),
             last_word_end_ms: None,
+            language: None,
         }
+    }
+
+    #[test]
+    fn the_detected_language_goes_to_the_final_of_the_turn_only() {
+        let mut a = Assembler::new(false);
+        let mut out = Vec::new();
+        let mut interim = turn(0, "merhaba", false, false);
+        interim.language = Some(SpokenLanguage::new("tr"));
+        a.on_turn(&interim, t0(), &mut out);
+        let mut done = turn(0, "merhaba dünya", true, true);
+        done.language = Some(SpokenLanguage::new("tr").with_confidence(0.93));
+        a.on_turn(&done, t0(), &mut out);
+        let found: Vec<Option<(String, Option<f32>)>> = out
+            .iter()
+            .map(|e| match e {
+                SttEvent::Transcript { language, .. } => language
+                    .as_ref()
+                    .map(|l| (l.code.to_string(), l.confidence)),
+                SttEvent::Error(_) => None,
+            })
+            .collect();
+        assert_eq!(found, [None, Some(("tr".to_owned(), Some(0.93)))]);
     }
 
     /// (text, is_final, speech_final, from_finalize)
@@ -269,6 +313,7 @@ mod tests {
                     is_final,
                     speech_final,
                     from_finalize,
+                    ..
                 } => (text.to_string(), *is_final, *speech_final, *from_finalize),
                 SttEvent::Error(e) => panic!("unexpected error event {e}"),
             })

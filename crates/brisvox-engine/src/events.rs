@@ -152,6 +152,15 @@ pub enum EngineEvent {
         /// The stage latencies known then (`time_to_silence` is not known yet).
         metrics: TurnMetrics,
     },
+    /// The agent follows the caller into another language (see [`crate::language`]): the
+    /// replies of the next turn on are in `to`. Published by the STT stage's language tracker
+    /// when the decision is taken, before the turn it concerns reaches the LLM.
+    LanguageSwitched {
+        /// The language code before (`"en"`).
+        from: Arc<str>,
+        /// The language code now (`"tr"`).
+        to: Arc<str>,
+    },
     /// A stage reported an error.
     Error {
         /// The stage, e.g. `"stt"`.

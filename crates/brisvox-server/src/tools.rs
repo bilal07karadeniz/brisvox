@@ -247,6 +247,27 @@ impl ToolSetup {
         self.mcp.clone()
     }
 
+    /// A copy of this setup without its MCP tools and connections: the application, demo and
+    /// telephony tools are the same instances (and the same call hub), shared with `self`. A
+    /// reload builds each new agent snapshot on it ([`Self::with_mcp`] then connects the new
+    /// definition's MCP servers), so the old snapshot's connections are not touched.
+    #[must_use]
+    pub fn without_mcp(&self) -> Self {
+        Self {
+            app: self
+                .app
+                .filtered(|spec| !self.mcp_names.iter().any(|n| **n == *spec.name)),
+            engine: self.engine,
+            mcp_names: Vec::new(),
+            #[cfg(feature = "mcp")]
+            mcp: None,
+            #[cfg(feature = "call-control")]
+            call_control: self.call_control.clone(),
+            #[cfg(feature = "call-control")]
+            callbacks: self.callbacks.clone(),
+        }
+    }
+
     /// Adds an application's tools ([`AppTools`]).
     ///
     /// # Errors
@@ -597,6 +618,12 @@ impl AgentTools {
             #[cfg(feature = "call-control")]
             telephony_tools,
         })
+    }
+
+    /// The connections to the agent's MCP servers, when it has any.
+    #[cfg(feature = "mcp")]
+    pub(crate) fn mcp_host(&self) -> Option<Arc<crate::mcp::McpHost>> {
+        self._mcp.clone()
     }
 
     /// Whether the agent has no tools.

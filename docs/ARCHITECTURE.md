@@ -386,6 +386,29 @@ Frames are the only data path, except for these shared objects (the first three 
    the STT stage mark the open user turn) and the RTVI event observer (`Observed<P>` on
    five stage inputs, a drop-oldest broadcast ring). Neither can block or reorder a frame.
 
+### Multilingual calls
+
+An agent with `[languages]` (`docs/CONFIG.md`) follows the caller from one language to another
+inside one call. The state is a `LanguageTracker` (`brisvox_engine::language`), one per call,
+shared by four stages:
+
+- `SttStage` collects the final segments of each utterance with the language the provider
+  reported (`SttEvent::Transcript::language`) and hands the utterance to the tracker right before
+  it emits the `UtteranceFinal`, so the decision precedes the turn. No language reported: the
+  tracker detects it from the text (`whatlang`, restricted to the listed languages).
+- The tracker switches after N consecutive utterances in another listed language, or at once on a
+  confident provider report. Short utterances are no evidence.
+- The language of a response is read **once, when its turn starts** (`LanguageTracker::language_for(epoch)`
+  locks it for the epoch). `LlmRunner` pins `Reply in <language>.` into the provider request,
+  `SegmenterStage` cuts with that language's abbreviations, and `TtsStage` normalizes in that
+  language and, if its provider session speaks another voice or model, replaces the session at
+  the response's `LlmResponseStarted` (a TTS session's voice is fixed when it opens for Aura and
+  ElevenLabs; the replacement reuses the ordinary connect path with its timeout and
+  cancellation). A switch decided while a response plays shows in the next one; a speculative
+  LLM response started before the switch is discarded.
+- The playout book and the played-text truncation do not know about languages: what was heard is
+  what the context keeps, in whatever language it was spoken.
+
 ### Latency budget (measured)
 Engine overhead at p95, from the engine's own timeline in the real-time bench: gated turn end to
 LLM request <= 3 ms, first TTS audio to transport command <= 2 ms, barge-in decision to applied

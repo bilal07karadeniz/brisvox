@@ -63,6 +63,7 @@
   - [sherpa-onnx (local STT)](reference/providers/sherpa-onnx.md)
   - [OpenAI-realtime transcription (local STT dialects)](reference/providers/openai-realtime-stt.md)
   - [Local speech servers (survey)](reference/providers/local-speech.md)
+  - [Language switching (STT detection, TTS voices)](reference/providers/language-switching.md)
   - [OpenAI Realtime (speech-to-speech)](reference/providers/openai-realtime.md)
   - [Gemini Live (speech-to-speech)](reference/providers/gemini-live.md)
   - [WebRTC](reference/providers/webrtc.md)

@@ -120,6 +120,11 @@ pub(crate) struct Turn<P: LlmProvider> {
     spec: Option<SpecHandoff>,
     /// A bot line: the turn speaks it instead of asking the LLM.
     line: Option<Arc<str>>,
+    /// The reply-language line pinned in every request of the turn (the language is locked for
+    /// the epoch when the turn is created), when the call has several languages.
+    instruction: Option<Arc<str>>,
+    /// The language of the turn (an index of the call's languages), when the call has several.
+    language: Option<usize>,
 }
 
 /// A context that holds `used` tool calls of `epoch`, so the assembler mints the next ids after
@@ -295,6 +300,14 @@ impl<P: LlmProvider> Turn<P> {
         epoch: TurnEpoch,
         token: CancellationToken,
     ) -> Self {
+        let language = s
+            .languages
+            .as_ref()
+            .map(|tracker| tracker.language_for(epoch));
+        let instruction = match (&s.languages, language) {
+            (Some(tracker), Some(index)) => tracker.instruction_of(index),
+            _ => None,
+        };
         Self {
             s,
             out,
@@ -307,6 +320,8 @@ impl<P: LlmProvider> Turn<P> {
             unflushed: false,
             spec: None,
             line: None,
+            instruction,
+            language,
         }
     }
 
@@ -383,6 +398,13 @@ impl<P: LlmProvider> Turn<P> {
         key
     }
 
+    /// Pins the reply language of the turn in `request` (no-op with one language).
+    fn pin_language(&self, request: &mut brisvox_providers::LlmRequest) {
+        if let Some(instruction) = &self.instruction {
+            crate::language::pin_language(&mut request.messages, instruction);
+        }
+    }
+
     // -- rounds -------------------------------------------------------------------------------
 
     async fn round(&mut self) -> Next {
@@ -405,7 +427,10 @@ impl<P: LlmProvider> Turn<P> {
         let tools = self.round_tools().await;
         let built = s.builder.build_offloaded(&s.context, &tools).await;
         let built = match built {
-            Ok(built) => built,
+            Ok(mut built) => {
+                self.pin_language(&mut built.request);
+                built
+            }
             Err(error) => {
                 bump(&s.count().request_build_errors);
                 tracing::error!(target: "brisvox::engine", %error, "cannot build the LLM request");
@@ -723,7 +748,10 @@ impl<P: LlmProvider> Turn<P> {
                 bump(&s.count().retries);
                 let tools = self.round_tools().await;
                 let built = match s.builder.build_offloaded(&s.context, &tools).await {
-                    Ok(built) => built,
+                    Ok(mut built) => {
+                        self.pin_language(&mut built.request);
+                        built
+                    }
                     Err(error) => {
                         bump(&s.count().request_build_errors);
                         tracing::error!(target: "brisvox::engine", %error, "cannot build the LLM request");
@@ -967,9 +995,35 @@ impl<P: LlmProvider> Turn<P> {
         }
     }
 
+    /// The line said when the tool budget is spent: the runner's, or, for a Turkish response of a
+    /// call with several languages whose fallback was left at the English default, the Turkish
+    /// default.
+    fn fallback_text(&self) -> Arc<str> {
+        let turkish = match (&self.s.languages, self.language) {
+            (Some(tracker), Some(index)) => tracker
+                .profile(index)
+                .is_some_and(|p| p.language == brisvox_agent::Language::Tr),
+            _ => false,
+        };
+        if turkish && *self.s.fallback == *crate::llm::DEFAULT_FALLBACK {
+            Arc::from(crate::llm::DEFAULT_FALLBACK_TR)
+        } else {
+            Arc::clone(&self.s.fallback)
+        }
+    }
+
+    /// Whether the turn is in the language the call started in (the language of the agent's
+    /// filler phrases and clips).
+    fn in_default_language(&self) -> bool {
+        match (&self.s.languages, self.language) {
+            (Some(tracker), Some(index)) => tracker.is_default(index),
+            _ => true,
+        }
+    }
+
     async fn fallback_and_done(&mut self) -> Next {
         bump(&self.s.count().fallbacks);
-        let text = Arc::clone(&self.s.fallback);
+        let text = self.fallback_text();
         if self.say(text, Placement::Now, false).await {
             Next::Done
         } else {
@@ -1028,7 +1082,12 @@ impl<P: LlmProvider> Turn<P> {
             return After::Continue;
         };
         let calls = self.screen_hidden(calls);
-        let filler = s.filler.plan(&tools.registry, &calls);
+        // The filler phrases are written in one language: a response in another one has none.
+        let filler = if self.in_default_language() {
+            s.filler.plan(&tools.registry, &calls)
+        } else {
+            None
+        };
         let mut flow_guard = match &s.flow {
             Some(flow) => Some(flow.lock().await),
             None => None,

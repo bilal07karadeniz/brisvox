@@ -71,6 +71,7 @@ export type {
   BotTtsStopped,
   BotTtsText,
   CallIdentity,
+  LanguageSwitched,
   Capabilities,
   CommandResult,
   ContextMessage,

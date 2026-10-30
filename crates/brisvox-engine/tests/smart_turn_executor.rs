@@ -131,7 +131,13 @@ async fn golden_cases_through_the_executor_are_bit_identical() {
     let path = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .join("../../models")
         .join(brisvox_inference::smart_turn::MODEL_FILE);
-    let model = SmartTurnOrt::load(&path)
+    // The goldens were recorded with the file as published: compare that graph (the default fused
+    // graph is checked against them with a tolerance in brisvox-inference's tests/smart_turn.rs).
+    let options = brisvox_inference::smart_turn::ort_backend::OrtOptions {
+        graph: brisvox_inference::smart_turn::ort_backend::SmartTurnGraph::Original,
+        ..Default::default()
+    };
+    let model = SmartTurnOrt::load_with_options(&path, options)
         .unwrap_or_else(|e| panic!("{e}: run scripts/models/fetch_models.py"));
     model.warm(2).unwrap();
     let executor = start_smart_turn_executor(2, clock).unwrap().unwrap();

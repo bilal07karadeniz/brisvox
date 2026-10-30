@@ -102,6 +102,7 @@ use tokio::time::Instant;
 use crate::config::EngineConfig;
 use crate::event_slot::{EventSlot, SlotOverflow};
 use crate::guard::TaskGuard;
+use crate::language::{LanguageTracker, Utterance};
 use crate::timer::DeadlineTimer;
 
 /// The `Wake` token of the stage's deadline timer.
@@ -473,6 +474,9 @@ struct Session<P: SttProvider> {
     /// by a real final too (a session that died mid-utterance answers its successor's
     /// `Finalize` with an empty result).
     final_forwarded: bool,
+    /// The call's language tracker, with the final segments of the utterance in progress: the
+    /// tracker is told right before the `UtteranceFinal` that ends the utterance.
+    languages: Option<(Arc<LanguageTracker>, Utterance)>,
 }
 
 impl<P: SttProvider> Session<P> {
@@ -526,6 +530,20 @@ impl<P: SttProvider> Session<P> {
         self.out.send(frame).await.is_ok()
     }
 
+    /// Hands the utterance that ends now to the language tracker (before its `UtteranceFinal`
+    /// is emitted, so the decision precedes the turn). `promoted` is an interim hypothesis that
+    /// is about to be forwarded as the utterance's final text.
+    fn observe_language(&mut self, promoted: Option<&str>) {
+        let Some((tracker, utterance)) = &mut self.languages else {
+            return;
+        };
+        if let Some(text) = promoted {
+            utterance.push(text, None);
+        }
+        let _ = tracker.observe(utterance);
+        utterance.clear();
+    }
+
     async fn emit_final(&mut self, real: bool) -> bool {
         bump(if real {
             &self.counters.finals_real
@@ -534,6 +552,7 @@ impl<P: SttProvider> Session<P> {
         });
         let interim = self.interim.take();
         let final_forwarded = std::mem::take(&mut self.final_forwarded);
+        self.observe_language(interim.as_deref().filter(|_| !real || !final_forwarded));
         if let Some(text) = interim
             && (!real || !final_forwarded)
             && !text.trim().is_empty()
@@ -595,6 +614,7 @@ impl<P: SttProvider> Session<P> {
             is_final,
             speech_final,
             from_finalize,
+            language,
         }) = event
         else {
             return self.die("provider session ended").await;
@@ -614,6 +634,9 @@ impl<P: SttProvider> Session<P> {
             if is_final {
                 self.interim = None;
                 self.final_forwarded = true;
+                if let Some((_, utterance)) = &mut self.languages {
+                    utterance.push(&text, language.as_ref());
+                }
             } else {
                 self.interim = Some(Arc::clone(&text));
             }
@@ -847,6 +870,7 @@ pub struct SttStage<P: SttProvider> {
     /// Wakes the stage when the oldest held `Finalize` has waited `max_finalize_defer`.
     slot: EventSlot<()>,
     timer: Option<DeadlineTimer>,
+    languages: Option<Arc<LanguageTracker>>,
 }
 
 impl<P: SttProvider> SttStage<P> {
@@ -872,7 +896,17 @@ impl<P: SttProvider> SttStage<P> {
             held: VecDeque::new(),
             slot: EventSlot::new(4, SlotOverflow::DropOldest),
             timer: None,
+            languages: None,
         }
+    }
+
+    /// Tells `tracker` about every finished utterance (its final text and the language the
+    /// provider reported), right before the `UtteranceFinal` that ends it: the tracker decides
+    /// whether the agent follows the caller into another language (`crate::language`).
+    #[must_use]
+    pub fn with_languages(mut self, tracker: Arc<LanguageTracker>) -> Self {
+        self.languages = Some(tracker);
+        self
     }
 
     /// Marks [`TurnEvent::SttFinalize`] on `timeline` (the open user turn,
@@ -920,6 +954,10 @@ impl<P: SttProvider> SttStage<P> {
             connected_at: None,
             interim: None,
             final_forwarded: false,
+            languages: self
+                .languages
+                .as_ref()
+                .map(|tracker| (Arc::clone(tracker), Utterance::new())),
         };
         self.task = Some(TaskGuard::spawn("stt.session", session.run()));
     }

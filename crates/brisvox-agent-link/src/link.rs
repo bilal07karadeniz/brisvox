@@ -1429,6 +1429,10 @@ fn body_of(event: &EngineEvent) -> Option<ServerBody> {
             ServerBody::TurnBotEnded { epoch: epoch.get() }
         }
         EngineEvent::BotInterrupted { epoch } => ServerBody::TurnInterrupted { epoch: epoch.get() },
+        EngineEvent::LanguageSwitched { from, to } => ServerBody::LanguageSwitched {
+            from: Arc::clone(from),
+            to: Arc::clone(to),
+        },
         EngineEvent::TurnMetrics { epoch, metrics } => ServerBody::TurnMetrics {
             epoch: epoch.get(),
             metrics: Metrics {

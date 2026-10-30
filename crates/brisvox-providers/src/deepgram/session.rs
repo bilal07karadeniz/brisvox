@@ -67,6 +67,9 @@ pub(crate) struct Params {
     pub(crate) target: Target,
     /// Audio bytes per second of this session.
     pub(crate) bytes_per_second: u64,
+    /// The session runs with `language=multi`: results carry languages, which are read (and
+    /// only then; a monolingual session parses nothing extra).
+    pub(crate) multi: bool,
 }
 
 /// Why `serve` or `absorb` stopped.
@@ -444,7 +447,7 @@ impl Session {
         } else {
             Some(now)
         };
-        let incoming = protocol::parse(text).map_err(|e| {
+        let incoming = protocol::parse_with(text, self.p.multi).map_err(|e| {
             Stop::Fatal(Error::Protocol {
                 provider: PROVIDER,
                 detail: e.0.to_owned(),

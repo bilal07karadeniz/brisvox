@@ -56,6 +56,7 @@ Things to know before writing anything:
 - [local-tr.toml](examples/agents/local/local-tr.toml): example agent file (A fully local Turkish agent: sherpa-onnx + the community "seda" model (STT, CPU) + Ollama (LLM) + Chatterbox (multilingual TTS, GPU) through the...)
 - [local-kokoro.toml](examples/agents/local-kokoro.toml): example agent file (English agent with a LOCAL voice: Deepgram (STT, needs DEEPGRAM_API_KEY) + Ollama (LLM) + Kokoro-FastAPI (TTS))
 - [docs-en.toml](examples/agents/mcp/docs-en.toml): example agent file (A voice agent whose tools come from an MCP server: DeepWiki's public, read-only MCP server (https://mcp.deepwiki.com/mcp, no key) answers questions about...)
+- [multilingual-tr-en.toml](examples/agents/multilingual-tr-en.toml): example agent file (A Turkish and English agent that follows the caller from one language to the other: Deepgram Nova-3 (STT, `language=multi`) + Anthropic (LLM) + Cartesia (TTS))
 - [support-en.toml](examples/agents/support-en.toml): example agent file (English support agent: Deepgram (STT) + OpenAI (LLM) + Cartesia (TTS))
 - [telephony-en.toml](examples/agents/telephony-en.toml): example agent file (Phone agent (Twilio / Telnyx / SIP, 8 kHz G.711 calls): AssemblyAI (STT) + Groq through the OpenAI-compatible adapter (LLM) + Deepgram Aura (TTS))
 

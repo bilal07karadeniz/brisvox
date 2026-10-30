@@ -75,14 +75,19 @@ use crate::admission::agent_providers;
 use crate::check::{self, CheckOptions};
 use crate::config::{self, AgentConfig, ProcessEnv};
 use crate::fdlimit::{self, NofileOutcome};
+use crate::observability::{ResilienceSnapshot, ResilienceSource};
 use crate::privacy::Sweeper;
+use crate::reload::{
+    self, AgentSet, AgentSlot, DefinitionSource, ReloadHub, ReloadSettings, RunnerRecipe,
+    SwapRunner,
+};
 use crate::resilient::resilience_from_env;
 use crate::runner::load_smart_turn;
 use crate::telemetry::{self, LogFormat};
 use crate::{
-    AdmissionPolicy, AdmissionSettings, ConfiguredProviders, EXIT_STARTUP_FAILURE, EngineRunner,
-    HostSettings, LoadProbe, Observability, ObservabilitySettings, Recording, RecordingSettings,
-    RunnerConfig, Server, ServerSettings, ShutdownSignals, ToolSetup, Vad, shutdown_runtime,
+    AdmissionPolicy, AdmissionSettings, ConfiguredProviders, EXIT_STARTUP_FAILURE, HostSettings,
+    LoadProbe, Observability, ObservabilitySettings, Recording, RecordingSettings, RunnerConfig,
+    Server, ServerSettings, ShutdownSignals, ToolSetup, Vad, shutdown_runtime,
 };
 use brisvox_core::{SharedClock, SystemClock};
 use brisvox_engine::Offload;
@@ -345,10 +350,16 @@ fn serve(tools: Option<Arc<dyn AppTools>>) -> ExitCode {
         Err(e) => return ExitCode::from(failed(&e)),
     };
     // File reads and the models' loads are blocking: done here, before the runtime.
-    let agent = match host.load_agent(&ProcessEnv) {
-        None => None,
-        Some(Ok(agent)) => Some(agent),
+    // The hash of the text each definition was loaded from lets a reload tell whether the file
+    // changed since.
+    let (agent, agent_hash) = match host.load_agent_hashed(&ProcessEnv) {
+        None => (None, 0),
+        Some(Ok((agent, hash))) => (Some(agent), hash),
         Some(Err(e)) => return ExitCode::from(failed(&e)),
+    };
+    let reload_settings = match ReloadSettings::from_env(&ProcessEnv) {
+        Ok(settings) => settings,
+        Err(e) => return ExitCode::from(failed(&e)),
     };
     // The agent file's `[recording]` table overrides the environment.
     let recording = match crate::privacy::resolve_settings(
@@ -375,9 +386,10 @@ fn serve(tools: Option<Arc<dyn AppTools>>) -> ExitCode {
     };
     // The generic websocket listener's own agent, if `BRISVOX_WS_AGENT_FILE` names one: its
     // Smart Turn model is the main agent's when that has one, else its own.
-    let websocket_agent = match host.load_websocket_agent(&ProcessEnv).transpose() {
-        Ok(agent) => agent,
-        Err(e) => return ExitCode::from(failed(&e)),
+    let (websocket_agent, websocket_hash) = match host.load_websocket_agent_hashed(&ProcessEnv) {
+        None => (None, 0),
+        Some(Ok((agent, hash))) => (Some(agent), hash),
+        Some(Err(e)) => return ExitCode::from(failed(&e)),
     };
     // One model file serves the process (`BRISVOX_SMART_TURN_MODEL`): an adaptive websocket
     // agent shares the main agent's model, and loads it only when the main agent has none.
@@ -438,7 +450,10 @@ fn serve(tools: Option<Arc<dyn AppTools>>) -> ExitCode {
             Some(agent) => {
                 let parts = Parts {
                     agent,
+                    agent_hash,
                     websocket_agent,
+                    websocket_hash,
+                    reload: reload_settings,
                     websocket_smart_turn,
                     vad,
                     smart_turn,
@@ -505,8 +520,14 @@ fn serve(tools: Option<Arc<dyn AppTools>>) -> ExitCode {
 /// What the calls run, loaded before the runtime.
 struct Parts {
     agent: AgentConfig,
+    /// Hash of the text `agent` was loaded from ([`crate::reload::text_hash`]).
+    agent_hash: u64,
     /// The generic websocket listener's own agent (`BRISVOX_WS_AGENT_FILE`).
     websocket_agent: Option<AgentConfig>,
+    /// Hash of the text `websocket_agent` was loaded from.
+    websocket_hash: u64,
+    /// The reload triggers (`BRISVOX_AGENT_RELOAD_POLL_MS`).
+    reload: ReloadSettings,
     websocket_smart_turn: Option<Arc<dyn TurnModel>>,
     vad: Vad,
     smart_turn: Option<Arc<dyn TurnModel>>,
@@ -530,7 +551,10 @@ async fn start_hosting(
 ) -> crate::Result<(Server, Vec<InferencePool>, Option<Sweeper>)> {
     let Parts {
         agent,
+        agent_hash,
         websocket_agent,
+        websocket_hash,
+        reload: reload_settings,
         websocket_smart_turn,
         vad,
         smart_turn,
@@ -601,11 +625,13 @@ async fn start_hosting(
             }
         }
     }
+    let mut dropped_limits = Vec::new();
     for name in admission.restrict_to(&used) {
         tracing::warn!(
             provider = %name,
             "BRISVOX_PROVIDER_LIMITS names a provider the agent does not use; the limit is ignored"
         );
+        dropped_limits.push(name);
     }
     let probe: Arc<dyn LoadProbe> = Arc::new(pool.handle());
     let mut policy = AdmissionPolicy::new(&admission, Some(probe));
@@ -615,28 +641,15 @@ async fn start_hosting(
         let turn_probe: Arc<dyn LoadProbe> = Arc::new(turn_pool.handle());
         policy = policy.with_secondary_probe(turn_probe);
     }
-    let providers =
-        ConfiguredProviders::from_agent_with(&agent, clock, providers_shutdown, resilience)?;
-    // `/metrics` reads the breakers and the process retry budget live.
-    obs.set_resilience_source(providers.resilient().resilience_handle());
     // The stock binary has no application tools; an application embedding the server passes its
-    // `AppTools` through `run_with_tools` (docs/TOOLS.md).
-    let tools = ToolSetup::from_env_linked(&ProcessEnv, clock, app_tools, &host.stream_links())?;
-    // The agent file's MCP servers (`[[mcp.servers]]`): connected once, here, shared by every call.
-    let tools = tools.with_mcp(&agent, clock).await?;
-    #[cfg(feature = "mcp")]
-    let mut mcp_hosts: Vec<_> = tools.mcp_host().into_iter().collect();
+    // `AppTools` through `run_with_tools` (docs/TOOLS.md). The agent file's MCP servers
+    // (`[[mcp.servers]]`) are not connected here: every agent snapshot connects its own
+    // definition's (`RunnerRecipe::build`), so a reload can replace them.
+    let base_tools =
+        ToolSetup::from_env_linked(&ProcessEnv, clock, app_tools, &host.stream_links())?;
     // The callback listener serves the live calls of the telephony tools.
     #[cfg(feature = "call-control")]
-    let callbacks = tools.callbacks().cloned().zip(tools.call_hub());
-    tracing::info!(
-        agent = agent.name(),
-        ?providers,
-        ?vad,
-        ?tools,
-        smart_turn = smart_turn.is_some(),
-        "agent loaded"
-    );
+    let callbacks = base_tools.callbacks().cloned().zip(base_tools.call_hub());
     let adaptive = matches!(
         agent.engine().turn,
         brisvox_agent::turn::TurnPolicy::Adaptive { .. }
@@ -647,94 +660,16 @@ async fn start_hosting(
             "adaptive turns without a Smart Turn model end at their fallback deadline (build with the `smart-turn-ort` feature)"
         );
     }
-    // The out-of-process agents: `BRISVOX_AGENT_URL` and friends, refined by
-    // the definition's `[agent_link]` section and its named routes.
-    let links =
-        crate::AgentLinks::resolve(&agent, |name| config::Env::var(&ProcessEnv, name).ok())?;
-    if let Some(link) = &links.default {
-        tracing::info!(
-            url = %brisvox_agent_link::security::redact_url(&link.url),
-            "calls link to the agent process"
-        );
-    }
-    for (name, link) in &links.routes {
-        tracing::info!(
-            route = %name,
-            url = %brisvox_agent_link::security::redact_url(&link.url),
-            "calls may link to a named agent process"
-        );
-    }
-    // The generic websocket listener's own agent: its own providers and agent links, the same
-    // inference pool, Smart Turn executor, observability and recording (one admission control
-    // for both). No application or telephony tools: those are bound to the main agent (its own MCP servers excepted).
-    let websocket_runner = match websocket_agent {
-        None => None,
-        Some(ws_agent) => {
-            let ws_providers = ConfiguredProviders::from_agent_with(
-                &ws_agent,
-                clock,
-                providers_shutdown,
-                resilience,
-            )?;
-            let ws_links = crate::AgentLinks::resolve(&ws_agent, |name| {
-                config::Env::var(&ProcessEnv, name).ok()
-            })?;
-            tracing::info!(
-                agent = ws_agent.name(),
-                providers = ?ws_providers,
-                smart_turn = websocket_smart_turn.is_some(),
-                "the generic websocket listener runs its own agent (BRISVOX_WS_AGENT_FILE)"
-            );
-            // Its own MCP servers (`[[mcp.servers]]` of that file), when it has any; no other tools.
-            let ws_tools = crate::ToolSetup::none().with_mcp(&ws_agent, clock).await?;
-            #[cfg(feature = "mcp")]
-            mcp_hosts.extend(ws_tools.mcp_host());
-            let mut ws = EngineRunner::with_tools(
-                ws_agent,
-                ws_providers,
-                Offload::Pool(pool.handle()),
-                vad.clone(),
-                runner,
-                ws_tools,
-                clock,
-            )?;
-            if let Some(model) = websocket_smart_turn {
-                ws = ws.with_smart_turn(model);
-                if let Some(turn_pool) = &turn_pool {
-                    ws = ws.with_smart_turn_offload(Offload::Pool(turn_pool.handle()));
-                }
-            }
-            let ws = ws.with_observability(Arc::clone(&obs));
-            Some((ws, ws_links))
-        }
-    };
-    let mut runner = EngineRunner::with_tools(
-        agent,
-        providers,
-        Offload::Pool(pool.handle()),
-        vad,
-        runner,
-        tools,
-        clock,
-    )?;
-    if let Some(model) = smart_turn {
-        runner = runner.with_smart_turn(model);
-        if let Some(turn_pool) = &turn_pool {
-            runner = runner.with_smart_turn_offload(Offload::Pool(turn_pool.handle()));
-        }
-    }
-    let runner = runner.with_observability(obs);
     // Phone numbers the server redacts (recording or logs) are not given to an agent process
     // that asked for the caller identity either.
     let redact_numbers = crate::caller_identity::phone_numbers_redacted(
         recording.as_ref(),
         &crate::telemetry::log_redactor(&ProcessEnv)?,
     );
-    let runner = runner.with_redact_caller_numbers(redact_numbers);
-    let websocket_runner =
-        websocket_runner.map(|(ws, links)| (ws.with_redact_caller_numbers(redact_numbers), links));
-    // Recording and retention.
-    let mut sweeper = None;
+    // Recording and retention. The directory is prepared (and checked) here because the
+    // snapshots take the recording; the retention sweeper, which deletes expired recordings, is
+    // started only once everything else came up (below), so a start that fails on a provider, an
+    // MCP server or a bind never deletes anything.
     let recording = match recording {
         Some(settings) => {
             let recording = Recording::new(settings, clock.clone())?;
@@ -757,32 +692,114 @@ async fn start_hosting(
             if settings.retention.is_none() {
                 tracing::warn!("recordings are kept forever (BRISVOX_RECORDING_RETENTION=forever)");
             }
-            // The sweeper stops with the providers' token, once the server has drained.
-            sweeper = recording.spawn_sweeper(providers_shutdown);
             Some(recording)
         }
         None => None,
     };
-    let (runner, websocket_runner) = match recording {
-        Some(recording) => (
-            runner.with_recording(Arc::clone(&recording)),
-            websocket_runner.map(|(ws, links)| (ws.with_recording(recording), links)),
-        ),
-        None => (runner, websocket_runner),
+    let has_model = smart_turn.is_some() || websocket_smart_turn.is_some();
+    // One Smart Turn model serves the process: each agent gets it, and uses it only while its
+    // own turn policy is adaptive (a reload may make it so).
+    let offload = Offload::Pool(pool.handle());
+    let turn_offload = turn_pool
+        .as_ref()
+        .map(|turn_pool| Offload::Pool(turn_pool.handle()));
+    let make_recipe = |tools: ToolSetup, model: Option<Arc<dyn TurnModel>>| {
+        let factory_clock = clock.clone();
+        let factory_shutdown = providers_shutdown.clone();
+        let mut recipe = RunnerRecipe::new(
+            move |agent: &AgentConfig| {
+                ConfiguredProviders::from_agent_with(
+                    agent,
+                    &factory_clock,
+                    &factory_shutdown,
+                    resilience,
+                )
+            },
+            offload.clone(),
+            vad.clone(),
+            runner,
+            tools,
+            clock,
+        )
+        .with_links(resolve_links)
+        .with_observability(Arc::clone(&obs))
+        .with_redact_caller_numbers(redact_numbers);
+        if let Some(model) = model {
+            recipe = recipe.with_smart_turn(model, turn_offload.clone());
+        }
+        if let Some(recording) = &recording {
+            recipe = recipe.with_recording(Arc::clone(recording));
+        }
+        recipe
     };
-    // The out-of-process agent: `BRISVOX_AGENT_URL` and friends.
-    let runner = Arc::new(if links.is_empty() {
-        runner
-    } else {
-        runner.with_agent_links(links)
-    });
-    let websocket_runner = websocket_runner.map(|(ws, links)| {
-        Arc::new(if links.is_empty() {
-            ws
-        } else {
-            ws.with_agent_links(links)
-        })
-    });
+    let env: Arc<dyn config::Env + Send + Sync> = Arc::new(ProcessEnv);
+    let mut slots = Vec::new();
+    // The main agent: its providers, its tools, its MCP servers.
+    let main_recipe = make_recipe(
+        base_tools,
+        smart_turn.clone().or_else(|| websocket_smart_turn.clone()),
+    );
+    let main_runner = main_recipe.build(agent).await?;
+    tracing::info!(
+        agent = main_runner.agent().name(),
+        providers = ?main_runner.factory(),
+        ?vad,
+        smart_turn = main_runner.has_smart_turn(),
+        "agent loaded"
+    );
+    let main_swap = Arc::new(SwapRunner::new(main_runner));
+    // `/metrics` reads the breakers and the process retry budget of the live snapshot.
+    obs.set_resilience_source(Arc::new(CurrentResilience(Arc::clone(&main_swap))));
+    slots.push(
+        AgentSlot::new(
+            "agent",
+            host.agent_file
+                .clone()
+                .map_or(DefinitionSource::Environment, DefinitionSource::File),
+            agent_hash,
+            Arc::clone(&main_swap),
+            main_recipe,
+        )
+        .with_veto(reload::recording_veto)
+        .with_veto(reload::provider_limit_veto(dropped_limits.clone()))
+        .with_veto(reload::smart_turn_veto(Arc::clone(&env), has_model)),
+    );
+    // The generic websocket listener's own agent: its own providers and agent links, the same
+    // inference pool, Smart Turn executor, observability and recording (one admission control
+    // for both). No application or telephony tools: those are bound to the main agent (its own
+    // MCP servers excepted).
+    let websocket_swap = match (websocket_agent, &host.websocket_agent_file) {
+        (Some(ws_agent), Some(path)) => {
+            tracing::info!(
+                agent = ws_agent.name(),
+                smart_turn = websocket_smart_turn.is_some(),
+                "the generic websocket listener runs its own agent (BRISVOX_WS_AGENT_FILE)"
+            );
+            let recipe = make_recipe(
+                ToolSetup::none(),
+                websocket_smart_turn.clone().or_else(|| smart_turn.clone()),
+            );
+            let ws_runner = recipe.build(ws_agent).await?;
+            let swap = Arc::new(SwapRunner::new(ws_runner));
+            slots.push(
+                AgentSlot::new(
+                    "websocket_agent",
+                    DefinitionSource::File(path.clone()),
+                    websocket_hash,
+                    Arc::clone(&swap),
+                    recipe,
+                )
+                .with_veto(reload::provider_limit_veto(dropped_limits))
+                .with_veto(reload::smart_turn_veto(Arc::clone(&env), has_model)),
+            );
+            Some(swap)
+        }
+        _ => None,
+    };
+    let hub = Arc::new(
+        ReloadHub::new(Arc::new(AgentSet::new(slots, env)), clock.clone())
+            .with_observability(Arc::clone(&obs)),
+    );
     // The WebRTC listener's Opus codec runs on the inference pool, not on tokio workers.
     #[cfg(feature = "webrtc")]
     let host = &host.clone().with_codec_pool(pool.handle());
@@ -792,8 +809,8 @@ async fn start_hosting(
         policy,
         host,
         clock.clone(),
-        &runner,
-        websocket_runner.as_ref(),
+        &main_swap,
+        websocket_swap.as_ref(),
     )
     .await?;
     #[cfg(feature = "call-control")]
@@ -801,17 +818,56 @@ async fn start_hosting(
         let listener = crate::callbacks::CallbackServer::bind(settings, hub, clock.clone()).await?;
         server.attach_callbacks(listener);
     }
-    // The MCP connections close with the server, after the calls have drained.
-    #[cfg(feature = "mcp")]
-    for mcp_host in mcp_hosts {
-        server.attach_mcp(mcp_host);
-    }
+    // `POST /admin/reload`, `SIGHUP` and the file poll reload the agents through the hub; the
+    // MCP connections close with it after the drain (an older snapshot's when its last call ends).
+    // The retention sweeper stops with the providers' token, once the server has drained.
+    let sweeper = recording
+        .as_ref()
+        .and_then(|recording| recording.spawn_sweeper(providers_shutdown));
+    server.manager().attach_reload(Arc::clone(&hub));
+    reload::start_watchers(&hub, &reload_settings)?;
     // Both pools outlive the server: dropping one closes its queue.
     Ok((
         server,
         std::iter::once(pool).chain(turn_pool).collect(),
         sweeper,
     ))
+}
+
+/// The agent processes of `agent`'s calls: `BRISVOX_AGENT_URL` and friends, refined by the
+/// definition's `[agent_link]` section and its named routes.
+fn resolve_links(agent: &AgentConfig) -> crate::Result<crate::AgentLinks> {
+    let links = crate::AgentLinks::resolve(agent, |name| config::Env::var(&ProcessEnv, name).ok())?;
+    if let Some(link) = &links.default {
+        tracing::info!(
+            agent = agent.name(),
+            url = %brisvox_agent_link::security::redact_url(&link.url),
+            "calls link to the agent process"
+        );
+    }
+    for (name, link) in &links.routes {
+        tracing::info!(
+            agent = agent.name(),
+            route = %name,
+            url = %brisvox_agent_link::security::redact_url(&link.url),
+            "calls may link to a named agent process"
+        );
+    }
+    Ok(links)
+}
+
+/// `/metrics` reads the circuit breakers and the retry budget of the snapshot that is live now.
+struct CurrentResilience(Arc<SwapRunner<ConfiguredProviders>>);
+
+impl ResilienceSource for CurrentResilience {
+    fn resilience_snapshot(&self) -> ResilienceSnapshot {
+        self.0
+            .current()
+            .factory()
+            .resilient()
+            .resilience_handle()
+            .resilience_snapshot()
+    }
 }
 
 /// A failure before logging is set up: reported on stderr.

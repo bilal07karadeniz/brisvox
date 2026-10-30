@@ -259,6 +259,10 @@ impl TtsProvider for AnyTts {
 /// instances, with the agent's `[stt|llm|tts].secondary` as the provider to fail over to.
 pub struct ConfiguredProviders {
     providers: ResilientProviders<AnyStt, AnyLlm, AnyTts>,
+    /// Stops the TTS adapters' warm connections and timers when these providers are dropped: a
+    /// reload replaces the providers, and the old ones must not keep connections open until the
+    /// process ends.
+    _stop: tokio_util::sync::DropGuard,
 }
 
 impl std::fmt::Debug for ConfiguredProviders {
@@ -388,7 +392,7 @@ fn build_tts(config: TtsProviderConfig) -> Result<AnyTts> {
 impl ConfiguredProviders {
     /// Builds the agent's STT, LLM and TTS adapters (and their secondaries) on `clock`, behind
     /// the resilience layer with its default settings; `shutdown` stops the TTS adapters' warm
-    /// connections and timers. Call it inside the tokio runtime, once at startup.
+    /// connections and timers (so do dropping the providers). Call it inside the tokio runtime.
     ///
     /// # Errors
     /// [`Error::Config`] when an adapter is not compiled into this build or will not build.
@@ -411,9 +415,14 @@ impl ConfiguredProviders {
         shutdown: &CancellationToken,
         resilience: ResilienceConfig,
     ) -> Result<Self> {
+        // A token of these providers' own, below the process's: dropping them stops their TTS
+        // tasks (a reload replaces the providers while the process runs on).
+        let stop = shutdown.child_token();
+        // Held from here: a build that fails below stops the tasks it already started.
+        let guard = stop.clone().drop_guard();
         let stt = Arc::new(build_stt(agent.stt()?, clock)?);
         let llm = Arc::new(build_llm(agent.llm()?, clock)?);
-        let tts = Arc::new(build_tts(agent.tts(clock.clone(), shutdown.clone())?)?);
+        let tts = Arc::new(build_tts(agent.tts(clock.clone(), stop.clone())?)?);
         let mut providers = ResilientProviders::new(
             Resilience::new(resilience, clock.clone()),
             CallProviders { stt, llm, tts },
@@ -424,13 +433,20 @@ impl ConfiguredProviders {
         if let Some(config) = agent.llm_secondary()? {
             providers = providers.with_llm_secondary(Arc::new(build_llm(config, clock)?));
         }
-        if let Some(config) = agent.tts_secondary(clock.clone(), shutdown.clone())? {
+        if let Some(config) = agent.tts_secondary(clock.clone(), stop.clone())? {
             let voice = agent
                 .tts_secondary_voice()
                 .ok_or_else(|| Error::Config("tts.secondary has no voice".to_owned()))?;
-            providers = providers.with_tts_secondary(Arc::new(build_tts(config)?), voice);
+            providers = providers.with_tts_secondary_languages(
+                Arc::new(build_tts(config)?),
+                voice,
+                agent.tts_secondary_language_voices(),
+            );
         }
-        Ok(Self { providers })
+        Ok(Self {
+            providers,
+            _stop: guard,
+        })
     }
 
     /// The resilience layer the calls run behind.

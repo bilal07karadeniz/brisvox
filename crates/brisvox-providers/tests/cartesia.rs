@@ -58,6 +58,8 @@ fn tts_config() -> TtsConfig {
     TtsConfig {
         sample_rate: SampleRate::Hz16000,
         voice: Arc::from("voice-1"),
+        language: None,
+        model: None,
     }
 }
 
@@ -348,6 +350,8 @@ async fn config_reaches_the_wire_unchanged_on_every_request() {
         .connect(TtsConfig {
             sample_rate: SampleRate::Hz8000,
             voice: Arc::from("tr-voice"),
+            language: None,
+            model: None,
         })
         .await
         .unwrap();
@@ -367,6 +371,40 @@ async fn config_reaches_the_wire_unchanged_on_every_request() {
             frame["output_format"],
             json!({"container": "raw", "encoding": "pcm_mulaw", "sample_rate": 8000})
         );
+    }
+}
+
+#[tokio::test]
+async fn the_session_language_voice_and_model_win_over_the_adapter_defaults() {
+    // A call that follows the caller into Turkish opens a session with the Turkish voice, the
+    // language and (optionally) another model; none of it needs the adapter to be reconfigured.
+    let mock = Mock::start();
+    let mut cfg = config(&mock);
+    cfg.language = Some("en".to_owned());
+    let provider = CartesiaTts::new(cfg).unwrap();
+    for (language, model, want_language, want_model) in [
+        (None, None, "en", "sonic-3.6"),
+        (Some("tr"), Some("sonic-3.5"), "tr", "sonic-3.5"),
+        (Some("tr"), None, "tr", "sonic-3.6"),
+        // Anything that is not a plain code is ignored, never put into the request.
+        (Some("t\"r"), Some("a b"), "en", "sonic-3.6"),
+    ] {
+        let mut session = provider
+            .connect(TtsConfig {
+                sample_rate: SampleRate::Hz16000,
+                voice: Arc::from("v"),
+                language: language.map(Arc::from),
+                model: model.map(Arc::from),
+            })
+            .await
+            .unwrap();
+        session.input.send(text(1, "Merhaba.")).await.unwrap();
+        session.input.send(flush(1)).await.unwrap();
+        let _ = until_flushed(&mut session.events, 1).await;
+        let frames = mock.received();
+        let frame = frames.last().unwrap();
+        assert_eq!(frame["language"], want_language);
+        assert_eq!(frame["model_id"], want_model);
     }
 }
 
@@ -1937,6 +1975,8 @@ async fn live_cartesia_session() {
     let config = TtsConfig {
         sample_rate: SampleRate::Hz24000,
         voice: Arc::from(voice.as_str()),
+        language: None,
+        model: None,
     };
 
     let warm_started = tokio::time::Instant::now();

@@ -62,6 +62,8 @@ fn tts_config() -> TtsConfig {
     TtsConfig {
         sample_rate: SampleRate::Hz16000,
         voice: Arc::from("voice-1"),
+        language: None,
+        model: None,
     }
 }
 
@@ -215,6 +217,8 @@ impl Harness {
         cfg.warm_target = Some(TtsConfig {
             sample_rate: SampleRate::Hz16000,
             voice: Arc::from("contract"),
+            language: None,
+            model: None,
         });
         let provider = Arc::new(DeepgramAuraTts::new(cfg).unwrap());
         Self {
@@ -341,6 +345,8 @@ async fn encoding_rate_and_speed_reach_the_query() {
         .connect(TtsConfig {
             sample_rate: SampleRate::Hz8000,
             voice: Arc::from("aura-2-thalia-en"),
+            language: None,
+            model: None,
         })
         .await
         .unwrap();
@@ -450,6 +456,8 @@ async fn invalid_configuration_is_refused_up_front() {
                 c.warm_target = Some(TtsConfig {
                     sample_rate: SampleRate::Hz16000,
                     voice: Arc::from("aura-2-x-tr"),
+                    language: None,
+                    model: None,
                 });
             }),
         ),
@@ -476,6 +484,8 @@ async fn turkish_is_refused_at_connect_with_a_clear_message() {
         .connect(TtsConfig {
             sample_rate: SampleRate::Hz16000,
             voice: Arc::from("aura-2-ozge-tr"),
+            language: None,
+            model: None,
         })
         .await
         .unwrap_err();
@@ -489,6 +499,8 @@ async fn turkish_is_refused_at_connect_with_a_clear_message() {
             .connect(TtsConfig {
                 sample_rate: SampleRate::Hz16000,
                 voice: Arc::from(voice),
+                language: None,
+                model: None,
             })
             .await
             .unwrap_err();
@@ -513,6 +525,8 @@ async fn every_supported_language_connects_in_either_case() {
             .connect(TtsConfig {
                 sample_rate: SampleRate::Hz16000,
                 voice: Arc::from(voice.as_str()),
+                language: None,
+                model: None,
             })
             .await
             .unwrap_or_else(|e| panic!("{voice}: {e}"));
@@ -541,6 +555,8 @@ async fn invalid_session_configuration_is_refused_before_any_connection() {
             .connect(TtsConfig {
                 sample_rate: SampleRate::Hz16000,
                 voice: Arc::from(voice),
+                language: None,
+                model: None,
             })
             .await
             .unwrap_err();
@@ -551,6 +567,8 @@ async fn invalid_session_configuration_is_refused_before_any_connection() {
             .connect(TtsConfig {
                 sample_rate: rate,
                 voice: Arc::from("voice-1"),
+                language: None,
+                model: None,
             })
             .await
             .unwrap_err();
@@ -566,6 +584,8 @@ async fn invalid_session_configuration_is_refused_before_any_connection() {
         .connect(TtsConfig {
             sample_rate: SampleRate::Hz24000,
             voice: Arc::from("voice-1"),
+            language: None,
+            model: None,
         })
         .await
         .unwrap_err();
@@ -900,6 +920,8 @@ async fn mulaw_frames_pass_through_untouched() {
         .connect(TtsConfig {
             sample_rate: SampleRate::Hz8000,
             voice: Arc::from("voice-1"),
+            language: None,
+            model: None,
         })
         .await
         .unwrap();
@@ -930,6 +952,8 @@ async fn mulaw_frames_of_odd_size_and_an_odd_total_lose_no_byte() {
         .connect(TtsConfig {
             sample_rate: SampleRate::Hz8000,
             voice: Arc::from("voice-1"),
+            language: None,
+            model: None,
         })
         .await
         .unwrap();
@@ -1888,6 +1912,8 @@ async fn a_parked_socket_for_another_voice_or_a_stale_or_dead_one_is_not_used() 
             .connect(TtsConfig {
                 sample_rate: SampleRate::Hz16000,
                 voice: Arc::from("voice-2"),
+                language: None,
+                model: None,
             })
             .await
             .unwrap(),
@@ -1902,6 +1928,8 @@ async fn a_parked_socket_for_another_voice_or_a_stale_or_dead_one_is_not_used() 
             .connect(TtsConfig {
                 sample_rate: SampleRate::Hz16000,
                 voice: Arc::from("voice-2"),
+                language: None,
+                model: None,
             })
             .await
             .unwrap(),
@@ -1917,6 +1945,8 @@ async fn a_parked_socket_for_another_voice_or_a_stale_or_dead_one_is_not_used() 
             .connect(TtsConfig {
                 sample_rate: SampleRate::Hz16000,
                 voice: Arc::from("voice-2"),
+                language: None,
+                model: None,
             })
             .await
             .unwrap(),
@@ -2546,6 +2576,8 @@ async fn live_deepgram_aura_session() {
     let config = TtsConfig {
         sample_rate: SampleRate::Hz24000,
         voice: Arc::from(model.as_str()),
+        language: None,
+        model: None,
     };
     let mut session = provider.connect(config).await.unwrap();
 

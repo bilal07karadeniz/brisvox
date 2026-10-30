@@ -564,6 +564,7 @@ impl SessionManager {
                 outstanding_tx,
                 registry: Mutex::new(Registry::default()),
                 observability: OnceLock::new(),
+                reload: OnceLock::new(),
             }),
         })
     }
@@ -755,6 +756,17 @@ impl SessionManager {
     /// from it. Set once; `false` when one was attached already.
     pub fn attach_observability(&self, observability: Arc<Observability>) -> bool {
         self.inner.observability.set(observability).is_ok()
+    }
+
+    /// Attaches the agent reload hub: the health listener then serves `POST /admin/reload`
+    /// through it, and a drain closes it. Set once; `false` when one was attached already.
+    pub fn attach_reload(&self, hub: Arc<crate::reload::ReloadHub>) -> bool {
+        self.inner.reload.set(hub).is_ok()
+    }
+
+    /// The attached agent reload hub, if any.
+    pub fn reload(&self) -> Option<&Arc<crate::reload::ReloadHub>> {
+        self.inner.reload.get()
     }
 
     /// The attached [`Observability`], if any.
@@ -991,6 +1003,7 @@ struct Inner {
     registry: Mutex<Registry>,
     /// What `/metrics` serves; set once by the binary.
     observability: OnceLock<Arc<Observability>>,
+    reload: OnceLock<Arc<crate::reload::ReloadHub>>,
 }
 
 impl fmt::Debug for Inner {

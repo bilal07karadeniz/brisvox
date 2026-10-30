@@ -8,11 +8,14 @@
 //! | `brisvox_pool_*`, `brisvox_provider_*` | gauge/counter | `provider` | admission control, read at scrape |
 //! | `brisvox_provider_errors_total` | counter | `stage`, `kind` | the engine's stage counters, at call end |
 //! | `brisvox_engine_events_total` | counter | `event` | the engine's call stats, at call end |
+//! | `brisvox_language_switches_total` | counter | none | the times calls followed the caller into another language, at call end |
 //! | `brisvox_breaker_*` | gauge/counter | `stage`, `role`, `provider` | the circuit breakers, read at scrape |
 //! | `brisvox_retry_budget_*` | gauge/counter | none | the process retry budget, read at scrape |
 //! | `brisvox_smart_turn_queue_depth`, `brisvox_smart_turn_rejected_total`, `brisvox_smart_turn_timed_out_total` | gauge/counter | none | the Smart Turn executor, read at scrape; absent without one |
 //! | `brisvox_resilience_events_total` | counter | `stage`, `event` | each call's resilience counters (failovers, recoveries, budget refusals) |
 //! | `brisvox_traces_*_total` | counter | none | the trace exporter |
+//! | `brisvox_agent_reloads_total` | counter | `result` | each agent reload (`ok`, `unchanged`, `invalid`, `needs_restart`) |
+//! | `brisvox_agent_generation` | gauge | none | the agent definition the next call runs: 1 at start, +1 per applied reload |
 //! | `brisvox_llm_tokens_total` | counter | `provider`, `model`, `kind` | each call's LLM tokens, at call end |
 //! | `brisvox_stt_audio_seconds_total`, `brisvox_tts_characters_total` | counter | `provider`, `model` | each call's STT audio and TTS characters, at call end |
 //! | `brisvox_call_duration_seconds` | histogram | none | each call's duration, at call end |
@@ -23,6 +26,7 @@
 //! Counters fed per call are folded in at every finished turn and at the end of the call, so a
 //! failover during a long call is visible within one turn. Nothing is touched per audio frame.
 
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, PoisonError};
 use std::time::Duration;
 
@@ -388,14 +392,22 @@ pub struct Metrics {
     turns_completed: Counter,
     turns_interrupted: Counter,
     calls_ended: Counter,
+    language_switches: Counter,
     provider_errors: [Counter; ERROR_KINDS.len()],
     engine: [Counter; ENGINE_EVENTS.len()],
     resilience: [[Counter; RESILIENCE_EVENTS.len()]; 3],
     usage: Mutex<UsageTable>,
     call_duration: Histogram,
+    /// Agent reloads by result ([`RELOAD_RESULTS`]).
+    agent_reloads: [Counter; RELOAD_RESULTS.len()],
+    /// The agent generation the next call runs (0 until the server sets it).
+    agent_generation: AtomicU64,
     /// The trace pipeline's counters.
     pub traces: Arc<TraceCounters>,
 }
+
+/// The `result` label values of `brisvox_agent_reloads_total`.
+pub const RELOAD_RESULTS: [&str; 4] = ["ok", "unchanged", "invalid", "needs_restart"];
 
 impl Default for Metrics {
     fn default() -> Self {
@@ -412,13 +424,46 @@ impl Metrics {
             turns_completed: Counter::new(),
             turns_interrupted: Counter::new(),
             calls_ended: Counter::new(),
+            language_switches: Counter::new(),
             provider_errors: std::array::from_fn(|_| Counter::new()),
             engine: std::array::from_fn(|_| Counter::new()),
             resilience: std::array::from_fn(|_| std::array::from_fn(|_| Counter::new())),
             usage: Mutex::new(UsageTable::default()),
             call_duration: Histogram::with_bounds(&CALL_DURATION_BOUNDS_US),
+            agent_reloads: std::array::from_fn(|_| Counter::new()),
+            agent_generation: AtomicU64::new(0),
             traces: Arc::new(TraceCounters::default()),
         }
+    }
+
+    /// Counts one agent reload; `result` is one of [`RELOAD_RESULTS`] (anything else is ignored).
+    pub fn observe_agent_reload(&self, result: &str) {
+        if let Some(counter) = RELOAD_RESULTS
+            .iter()
+            .position(|r| *r == result)
+            .and_then(|i| self.agent_reloads.get(i))
+        {
+            counter.inc();
+        }
+    }
+
+    /// Reloads that ended as `result` ([`RELOAD_RESULTS`]).
+    pub fn agent_reloads(&self, result: &str) -> u64 {
+        RELOAD_RESULTS
+            .iter()
+            .position(|r| *r == result)
+            .and_then(|i| self.agent_reloads.get(i))
+            .map_or(0, Counter::get)
+    }
+
+    /// Sets the agent generation the next call runs.
+    pub fn set_agent_generation(&self, generation: u64) {
+        self.agent_generation.store(generation, Ordering::Relaxed);
+    }
+
+    /// The agent generation the next call runs (0 until the server sets it).
+    pub fn agent_generation(&self) -> u64 {
+        self.agent_generation.load(Ordering::Relaxed)
     }
 
     /// The histogram of `stage`.
@@ -515,6 +560,7 @@ impl Metrics {
         for (counter, n) in self.engine.iter().zip(engine_events(stats)) {
             counter.add(n);
         }
+        self.language_switches.add(stats.stages.language.switches);
         if let Some(summary) = summary {
             self.call_duration
                 .observe(Duration::from_millis(summary.duration_ms));
@@ -639,6 +685,7 @@ impl Metrics {
             render_smart_turn(&mut p, pool);
         }
         self.render_traces(&mut p);
+        self.render_agent(&mut p);
         p.finish()
     }
 
@@ -705,6 +752,16 @@ impl Metrics {
             Kind::Counter,
         );
         p.sample("brisvox_calls_ended_total", &[], self.calls_ended.get());
+        p.family(
+            "brisvox_language_switches_total",
+            "Times a call's agent followed the caller into another language (folded in when a call ends).",
+            Kind::Counter,
+        );
+        p.sample(
+            "brisvox_language_switches_total",
+            &[],
+            self.language_switches.get(),
+        );
     }
 
     fn render_usage(&self, p: &mut Prom) {
@@ -847,6 +904,27 @@ impl Metrics {
                 );
             }
         }
+    }
+
+    fn render_agent(&self, p: &mut Prom) {
+        p.family(
+            "brisvox_agent_reloads_total",
+            "Agent definition reloads, by result: ok (a new definition is live), unchanged, invalid (kept the old one) or needs_restart.",
+            Kind::Counter,
+        );
+        for (result, counter) in RELOAD_RESULTS.iter().zip(&self.agent_reloads) {
+            p.sample(
+                "brisvox_agent_reloads_total",
+                &[("result", result)],
+                counter.get(),
+            );
+        }
+        p.family(
+            "brisvox_agent_generation",
+            "The agent definition the next call runs: 1 at start, one more per applied reload.",
+            Kind::Gauge,
+        );
+        p.sample("brisvox_agent_generation", &[], self.agent_generation());
     }
 
     fn render_traces(&self, p: &mut Prom) {

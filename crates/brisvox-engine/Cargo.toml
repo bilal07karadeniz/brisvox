@@ -45,6 +45,7 @@ thiserror = { workspace = true }
 tokio = { workspace = true, features = ["macros", "rt", "sync", "time"] }
 tokio-util = { workspace = true }
 tracing = { workspace = true }
+whatlang = { workspace = true }
 
 [dev-dependencies]
 # The crate itself with the `sim` feature, so tests reach `EngineFactory` without `--features`.

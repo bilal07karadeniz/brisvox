@@ -80,5 +80,5 @@ pub use s2s::{
     S2sConfig, S2sControl, S2sEvent, S2sHistoryItem, S2sProvider, S2sResponseStatus, S2sSession,
     S2sTurnDetection,
 };
-pub use stt::{SttConfig, SttEvent, SttInput, SttProvider, SttSession};
+pub use stt::{SpokenLanguage, SttConfig, SttEvent, SttInput, SttProvider, SttSession};
 pub use tts::{ContextId, TtsConfig, TtsEvent, TtsInput, TtsProvider, TtsSession};
