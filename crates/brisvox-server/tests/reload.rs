@@ -44,7 +44,12 @@ async fn a_reload_gives_new_calls_the_new_definition_and_calls_in_progress_keep_
     let mut old = rig.rtvi_call().await;
     rig.until("the first call runs", |m| m.stats().active == 1)
         .await;
-    assert_eq!(calls_of(&rig.seen, "one"), 1);
+    // The call is counted active a moment before its definition records the call (a slow CI
+    // runner saw 0 here).
+    eventually("the first call to run definition one", 20, || {
+        calls_of(&rig.seen, "one") == 1
+    })
+    .await;
 
     // The operator edits the file and reloads.
     rig.file.write(&two());
