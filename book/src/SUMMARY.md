@@ -64,6 +64,7 @@
   - [OpenAI-realtime transcription (local STT dialects)](reference/providers/openai-realtime-stt.md)
   - [Local speech servers (survey)](reference/providers/local-speech.md)
   - [Language switching (STT detection, TTS voices)](reference/providers/language-switching.md)
+  - [Noise suppression (models, CPU, licenses)](reference/providers/noise-suppression.md)
   - [OpenAI Realtime (speech-to-speech)](reference/providers/openai-realtime.md)
   - [Gemini Live (speech-to-speech)](reference/providers/gemini-live.md)
   - [WebRTC](reference/providers/webrtc.md)
