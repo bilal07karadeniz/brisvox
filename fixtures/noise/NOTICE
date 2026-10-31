@@ -1,0 +1,25 @@
+Noise recordings for the noise suppression evaluation (brisvox-bench denoise ...).
+
+Nine 8-second excerpts (16 kHz, mono, 16-bit PCM) of recordings from the "noise/free-sound" part
+of the MUSAN corpus:
+
+  noise-free-sound-0064.wav  noise-free-sound-0086.wav  noise-free-sound-0230.wav
+  noise-free-sound-0232.wav  noise-free-sound-0234.wav  noise-free-sound-0431.wav
+  noise-free-sound-0441.wav  noise-free-sound-0824.wav  noise-free-sound-0841.wav
+
+Source: MUSAN, David Snyder, Guoguo Chen, Daniel Povey, "MUSAN: A Music, Speech, and Noise
+Corpus", arXiv:1510.08484, 2015, https://www.openslr.org/17/ . The files were read from the
+Hugging Face mirror https://huggingface.co/datasets/FluidInference/musan at revision
+3edcfdf89b56dbe6a395ff29f9c29489e03d1321 (exact URL and SHA-256 of every original in
+sources.lock). All of them are on the corpus' list of background noises (noise/free-sound/ANNOTATIONS).
+
+License: the corpus' own statement for this folder (noise/free-sound/LICENSE) is "All selected
+recordings were marked as in the Public Domain on Free Sound (url: https://www.freesound.org/)".
+The corpus as a whole is distributed by OpenSLR under CC BY 4.0
+(https://creativecommons.org/licenses/by/4.0/ ). No attribution is required for the public domain
+recordings; it is given here anyway.
+
+Modifications by the brisvox project: one excerpt of 8 s per recording (the loudest 8 s window
+starting on a whole second; the offset is in sources.lock), nothing else (no resampling, level
+changes or filtering). They are mixed into the speech fixtures at fixed signal-to-noise ratios by
+the benchmark, never committed mixed.

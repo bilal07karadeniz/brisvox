@@ -100,6 +100,7 @@ use tokio::sync::{Notify, mpsc};
 use tokio::time::Instant;
 
 use crate::config::EngineConfig;
+use crate::denoise::{DenoiseCounters, DenoiseFeed, SttDenoisedInput};
 use crate::event_slot::{EventSlot, SlotOverflow};
 use crate::guard::TaskGuard;
 use crate::language::{LanguageTracker, Utterance};
@@ -294,6 +295,13 @@ impl SttStats {
 
 fn bump(counter: &AtomicU64) {
     counter.fetch_add(1, Ordering::Relaxed);
+}
+
+/// Queues audio for the session task; a full queue drops it (counted).
+fn send_audio(queue: &CmdQueue, counters: &Counters, bytes: Bytes) {
+    if !queue.push_audio(bytes) {
+        bump(&counters.audio_dropped_queue);
+    }
 }
 
 /// What the stage tells its session task, in order.
@@ -870,6 +878,8 @@ pub struct SttStage<P: SttProvider> {
     /// Wakes the stage when the oldest held `Finalize` has waited `max_finalize_defer`.
     slot: EventSlot<()>,
     timer: Option<DeadlineTimer>,
+    /// Noise-suppressed audio for the provider instead of the plain frames (`denoise_stt`).
+    denoised: Option<SttDenoisedInput>,
     languages: Option<Arc<LanguageTracker>>,
 }
 
@@ -896,8 +906,23 @@ impl<P: SttProvider> SttStage<P> {
             held: VecDeque::new(),
             slot: EventSlot::new(4, SlotOverflow::DropOldest),
             timer: None,
+            denoised: None,
             languages: None,
         }
+    }
+
+    /// Sends the provider the noise-suppressed audio of `feed` instead of the plain frames
+    /// (`denoise_stt`; see `crate::denoise`): a plain frame waits for its enhanced version for
+    /// at most 100 ms and goes out as it was beyond that, and every stretch is sent exactly once.
+    #[must_use]
+    pub(crate) fn with_denoised_input(
+        mut self,
+        feed: Arc<DenoiseFeed>,
+        counters: Arc<DenoiseCounters>,
+    ) -> Self {
+        let hz = self.config.sample_rate.hz();
+        self.denoised = Some(SttDenoisedInput::new(feed, counters, hz));
+        self
     }
 
     /// Tells `tracker` about every finished utterance (its final text and the language the
@@ -1066,8 +1091,11 @@ impl<P: SttProvider> SttStage<P> {
                 self.start_task(ctx);
                 bump(&self.counters.audio_in);
                 let timestamp = audio.timestamp();
-                if !self.queue.push_audio(audio.data().clone()) {
-                    bump(&self.counters.audio_dropped_queue);
+                if let Some(input) = self.denoised.as_mut() {
+                    let (queue, counters) = (&self.queue, &self.counters);
+                    input.on_frame(audio, &mut |bytes| send_audio(queue, counters, bytes));
+                } else {
+                    send_audio(&self.queue, &self.counters, audio.data().clone());
                 }
                 self.last_audio = Some(timestamp);
                 self.release_held(Some(timestamp));
@@ -1085,6 +1113,11 @@ impl<P: SttProvider> SttStage<P> {
             Frame::System(SystemFrame::UserStoppedSpeaking { at }) => {
                 self.start_task(ctx);
                 let at = *at;
+                if let Some(input) = self.denoised.as_mut() {
+                    // The `Finalize` follows ALL the audio of the utterance, enhanced or not.
+                    let (queue, counters) = (&self.queue, &self.counters);
+                    input.flush(&mut |bytes| send_audio(queue, counters, bytes));
+                }
                 // The stop goes first; the `Finalize` it causes follows (and so does its final).
                 ctx.forward(frame, Direction::Downstream).await?;
                 if self.last_audio.is_some_and(|ts| ts >= at) {
@@ -1099,7 +1132,13 @@ impl<P: SttProvider> SttStage<P> {
                 }
                 return Ok(());
             }
-            Frame::System(SystemFrame::Stop | SystemFrame::Cancel) => self.flush_held(),
+            Frame::System(SystemFrame::Stop | SystemFrame::Cancel) => {
+                if let Some(input) = self.denoised.as_mut() {
+                    let (queue, counters) = (&self.queue, &self.counters);
+                    input.flush(&mut |bytes| send_audio(queue, counters, bytes));
+                }
+                self.flush_held();
+            }
             _ => {}
         }
         ctx.forward(frame, Direction::Downstream).await

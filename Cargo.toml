@@ -62,6 +62,12 @@ webpki-roots = "1.0.9"
 # build-time download (no OpenSSL on Linux), no ndarray/tracing.
 ort = { version = "=2.0.0-rc.13", default-features = false, features = ["std", "download-binaries", "tls-rustls", "api-27"] }
 tract-onnx = "0.23.8"
+# RNNoise in pure Rust (BSD-3-Clause, 0.5.2 of 2025-12-18): the embedded model, no default features
+# (they pull the command-line tool). Noise suppression of the caller audio, feature denoise-rnnoise.
+nnnoiseless = { version = "0.5.2", default-features = false }
+# Hush (weya-ai) in pure Rust: Apache-2.0 code and weights, 0.1.2 of 2026-10-29. Optional denoiser backend
+# for the benchmark (feature denoise-hush); no default features (they pull a WAV reader).
+hush-vani = { version = "0.1.2", default-features = false }
 realfft = "3.5.0"
 # getrlimit/setrlimit(RLIMIT_NOFILE) without unsafe code in the server: MIT, 0.11.0
 # (crates.io, 2026-10-13), Unix only; the server raises its open-file soft limit at startup.

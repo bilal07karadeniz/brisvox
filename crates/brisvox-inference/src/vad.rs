@@ -27,7 +27,8 @@ use std::time::Duration;
 
 use tokio::time::Instant;
 
-use crate::error::Result;
+use crate::denoise::BoxedDenoiser;
+use crate::error::{Error, Result};
 
 /// A model that maps one window of audio to a speech probability, keeping its own recurrent
 /// state between calls (e.g. Silero VAD).
@@ -385,11 +386,53 @@ pub struct VadStream<M: SpeechModel> {
     window_start: Option<Instant>,
     sample_period_ns: u64,
     last_probability: f32,
+    /// Noise suppression in front of the model ([`VadStream::with_denoiser`]).
+    denoise: Option<Denoise>,
+}
+
+/// The audio a stream's noise suppressor produced for the last push (see
+/// [`VadStream::denoised`]).
+#[derive(Debug, Clone, Copy)]
+pub struct DenoisedChunk<'a> {
+    /// The enhanced samples, in the order of the input. Fewer or more than the push brought
+    /// in, since the suppressor works in blocks.
+    pub pcm: &'a [i16],
+    /// Time of the first sample, aligned with the input timeline: a sample dated `t` is the
+    /// enhanced version of the input at `t`. The suppressor's fade-in (its first
+    /// [`Denoiser::delay`](crate::Denoiser::delay) of output, which belongs to the time before the
+    /// stream began) is dropped, so chunks of one stream are contiguous from the stream's start.
+    pub start: Instant,
+}
+
+/// Samples of a suppressor's delay at a sample period.
+fn preroll_samples(delay: Duration, period_ns: u64) -> usize {
+    let ns = u64::try_from(delay.as_nanos()).unwrap_or(u64::MAX);
+    usize::try_from((ns + period_ns / 2) / period_ns.max(1)).unwrap_or(usize::MAX)
+}
+
+/// Noise suppression state of a [`VadStream`].
+struct Denoise {
+    denoiser: BoxedDenoiser,
+    /// Output of the last push.
+    chunk: Vec<i16>,
+    chunk_start: Option<Instant>,
+    /// Time of the first input sample since the last reset.
+    origin: Option<Instant>,
+    /// Enhanced samples handed on since the last reset (the fade-in not counted).
+    produced: u64,
+    /// Fade-in samples of the suppressor's output still to discard.
+    preroll: usize,
+    /// Pushes the suppressor failed (their audio went to the model as it was).
+    errors: u64,
+    /// The suppressor is switched off: audio goes to the model as it is (see
+    /// [`VadStream::set_denoise_bypass`]).
+    bypass: bool,
 }
 
 impl<M: SpeechModel> std::fmt::Debug for VadStream<M> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("VadStream")
+            .field("denoising", &self.denoise.is_some())
             .field("detector", &self.detector)
             .field("filled", &self.filled)
             .finish_non_exhaustive()
@@ -420,7 +463,76 @@ impl<M: SpeechModel> VadStream<M> {
             window_start: None,
             sample_period_ns: 1_000_000_000 / rate,
             last_probability: 0.0,
+            denoise: None,
         }
+    }
+
+    /// The same stream with noise suppression in front of the model: every push goes through
+    /// `denoiser` first, the model hears the enhanced audio, and [`VadStream::denoised`] hands
+    /// the enhanced samples out. A denoiser that fails on a push is reset and that push reaches
+    /// the model unprocessed (counted by [`VadStream::denoise_errors`]): audio is never lost to
+    /// the suppressor. [`VadStream::finish`] and [`VadStream::reset`] reset it too.
+    ///
+    /// # Errors
+    /// [`Error::Model`] if the denoiser's sample rate is not the model's.
+    pub fn with_denoiser(mut self, denoiser: BoxedDenoiser) -> Result<Self> {
+        if denoiser.sample_rate() != self.model.sample_rate() {
+            return Err(Error::Model(format!(
+                "denoiser works at {} Hz, the speech model at {} Hz",
+                denoiser.sample_rate(),
+                self.model.sample_rate()
+            )));
+        }
+        let preroll = preroll_samples(denoiser.delay(), self.sample_period_ns);
+        self.denoise = Some(Denoise {
+            denoiser,
+            chunk: Vec::new(),
+            chunk_start: None,
+            origin: None,
+            produced: 0,
+            preroll,
+            errors: 0,
+            bypass: false,
+        });
+        Ok(self)
+    }
+
+    /// Whether noise suppression is on.
+    pub fn is_denoising(&self) -> bool {
+        self.denoise.is_some()
+    }
+
+    /// What the suppressor produced for the last push (`None` without one, or before any push).
+    pub fn denoised(&self) -> Option<DenoisedChunk<'_>> {
+        let d = self.denoise.as_ref()?;
+        Some(DenoisedChunk {
+            pcm: &d.chunk,
+            start: d.chunk_start?,
+        })
+    }
+
+    /// Switches the suppressor off (`true`) or back on: while off, audio reaches the model as it
+    /// is and [`VadStream::denoised`] reports nothing. The engine switches it off for audio the
+    /// suppressor cannot handle (a model trained on wideband speech on a band-limited 8 kHz call).
+    /// Switching resets the suppressor's state, since the stretches on either side are not
+    /// contiguous for it.
+    pub fn set_denoise_bypass(&mut self, bypass: bool) {
+        if let Some(d) = self.denoise.as_mut()
+            && d.bypass != bypass
+        {
+            d.bypass = bypass;
+            d.denoiser.reset();
+            d.chunk.clear();
+            d.chunk_start = None;
+            d.origin = None;
+            d.produced = 0;
+            d.preroll = preroll_samples(d.denoiser.delay(), self.sample_period_ns);
+        }
+    }
+
+    /// Pushes the suppressor failed on since the stream was built.
+    pub fn denoise_errors(&self) -> u64 {
+        self.denoise.as_ref().map_or(0, |d| d.errors)
     }
 
     /// Whether a falling hint with delay `after` can ever precede a stop on this stream (see
@@ -490,12 +602,56 @@ impl<M: SpeechModel> VadStream<M> {
         self.push_with(pcm, start, &mut |signal| signals.push(signal))
     }
 
+    /// Runs `pcm` through the noise suppressor, if any, then through the model.
     fn push_with(
         &mut self,
         pcm: &[i16],
         start: Instant,
         sink: &mut dyn FnMut(VadSignal),
     ) -> Result<()> {
+        let Some(mut d) = self.denoise.take() else {
+            return self.feed(pcm, start, sink);
+        };
+        if d.bypass {
+            let result = self.feed(pcm, start, sink);
+            self.denoise = Some(d);
+            return result;
+        }
+        // The enhanced audio is a continuous stream counted from the first sample since the
+        // last reset (the engine closes the stream at every hole). Its output lags the input by
+        // the suppressor's delay, so the first `preroll` output samples are fade-in from before
+        // the stream began and are dropped: what remains lines up with the input timeline.
+        let origin = *d.origin.get_or_insert(start);
+        d.chunk.clear();
+        let at = match d.denoiser.process(pcm, &mut d.chunk) {
+            Ok(()) => {
+                let fade = d.preroll.min(d.chunk.len());
+                d.chunk.drain(..fade);
+                d.preroll -= fade;
+                let offset = Duration::from_nanos(d.produced.saturating_mul(self.sample_period_ns));
+                d.produced = d
+                    .produced
+                    .saturating_add(u64::try_from(d.chunk.len()).unwrap_or(0));
+                origin + offset
+            }
+            Err(_) => {
+                d.errors = d.errors.saturating_add(1);
+                d.denoiser.reset();
+                d.origin = None;
+                d.produced = 0;
+                d.preroll = preroll_samples(d.denoiser.delay(), self.sample_period_ns);
+                d.chunk.clear();
+                d.chunk.extend_from_slice(pcm);
+                start
+            }
+        };
+        d.chunk_start = Some(at);
+        let result = self.feed(&d.chunk, at, sink);
+        self.denoise = Some(d);
+        result
+    }
+
+    fn feed(&mut self, pcm: &[i16], start: Instant, sink: &mut dyn FnMut(VadSignal)) -> Result<()> {
         let context = self.model.context();
         let window = self.model.window();
         let mut first_error = None;
@@ -551,6 +707,14 @@ impl<M: SpeechModel> VadStream<M> {
     /// Forgets model state, context, partial window and detector state (a new stream). Speech
     /// in progress is discarded without a stop; use [`VadStream::finish`] to close a stream.
     pub fn reset(&mut self) {
+        if let Some(d) = self.denoise.as_mut() {
+            d.denoiser.reset();
+            d.chunk.clear();
+            d.chunk_start = None;
+            d.origin = None;
+            d.produced = 0;
+            d.preroll = preroll_samples(d.denoiser.delay(), self.sample_period_ns);
+        }
         self.model.reset();
         self.detector.reset();
         self.buffer.fill(0.0);
@@ -1211,5 +1375,139 @@ mod tests {
             None,
             "the hint of window 2 was not taken and the next window dropped it"
         );
+    }
+
+    /// A suppressor of 3-sample blocks that returns each block one block later (zeros first):
+    /// the model hears the input delayed by 3 samples, like a real model's algorithmic delay.
+    struct Lagged {
+        held: Vec<i16>,
+        previous: [i16; 3],
+        fail: bool,
+        resets: usize,
+    }
+
+    impl Lagged {
+        fn new(fail: bool) -> Self {
+            Self {
+                held: Vec::new(),
+                previous: [0; 3],
+                fail,
+                resets: 0,
+            }
+        }
+    }
+
+    impl crate::denoise::Denoiser for Lagged {
+        fn sample_rate(&self) -> u32 {
+            1_000
+        }
+        fn delay(&self) -> Duration {
+            Duration::from_millis(3)
+        }
+        fn process(&mut self, input: &[i16], output: &mut Vec<i16>) -> Result<()> {
+            if self.fail {
+                return Err(Error::Model("scripted denoiser failure".into()));
+            }
+            self.held.extend_from_slice(input);
+            while self.held.len() >= 3 {
+                output.extend_from_slice(&self.previous);
+                self.previous.copy_from_slice(&self.held[..3]);
+                self.held.drain(..3);
+            }
+            Ok(())
+        }
+        fn reset(&mut self) {
+            self.held.clear();
+            self.previous = [0; 3];
+            self.resets += 1;
+        }
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn the_model_hears_the_enhanced_audio_and_it_is_dated_on_the_input_timeline() {
+        let mut stream = VadStream::new(Scripted::new(vec![0.0; 8]), VadParams::default())
+            .with_denoiser(Box::new(Lagged::new(false)))
+            .unwrap();
+        assert!(stream.is_denoising());
+        let t0 = origin();
+        let mut events = Vec::new();
+        let pcm: Vec<i16> = (1..=12).collect();
+        let mut chunks = Vec::new();
+        for (i, piece) in pcm.chunks(5).enumerate() {
+            let at = t0 + Duration::from_millis(5 * i as u64);
+            stream.push(piece, at, &mut events).unwrap();
+            let c = stream.denoised().unwrap();
+            chunks.push((c.pcm.to_vec(), c.start));
+        }
+        // 5 + 5 + 2 samples in; blocks of 3 come out one block late: 0,0,0 | 1..6 | 7,8,9. The
+        // first three are the fade-in (the denoiser's 3 ms delay) and are dropped.
+        let all: Vec<i16> = chunks.iter().flat_map(|c| c.0.clone()).collect();
+        assert_eq!(all, [1, 2, 3, 4, 5, 6, 7, 8, 9]);
+        // What is left starts with the stream, and chunks continue where the last one ended.
+        assert!(chunks[0].0.is_empty());
+        assert_eq!(chunks[1].1, t0);
+        assert_eq!(chunks[1].0.len(), 6);
+        assert_eq!(chunks[2].1, t0 + Duration::from_millis(6));
+        assert_eq!(stream.denoise_errors(), 0);
+        stream.reset();
+        assert!(stream.denoised().is_none());
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn a_failing_denoiser_costs_no_audio() {
+        let mut stream = VadStream::new(Scripted::new(vec![0.0; 8]), VadParams::default())
+            .with_denoiser(Box::new(Lagged::new(true)))
+            .unwrap();
+        let t0 = origin();
+        let mut events = Vec::new();
+        stream.push(&[7, 8, 9, 10], t0, &mut events).unwrap();
+        // The push reached the model as it was, and is what the consumer gets back.
+        let c = stream.denoised().unwrap();
+        assert_eq!(c.pcm, [7, 8, 9, 10]);
+        assert_eq!(c.start, t0);
+        assert_eq!(stream.denoise_errors(), 1);
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn a_bypassed_denoiser_leaves_the_audio_alone_and_comes_back_clean() {
+        let mut stream = VadStream::new(Scripted::new(vec![0.0; 16]), VadParams::default())
+            .with_denoiser(Box::new(Lagged::new(false)))
+            .unwrap();
+        let t0 = origin();
+        let mut events = Vec::new();
+        stream.set_denoise_bypass(true);
+        stream.push(&[1, 2, 3, 4, 5, 6], t0, &mut events).unwrap();
+        assert!(
+            stream.denoised().is_none(),
+            "nothing is produced while bypassed"
+        );
+        // Back on: the suppressor starts from silence, its fade-in dropped again.
+        stream.set_denoise_bypass(false);
+        let at = t0 + Duration::from_millis(6);
+        stream
+            .push(&[7, 8, 9, 10, 11, 12], at, &mut events)
+            .unwrap();
+        let chunk = stream.denoised().unwrap();
+        assert_eq!(chunk.pcm, [7, 8, 9], "{:?}", chunk.pcm);
+        assert_eq!(chunk.start, at);
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn a_denoiser_of_another_rate_is_refused() {
+        struct Wrong;
+        impl crate::denoise::Denoiser for Wrong {
+            fn sample_rate(&self) -> u32 {
+                16_000
+            }
+            fn delay(&self) -> Duration {
+                Duration::ZERO
+            }
+            fn process(&mut self, _: &[i16], _: &mut Vec<i16>) -> Result<()> {
+                Ok(())
+            }
+            fn reset(&mut self) {}
+        }
+        let stream = VadStream::new(Scripted::new(vec![]), VadParams::default());
+        assert!(stream.with_denoiser(Box::new(Wrong)).is_err());
     }
 }

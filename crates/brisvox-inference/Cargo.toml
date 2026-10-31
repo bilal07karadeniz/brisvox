@@ -26,11 +26,24 @@ silero-tract = ["dep:tract-onnx"]
 # (scripts/models/fetch_models.py). Runs on ONNX Runtime; the graph is rewritten in memory
 # (fused GELU, smart_turn::fuse) with the ONNX protobuf types of tract-onnx.
 smart-turn-ort = ["dep:ort", "dep:tract-onnx", "dep:prost"]
+# Noise suppression of the caller's audio ([`denoise`]): the streaming `Denoiser` trait and its rate
+# conversion. A backend is a feature of its own.
+denoise = ["dep:brisvox-audio"]
+# RNNoise through the pure-Rust `nnnoiseless` crate (BSD-3-Clause, the model is embedded).
+denoise-rnnoise = ["denoise", "dep:nnnoiseless"]
+# Hush (weya-ai, Apache-2.0 code and weights) through the pure-Rust `hush-vani` crate.
+denoise-hush = ["denoise", "dep:hush-vani"]
+# FastEnhancer waveform ONNX on ONNX Runtime. Evaluation only: the weights carry no license of their
+# own (docs/providers/noise-suppression.md), so the agent file does not offer it.
+denoise-fastenhancer = ["denoise", "dep:ort"]
 
 [dependencies]
 ort = { workspace = true, optional = true }
 tract-onnx = { workspace = true, optional = true }
 prost = { workspace = true, optional = true }
+brisvox-audio = { workspace = true, optional = true }
+nnnoiseless = { workspace = true, optional = true }
+hush-vani = { workspace = true, optional = true }
 brisvox-core = { workspace = true }
 realfft = { workspace = true }
 thiserror = { workspace = true }
@@ -46,6 +59,16 @@ tokio = { workspace = true, features = ["macros", "rt", "rt-multi-thread", "sync
 [[example]]
 name = "smart_turn_tract"
 required-features = ["silero-tract"]
+
+# Dev-only: prints what a streaming denoiser ONNX file declares and runs one step in ort and tract.
+# Dev-only: Hush's gain on clean speech, fed offline, streamed and through our wrapper.
+[[example]]
+name = "hush_probe"
+required-features = ["denoise-hush"]
+
+[[example]]
+name = "denoise_probe"
+required-features = ["smart-turn-ort"]
 
 [lints]
 workspace = true

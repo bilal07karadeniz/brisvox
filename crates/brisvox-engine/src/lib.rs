@@ -61,6 +61,7 @@ pub mod agent_input;
 pub mod audio_in;
 pub mod config;
 pub mod convert;
+pub mod denoise;
 pub mod error;
 pub mod event_slot;
 pub mod events;
@@ -104,6 +105,7 @@ pub use config::{
     SpeculationConfig, Timeouts,
 };
 pub use convert::ConvertError;
+pub use denoise::{DenoiseSetup, DenoiseStats, DenoiseStatsSnapshot, DenoiserFactory};
 pub use error::{Error, Result};
 pub use event_slot::{EventSlot, PushOutcome, SlotOverflow, wake_frame};
 pub use events::{

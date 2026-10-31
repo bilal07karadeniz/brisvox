@@ -236,6 +236,11 @@ pub struct InterruptionConfig {
     pub backchannel_max_speech: Duration,
     /// The VAD's `min_silence`: how long after the speech ended it reports the stop.
     pub vad_hangover: Duration,
+    /// Veto a barge-in candidate whose words are the bot's own voice coming back: an interim that
+    /// consists of words the bot has just said holds the candidate (a young candidate on one
+    /// matching word, an older one from three). Needs `min_words >= 1` to have an effect: without
+    /// words the candidate is confirmed by its duration before any transcript arrives.
+    pub echo_text_match: bool,
 }
 
 impl InterruptionConfig {
@@ -251,6 +256,7 @@ impl InterruptionConfig {
         backchannel_wait: Duration::ZERO,
         backchannel_max_speech: Duration::ZERO,
         vad_hangover: Duration::ZERO,
+        echo_text_match: false,
     };
 
     /// The same guards as [`InterruptionPolicy::recommended`]: 300 ms minimum speech, a 400 ms
@@ -267,6 +273,7 @@ impl InterruptionConfig {
         backchannel_wait: DEFAULT_BACKCHANNEL_WAIT,
         backchannel_max_speech: DEFAULT_BACKCHANNEL_MAX_SPEECH,
         vad_hangover: DEFAULT_VAD_HANGOVER,
+        echo_text_match: false,
     };
 
     /// The policy this configuration describes.

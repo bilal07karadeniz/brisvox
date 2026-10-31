@@ -297,11 +297,19 @@
           ],
           "type": "integer"
         },
+        "denoise_stt": {
+          "description": "Also send the enhanced audio to the speech-to-text provider. Default `false`: denoised\naudio raised the word error rate of the recognizers measured (clean wideband speech\nunchanged, noisy speech slightly worse with `hush`, telephone audio destroyed), so only\nturn it on after measuring on your own calls. Needs `noise_suppression`.",
+          "type": "boolean"
+        },
         "frame_ms": {
           "description": "Length of one audio frame. Default 20; must be a whole number of samples at 16 kHz and\nat `call_sample_rate`.",
           "maximum": 100,
           "minimum": 5,
           "type": "integer"
+        },
+        "noise_suppression": {
+          "$ref": "#/$defs/NoiseSuppression",
+          "description": "Noise suppression of the caller's audio: `off` (default), `rnnoise` or `hush`\n(experimental). The enhanced audio goes to the voice activity detector and the turn\ndetector; the speech-to-text provider hears the original unless `denoise_stt`. Costs CPU\non every call. Measured with real noise recordings (see `docs/LATENCY.md`): steady noise\nnever started a barge-in through the engine's guards even with `off`, so a denoiser\nmostly helps against a second voice 15 to 20 dB under the caller and the bot's own echo\n(`hush`), and hurts when the caller is quiet (`hush`) or for the voice activity detector\n(`rnnoise`). A competing voice within 10 dB of the caller's interrupts with every setting.\nTest it on your own calls before turning it on."
         }
       },
       "type": "object"
@@ -785,6 +793,10 @@
           "minimum": 1,
           "type": "integer"
         },
+        "echo_text_match": {
+          "description": "Drop a barge-in whose words are the bot's own voice coming back: an interim made of words\nthe bot has just said holds the candidate. Default `false`. Needs `min_words` of at least 1\n(without words a candidate is confirmed by its duration before any transcript exists).",
+          "type": "boolean"
+        },
         "min_speech_ms": {
           "description": "VAD must stay active this long before a barge-in interrupts (0: off).",
           "maximum": 5000,
@@ -1120,6 +1132,26 @@
         "tools"
       ],
       "type": "object"
+    },
+    "NoiseSuppression": {
+      "description": "`audio.noise_suppression`.",
+      "oneOf": [
+        {
+          "const": "off",
+          "description": "No noise suppression (the default).",
+          "type": "string"
+        },
+        {
+          "const": "rnnoise",
+          "description": "RNNoise (BSD-3-Clause, pure Rust): about 0.3 percent of one core per call. Needs a server\nbuilt with the `denoise-rnnoise` feature. Leaves the level of speech alone, but measured\nno help for the voice activity detector (more speech fragments, shifted turn verdicts) and\nno help against background speech.",
+          "type": "string"
+        },
+        {
+          "const": "hush",
+          "description": "Hush (Apache-2.0 code and weights, pure Rust), experimental: about 1 percent of one core per\ncall and 10 ms of delay. Needs a server built with the `denoise-hush` feature and a call\nrate of 16000 or more (refused at `call_sample_rate` below that; a call that turns out to be\nnarrowband runs without it, logged and counted). Takes a second voice 15 to 20 dB under the\ncaller and the bot's echo out of the barge-ins in many calls, but it is level dependent: it\nattenuates the caller by 8 dB at normal level and removes the speech of a quiet caller\n(-20 dB input) almost entirely.",
+          "type": "string"
+        }
+      ]
     },
     "OpenAiCompatibleOptions": {
       "additionalProperties": false,
@@ -1873,6 +1905,19 @@
       },
       "type": "object"
     },
+    "VadSection": {
+      "additionalProperties": false,
+      "description": "`[vad]`.",
+      "properties": {
+        "level_gate_db": {
+          "description": "Speech may only start in audio at most this many dB below the caller's own level (the 85th\npercentile of the last 3 s of what the detector called speech). A second voice quieter than\nthe caller (a television, a person across the room) cannot start speech, so it cannot start\na barge-in; the caller's soft syllables inside an utterance are kept. Absent: off. 10 to 15\nis the useful range (`docs/LATENCY.md`, \"Noise handling\"); the gate waits for 0.5 s of the\ncaller's speech before it acts.",
+          "maximum": 30,
+          "minimum": 5,
+          "type": "integer"
+        }
+      },
+      "type": "object"
+    },
     "VoicemailSection": {
       "additionalProperties": false,
       "description": "`[telephony.voicemail]`: answering-machine handling of calls the carrier's detector\nclassifies (`docs/TELEPHONY.md`, section 6). The verdict reaches the call as the stream\nparameter `answered_by` or as a callback (`BRISVOX_CALLBACK_ADDR`). A machine whose greeting\nended is played `message`, then the call is hung up; a person gets the normal conversation.",
@@ -1981,6 +2026,10 @@
     "turn": {
       "$ref": "#/$defs/TurnSection",
       "description": "How the end of a user turn is decided."
+    },
+    "vad": {
+      "$ref": "#/$defs/VadSection",
+      "description": "The voice activity detector's level gate."
     }
   },
   "required": [

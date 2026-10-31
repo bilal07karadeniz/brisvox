@@ -208,7 +208,7 @@ fn provider_errors(s: &StageCounters) -> [u64; 12] {
 }
 
 /// Names of the engine event counters, in the order [`engine_events`] fills them.
-const ENGINE_EVENTS: [&str; 9] = [
+const ENGINE_EVENTS: [&str; 13] = [
     "queue_dropped",
     "stale_dropped",
     "pool_trouble",
@@ -218,10 +218,17 @@ const ENGINE_EVENTS: [&str; 9] = [
     "mark_timeouts",
     "truncations",
     "clear_failures",
+    // Noise suppression (`[audio] noise_suppression`): calls that ran without it because their
+    // audio was below the filter's minimum rate, suppressors that could not be built, pushes the
+    // suppressor failed on, and enhanced chunks a full feed dropped.
+    "denoise_bypassed_narrowband",
+    "denoise_build_failures",
+    "denoise_errors",
+    "denoise_feed_dropped",
 ];
 
 /// What a call's stages counted for [`ENGINE_EVENTS`].
-fn engine_events(stats: &brisvox_engine::session::CallStats) -> [u64; 9] {
+fn engine_events(stats: &brisvox_engine::session::CallStats) -> [u64; 13] {
     let s = &stats.stages;
     [
         stats.pipeline.total_dropped(),
@@ -233,6 +240,10 @@ fn engine_events(stats: &brisvox_engine::session::CallStats) -> [u64; 9] {
         s.out.mark_timeouts,
         s.truncations.truncations,
         s.out.clear_failures,
+        u64::from(s.denoise.bypassed_narrowband),
+        s.denoise.build_failures,
+        s.denoise.errors,
+        s.denoise.feed_dropped,
     ]
 }
 

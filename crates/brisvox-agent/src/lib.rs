@@ -25,7 +25,8 @@ pub use error::{Error, Result};
 pub use flows::{ContextStrategy, Flow, FlowBuilder, FlowDefError, FlowError, FlowManager, NodeId};
 pub use interrupt::{
     Assessment, BackchannelSet, Confirm, DEFAULT_BACKCHANNEL_MAX_SPEECH, DEFAULT_BACKCHANNEL_WAIT,
-    DEFAULT_VAD_HANGOVER, InterruptionPolicy, Observation, TextKind, VetoReason, count_words,
+    DEFAULT_VAD_HANGOVER, ECHO_HOLD, ECHO_MIN_WORDS, ECHO_MIN_WORDS_OLD, InterruptionPolicy,
+    NoiseAdapt, Observation, TextKind, VetoReason, count_words, echoes_bot, is_bot_echo,
 };
 pub use normalize::{
     INLINE_CHUNK_CHARS, Normalizer, normalize, spell_cardinal, spell_digits, spell_ordinal,

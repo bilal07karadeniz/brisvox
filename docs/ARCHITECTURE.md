@@ -905,6 +905,26 @@ before the candidate began is judged as of the start.
 Every candidate ends exactly once as confirmed, promoted or vetoed (the invariant test checks
 `candidates == confirmed + promoted + vetoed + pending (+ dropped by hangup)`).
 
+**Line-dependent vetoes (hooks).** Three things can hold a candidate that the table below does not
+cover, all fed in from outside because the machine stays pure: `TurnMachine::set_echo(bool)` marks the
+candidate's words as the bot's own voice coming back (the turn driver sets it with every interim when
+`interruption.echo_text_match` is on, from the text the bot has just sent to TTS: `PlayoutBook::recent_sent_text`,
+`brisvox_agent::is_bot_echo`, built on `echoes_bot`, which never calls a short command ("stop", "wait") an echo;
+the veto is `EchoGuard` and the next interim can clear it);
+`TurnMachine::set_interruption` replaces the policy (used by `InterruptionPolicy::adapted_to_noise`, a
+noise-floor-adapted tightening that measured no benefit and is not wired into the engine); and the level
+gate of the VAD (`[vad] level_gate_db`) works before the machine, at the speech start. **The hook for a
+speaker check** (not built; the research is in `docs/providers/noise-handling-options.md`, section 3) is the
+same as the echo's: a candidate that is "a different speaker than the caller" is one more reason to hold it,
+set from outside as `set_echo` is. It would need (a) the audio of the candidate, the first 0.5 to 1.5 s from
+its start, which the turn driver has in the Smart Turn ring (the enhanced audio when a denoiser is on); (b) a
+speaker embedding of the caller, taken from their first utterance on the same call and the same channel (a
+floor of about 3 s of speech; no veto before it), computed on the inference pool; (c) a decision rule that
+fails open (only a clearly different speaker vetoes) and a deadline (a candidate held for the embedding costs
+the real barge-in that long: the embedding needs about a second of audio, against the 300 ms of `min_speech`).
+Whether a model of it generalises to Turkish and to 8 kHz mu-law is not known (the weights' license and the
+training data are the open points of the research note).
+
 **Guards** (all must pass; a guard that is off never blocks):
 
 | Guard | Field | Blocks while |

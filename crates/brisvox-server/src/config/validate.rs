@@ -572,6 +572,22 @@ fn check_turn(file: &AgentFile, issues: &mut Issues<'_>) {
 
 /// `[interruption]`.
 fn check_interruption(file: &AgentFile, issues: &mut Issues<'_>) {
+    if let Some(echo) = &file.interruption.echo_text_match
+        && *echo.get_ref()
+    {
+        let preset_off = file.interruption.preset == Some(super::schema::InterruptionPreset::Off);
+        let words = file.interruption.min_words.map_or(0, |n| n.get());
+        if preset_off || words == 0 {
+            issues.at(
+                "interruption.echo_text_match",
+                echo.span(),
+                "echo_text_match needs interruption.min_words of at least 1 (and the guards on): \
+                 without words a candidate is confirmed by its duration before any transcript \
+                 exists"
+                    .to_owned(),
+            );
+        }
+    }
     for (i, tag) in file.interruption.backchannels.iter().flatten().enumerate() {
         let name = tag.get_ref().to_ascii_lowercase();
         if !ENGINE_LANGUAGES.contains(&name.as_str()) {
@@ -763,6 +779,7 @@ fn whole_samples(frame_ms: u64, rate: SampleRate) -> bool {
 /// `[audio]`.
 fn check_audio(file: &AgentFile, issues: &mut Issues<'_>) {
     let audio = &file.audio;
+    check_noise_suppression(audio, issues);
     let defaults = brisvox_engine::EngineRates::DEFAULT;
     let frame_ms = audio.frame_ms.as_ref().map_or(
         u64::try_from(defaults.frame.as_millis()).unwrap_or(20),
@@ -789,6 +806,67 @@ fn check_audio(file: &AgentFile, issues: &mut Issues<'_>) {
             );
             break;
         }
+    }
+}
+
+/// `audio.noise_suppression` and `audio.denoise_stt`.
+fn check_noise_suppression(audio: &super::schema::AudioSection, issues: &mut Issues<'_>) {
+    use super::schema::NoiseSuppression;
+    let chosen = audio.noise_suppression.as_ref();
+    for (kind, compiled, feature) in [
+        (
+            NoiseSuppression::Rnnoise,
+            cfg!(feature = "denoise-rnnoise"),
+            "denoise-rnnoise",
+        ),
+        (
+            NoiseSuppression::Hush,
+            cfg!(feature = "denoise-hush"),
+            "denoise-hush",
+        ),
+    ] {
+        if let Some(chosen) = chosen
+            && *chosen.get_ref() == kind
+            && !compiled
+        {
+            issues.at(
+                "audio.noise_suppression",
+                chosen.span(),
+                format!(
+                    "noise suppression \"{}\" is not compiled into this server: rebuild with \
+                     `--features {feature}`",
+                    match kind {
+                        NoiseSuppression::Rnnoise => "rnnoise",
+                        _ => "hush",
+                    }
+                ),
+            );
+        }
+    }
+    if let (Some(chosen), Some(rate)) = (chosen, &audio.call_sample_rate)
+        && *chosen.get_ref() == NoiseSuppression::Hush
+        && rate.get_ref().0.hz() < 16_000
+    {
+        issues.at(
+            "audio.noise_suppression",
+            chosen.span(),
+            format!(
+                "noise suppression \"hush\" is not used on {} Hz audio (it distorts band-limited \
+                 speech); remove it, or set audio.call_sample_rate to 16000 or more",
+                rate.get_ref().0.hz()
+            ),
+        );
+    }
+    let on = chosen.is_some_and(|c| *c.get_ref() != NoiseSuppression::Off);
+    if let Some(stt) = &audio.denoise_stt
+        && *stt.get_ref()
+        && !on
+    {
+        issues.at(
+            "audio.denoise_stt",
+            stt.span(),
+            "denoise_stt needs audio.noise_suppression (it is off)".to_owned(),
+        );
     }
 }
 

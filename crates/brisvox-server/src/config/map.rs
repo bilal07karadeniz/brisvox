@@ -206,6 +206,9 @@ fn interruption(section: &InterruptionSection) -> InterruptionConfig {
     if let Some(ms) = section.vad_hangover_ms {
         c.vad_hangover = ms.duration();
     }
+    if let Some(echo) = &section.echo_text_match {
+        c.echo_text_match = *echo.get_ref();
+    }
     c
 }
 

@@ -224,6 +224,7 @@ use tracing::Instrument;
 
 use crate::agent_input::{BotLine, MAX_HELD_LINES, SayReceiver};
 use crate::config::{EarlyAnalysisConfig, EngineConfig, InterruptionConfig, SpeculationConfig};
+use crate::denoise::DenoiseFeed;
 use crate::event_slot::{EventSlot, PushOutcome, SlotOverflow};
 use crate::events::{EngineEvent, EngineEvents};
 use crate::guard::TaskGuard;
@@ -260,6 +261,9 @@ const MAX_OWED_STOPS: usize = 64;
 /// Longest text collected for one turn or one group, in bytes. Longer text is dropped (counted):
 /// an LLM request must stay bounded.
 const MAX_TEXT_BYTES: usize = 64 * 1024;
+
+/// How much of the bot's recent text the echo match looks at.
+const ECHO_TEXT_CHARS: usize = 400;
 
 /// The longest a Smart Turn analysis waits for the ring to catch up with the VAD stop (see the
 /// module docs).
@@ -848,6 +852,13 @@ pub struct TurnDriver {
     /// Time of the latest VAD stop, and of the newest audio frame pushed into the Smart Turn ring.
     stop_at: Option<Instant>,
     last_audio_at: Option<Instant>,
+    /// Time just after the newest sample in the Smart Turn ring.
+    ring_end: Option<Instant>,
+    /// Noise-suppressed audio that replaces the plain samples in the ring (`crate::denoise`).
+    denoised: Option<Arc<DenoiseFeed>>,
+    /// The book the bot's recent text is read from, to recognise its own voice in the caller's
+    /// interims (`InterruptionConfig::echo_text_match`).
+    bot_text: Option<Arc<crate::playout::PlayoutBook>>,
     /// An analysis waiting for the ring to reach `stop_at` (see the module docs).
     deferred_analysis: Option<(brisvox_agent::AnalysisId, Instant)>,
     /// The speculative analysis of the current fall, if any.
@@ -934,6 +945,9 @@ impl TurnDriver {
             vad_start_at: None,
             stop_at: None,
             last_audio_at: None,
+            ring_end: None,
+            denoised: None,
+            bot_text: None,
             deferred_analysis: None,
             early: None,
             early_ready: None,
@@ -1012,6 +1026,63 @@ impl TurnDriver {
             spare: None,
         });
         self
+    }
+
+    /// Lets the Smart Turn analyses hear the noise-suppressed audio of `feed`: its chunks
+    /// replace the plain samples already in the ring, just before each snapshot and with every
+    /// audio frame. Where the feed has nothing (the suppressor was late, failed or dropped a
+    /// chunk) the ring keeps the plain audio. Without a Smart Turn model it does nothing.
+    #[must_use]
+    pub(crate) fn with_denoised_feed(mut self, feed: Arc<DenoiseFeed>) -> Self {
+        self.denoised = Some(feed);
+        self
+    }
+
+    /// Recognises the bot's own voice coming back: an interim of a barge-in candidate that consists
+    /// of words the bot has just said holds the candidate (`TurnMachine::set_echo`). Only has an
+    /// effect with `min_words >= 1` in the interruption policy.
+    #[must_use]
+    pub fn with_bot_text(mut self, book: Arc<crate::playout::PlayoutBook>) -> Self {
+        self.bot_text = Some(book);
+        self
+    }
+
+    /// Whether `text`, the latest interim of the pending candidate received at `at`, is the bot's
+    /// echo.
+    fn is_echo(&self, text: &str, at: Instant) -> bool {
+        let (Some(book), Some(candidate)) = (&self.bot_text, self.machine.barge_in_candidate())
+        else {
+            return false;
+        };
+        let age = at.saturating_duration_since(candidate.started_at());
+        brisvox_agent::is_bot_echo(text, &book.recent_sent_text(ECHO_TEXT_CHARS), age)
+    }
+
+    /// Moves the feed's chunks into the Smart Turn ring (see [`Self::with_denoised_feed`]).
+    fn apply_denoised(&mut self) {
+        let (Some(feed), Some(analyzer), Some(ring_end)) = (
+            self.denoised.as_ref(),
+            self.analyzer.as_mut(),
+            self.ring_end,
+        ) else {
+            return;
+        };
+        let hz = u128::from(self.config.model_rate.hz());
+        let to_micros = |samples: usize| {
+            u64::try_from(samples as u128 * 1_000_000 / hz.max(1)).unwrap_or(u64::MAX)
+        };
+        // A chunk whose audio the ring does not hold yet waits (the enhanced chunk of a frame can
+        // be ready before the plain frame has reached this stage).
+        let slack = Duration::from_millis(1);
+        feed.drain_ready(
+            |start, len| start + Duration::from_micros(to_micros(len)) <= ring_end + slack,
+            |start, samples| {
+                let end = start + Duration::from_micros(to_micros(samples.len()));
+                let behind = ring_end.saturating_duration_since(end).as_micros();
+                let back = usize::try_from(behind * hz / 1_000_000).unwrap_or(usize::MAX);
+                analyzer.ring.overwrite(back, samples);
+            },
+        );
     }
 
     /// Sends the transport `Clear` of a barge-in through `commands` (the fast path that bypasses
@@ -1633,6 +1704,9 @@ impl TurnDriver {
         &mut self,
         done: impl FnOnce(Option<f32>, Option<Vec<i16>>) -> Event + Send + 'static,
     ) -> Option<TaskGuard> {
+        // The suppressed audio up to the VAD stop is in the feed (the job that produced the stop
+        // pushed it first): the snapshot must hold it.
+        self.apply_denoised();
         let (Some(analyzer), Some(me)) = (self.analyzer.as_mut(), &self.me) else {
             return None;
         };
@@ -2063,6 +2137,10 @@ impl TurnDriver {
                     .mark(turn.epoch, TurnEvent::SttInterim, frame.received_at);
             }
             self.note_partial();
+            if self.bot_text.is_some() {
+                let echo = self.is_echo(&frame.text, frame.received_at);
+                self.machine.set_echo(echo);
+            }
             return self
                 .feed(
                     TurnInput::SttInterim {
@@ -2162,6 +2240,14 @@ impl TurnDriver {
         let at = audio.timestamp();
         self.last_audio_at = Some(at);
         let pushed = self.scratch.len();
+        if self.denoised.is_some() {
+            // Only the enhanced audio needs to know where the ring ends.
+            let hz = u64::from(self.config.model_rate.hz()).max(1);
+            self.ring_end = Some(
+                at + Duration::from_micros(u64::try_from(pushed).unwrap_or(0) * 1_000_000 / hz),
+            );
+            self.apply_denoised();
+        }
         let mut start_early = false;
         if let Some(early) = self.early.as_mut() {
             match early.stage {

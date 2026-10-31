@@ -1,0 +1,66 @@
+[
+  {
+    "file": "librispeech-2277-0026.wav",
+    "speaker": "2277",
+    "seconds": 4.92,
+    "text": "THE LONG DRIZZLE HAD BEGUN PEDESTRIANS HAD TURNED UP COLLARS AND TROUSERS AT THE BOTTOM",
+    "source": "LibriSpeech dev-clean 2277-149896-0026",
+    "source_flac_sha256": "3909a6c5ae93112518681fcbf0a74df43615a4f88bd6d5cd788775255296e3f6"
+  },
+  {
+    "file": "librispeech-2035-0008.wav",
+    "speaker": "2035",
+    "seconds": 6.21,
+    "text": "A FAINT FETID SMELL CAME FROM HIM AND A THREAD OF GREEN LIQUID OOZED FROM HIS CRUSHED HEAD",
+    "source": "LibriSpeech dev-clean 2035-147960-0008",
+    "source_flac_sha256": "1d69e4d4d2d0b952b9272fb1401fbb16fcacbe9de8d20013c5e093efa946cda1"
+  },
+  {
+    "file": "librispeech-2086-0001.wav",
+    "speaker": "2086",
+    "seconds": 6.97,
+    "text": "IN GOOD FAITH HOWEVER HE IS NOT SUFFICIENTLY IMAGINATIVE TO FLATTER HIMSELF WITH THE SLIGHTEST HOPE OF THIS KIND",
+    "source": "LibriSpeech dev-clean 2086-149214-0001",
+    "source_flac_sha256": "66aeeda853ab8421f1df70deda5b5ff0b5b9564065f50e1c1ac9aff1457e72d7"
+  },
+  {
+    "file": "librispeech-7976-0004.wav",
+    "speaker": "7976",
+    "seconds": 4.74,
+    "text": "HAVE PITY UPON A POOR UNFORTUNATE ONE HE CALLED OUT",
+    "source": "LibriSpeech dev-clean 7976-110124-0004",
+    "source_flac_sha256": "e86532cc48198150d89dbadef50490787ea4b69a0fc35886ec9a00da929ec48f"
+  },
+  {
+    "file": "librispeech-1988-0007.wav",
+    "speaker": "1988",
+    "seconds": 5.87,
+    "text": "MY GRANDMOTHER ALWAYS SPOKE IN A VERY LOUD TONE TO FOREIGNERS AS IF THEY WERE DEAF",
+    "source": "LibriSpeech dev-clean 1988-147956-0007",
+    "source_flac_sha256": "a539d1dc245942b93a26784b298202b050babe9ce291a14dc86366ca1c3679ce"
+  },
+  {
+    "file": "librispeech-777-0019.wav",
+    "speaker": "777",
+    "seconds": 4.94,
+    "text": "IT WAS KARL YUNDT WHO WAS HEARD IMPLACABLE TO HIS LAST BREATH",
+    "source": "LibriSpeech dev-clean 777-126732-0019",
+    "source_flac_sha256": "18f702d17fa9cf155110aa47e4336b6ae8bdb9523771dd16ca88defb3a4b05b2"
+  },
+  {
+    "file": "librispeech-84-0021.wav",
+    "speaker": "84",
+    "seconds": 4.82,
+    "text": "BUT HE STOPPED ON THE LANDING HE HAD NOT THE COURAGE TO AGAIN VISIT THE DEATH CHAMBER",
+    "source": "LibriSpeech dev-clean 84-121123-0021",
+    "source_flac_sha256": "8359f2f20d7874d0f12003aaf69c7fbde25ff6349603c3fdb9328e3cb6b40186"
+  },
+  {
+    "file": "librispeech-1673-0015.wav",
+    "speaker": "1673",
+    "seconds": 6.31,
+    "text": "THEIR MURMURS WERE VARIOUSLY SILENCED BY THE SECTARIES WHO ESPOUSED AND MODIFIED THE DOUBLE SYSTEM OF CERINTHUS",
+    "source": "LibriSpeech dev-clean 1673-143396-0015",
+    "source_flac_sha256": "4ed79242a2ae07800af5673ee5b5451e3ddf0619b978c77a57e70b2b8a3a7d65"
+  }
+]

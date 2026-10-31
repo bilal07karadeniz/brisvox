@@ -245,6 +245,56 @@ time (synthesise mixes in the test; do not commit them) and also run each mix th
 for telephony cases. Babble: sum several MUSAN speech files (LibriVox / US Government sources; per-file license
 not checked, UNVERIFIED) or use two of our own fixtures.
 
+## Verified on 2026-10-30 (implementation)
+
+What the points marked UNVERIFIED above turned out to be, from files fetched and run that day.
+
+**FastEnhancer weights license: not clear, so not shipped.** The repository's `LICENSE` is MIT
+(Copyright (c) 2025 AHN Sung Hwan), but nothing licenses the weights separately or says that
+the release files are covered: the README has no license statement for models, the bodies of the
+releases (`onnx-dns-v1.0.0`, `ckpt-dns-v1.0.0`, ...) only name the training data ("Trained on
+DNS-Challenge 3 wideband (16kHz) (without emotional_speech and singing_voice) (with VCTK-0.92
+clean speech except p232 and p257)"), and that data carries several licenses of its own (the
+DNS noise includes CC BY-SA material, see "Licensed noise recordings"). So the agent file offers
+RNNoise only. FastEnhancer stays in the code as the `denoise-fastenhancer` cargo feature of
+`brisvox-inference`, for the benchmark (`brisvox-bench denoise ...`, model file pinned by URL and
+SHA-256 in `scripts/models/fetch_models.py --evaluation`). Asking the author for a license line on
+the weights is the way to promote it.
+
+**FastEnhancer on `ort` and `tract`.** `onnx-dns-v1.0.0/fastenhancer_t.onnx` (125 233 bytes, SHA-256
+`a6466367...5ee7d`):
+- loads and runs in `ort` 2.0.0-rc.13, the version the workspace pins (`examples/denoise_probe.rs`
+  prints the graph; CPU provider, one intra-op thread);
+- tract-onnx 0.23.8 parses the graph but cannot optimise it: `SplitToSequence` is not implemented
+  ("Operator can not be made a TypedOp"). So ONNX Runtime is the only runtime for it.
+
+**Streaming tensors** (read from the file, T model): input `wav_in` f32 `[1, 256]` (the next 256
+samples, floats in -1..1, 16 kHz), `cache_in_0` and `cache_in_1` f32 `[1, 256]` (STFT input overlap
+and overlap-add output, `n_fft - hop` samples), `cache_in_2` and `cache_in_3` f32 `[1, 16, 20]`
+(recurrent states); output `wav_out` `[1, 256]` and `cache_out_0..3` of the same shapes, fed back
+as the next step's caches (all zero at the start). Hop 256 samples = 16 ms, FFT 512, the output lags
+the input by `n_fft - hop` = 256 samples (16 ms); the M and L graphs use hops of 160 and 100
+(`docs` of the repository, `onnx.md`). The backend reads hop and cache shapes from the file.
+Measured delay of the backend, by cross-correlation with the input on `en_two_utterances`: 16 ms
+at 16 kHz, 32 ms on an 8 kHz call (two resampler passes of 8 ms), within 2 ms of what `delay()`
+reports (`crates/brisvox-inference/tests/denoise.rs`).
+
+**RNNoise through `nnnoiseless` 0.5.2** (crates.io, 2025-12-18, BSD-3-Clause, pure Rust, no
+default features needed): `DenoiseState::new()` (embedded weights; which RNNoise generation they
+come from is still not stated by the crate), `process_frame(&mut out, &input)` on 480 `f32`
+samples in the 16-bit scale at 48 kHz. The first output frame is fade-in. The backend resamples
+16 kHz or 8 kHz to 48 kHz and back with the engine's `StreamResampler`; measured delay 20 ms at
+16 kHz (10 ms model plus two 5 ms resampler passes), 25 ms at 8 kHz.
+
+**CPU, measured** (release, Ryzen 9950X, one thread, 20 ms frames of the fixtures, three runs of
+120 s; `bench/results/denoise-cpu.md`): RNNoise 59-71 microseconds per frame (p50), 0.33-0.38 %
+of a core at 16 kHz and 0.39-0.47 % at 8 kHz; FastEnhancer-T 0.17-0.28 ms per frame (p50), 1.1-1.6 %
+at 16 kHz and 1.15-1.8 % at 8 kHz. Both are above the ~50 microsecond bar, so they run on the
+inference pool. They match the published numbers (RNNoise estimate 0.4-2 %, FastEnhancer-T 1.2 %).
+
+**False barge-ins and turn verdicts**, measured with real noise: `bench/results/denoise-quality.md`
+(the committed noise set) and `docs/LATENCY.md`, "Noise suppression".
+
 ## Open points for the implementer
 
 - Run our own comparison: PESQ/STOI/DNSMOS-free metrics are not enough; measure STT WER on EN and TR fixtures

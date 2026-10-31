@@ -1,0 +1,16 @@
+Background and bot speech for the noise handling measurements (brisvox-bench denoise ...).
+
+Eight clips (4 to 8 s, 16 kHz, mono, 16-bit PCM) of eight different speakers, cut from the dev-clean
+set of LibriSpeech: Vassil Panayotov, Guoguo Chen, Daniel Povey, Sanjeev Khudanpur, "Librispeech: an ASR
+corpus based on public domain audio books", ICASSP 2015, https://www.openslr.org/12/ . Licensed under
+Creative Commons Attribution 4.0 International (CC BY 4.0), https://creativecommons.org/licenses/by/4.0/ ;
+the underlying LibriVox recordings are in the public domain.
+
+Modifications by the brisvox project: one utterance per speaker (the first of 4 to 8 s from the start of the
+speaker's directory), decoded from FLAC and converted to 16 kHz mono PCM16 with ffmpeg; nothing else. The
+file names carry the speaker and utterance numbers; `clips.json` has each clip's transcript (upper case as in
+the corpus), length and the SHA-256 of the original FLAC file.
+
+The clips play the part of a second voice in the caller's line (a television, a person nearby) and of the
+bot's own voice leaking back (echo). They are mixed into the speech fixtures at fixed levels by the benchmark,
+never committed mixed. No endorsement by the corpus authors or speakers is implied.

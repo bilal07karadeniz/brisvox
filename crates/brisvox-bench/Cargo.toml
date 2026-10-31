@@ -22,6 +22,11 @@ path = "src/main.rs"
 # only for the `model-cpu` backend comparison; the ORT binaries are linked for Smart Turn
 # anyway.
 models = ["brisvox-inference/silero", "brisvox-inference/silero-tract", "brisvox-inference/smart-turn-ort"]
+# `denoise` subcommand: CPU of the noise suppression backends, false barge-ins and Smart Turn
+# verdicts under real noise, and the transcripts for the word error rate (sherpa-onnx server).
+denoise = ["models", "brisvox-inference/denoise-rnnoise", "brisvox-inference/denoise-hush", "brisvox-providers/provider-sherpa-onnx"]
+# Also the FastEnhancer backend (evaluation only: the weights carry no license of their own).
+denoise-fastenhancer = ["denoise", "brisvox-inference/denoise-fastenhancer"]
 
 [dependencies]
 brisvox-agent = { workspace = true }

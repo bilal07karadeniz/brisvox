@@ -124,6 +124,7 @@ use tokio::time::Instant;
 use tracing::Instrument;
 
 use crate::config::EngineConfig;
+use crate::denoise::{DenoiseCounters, DenoiseFeed, DenoiseWiring};
 use crate::guard::{GuardedSender, TaskGuard};
 use crate::offload::Offload;
 
@@ -759,11 +760,34 @@ struct JobOutput<M: SpeechModel> {
     error: Option<InferenceError>,
 }
 
-/// Runs a batch through the stream (on the pool thread, or inline).
-fn run_batch<M: SpeechModel>(mut stream: VadStream<M>, mut batch: Batch) -> JobOutput<M> {
+/// Where the enhanced audio of a batch goes (noise suppression on): the feeds of the consumers
+/// and the counters.
+struct DenoiseSinks {
+    feeds: Arc<[Arc<DenoiseFeed>]>,
+    counters: Arc<DenoiseCounters>,
+}
+
+/// Runs a batch through the stream (on the pool thread, or inline). With noise suppression on,
+/// the enhanced audio of each segment is pushed to the consumers' feeds here, in the job, so it
+/// is there before the events of the batch are sent.
+fn run_batch<M: SpeechModel>(
+    mut stream: VadStream<M>,
+    mut batch: Batch,
+    sinks: Option<&DenoiseSinks>,
+) -> JobOutput<M> {
     batch.events.clear();
     let mut error = None;
     let mut offset = 0usize;
+    let errors_before = stream.denoise_errors();
+    if let Some(sinks) = sinks {
+        let narrowband = sinks.counters.narrowband.load(Ordering::Relaxed);
+        stream.set_denoise_bypass(narrowband);
+        // A stream built without its suppressor (see the factory) produces no enhanced audio.
+        sinks
+            .counters
+            .down
+            .store(narrowband || !stream.is_denoising(), Ordering::Relaxed);
+    }
     for segment in &batch.segments {
         if segment.gap_before
             && let Some(event) = stream.finish()
@@ -777,7 +801,19 @@ fn run_batch<M: SpeechModel>(mut stream: VadStream<M>, mut batch: Batch) -> JobO
         {
             error = Some(e);
         }
+        if let (Some(sinks), Some(chunk)) = (sinks, stream.denoised()) {
+            for feed in sinks.feeds.iter() {
+                feed.push(chunk.start, chunk.pcm);
+            }
+            bump(&sinks.counters.chunks);
+        }
         offset = end;
+    }
+    if let Some(sinks) = sinks {
+        add(
+            &sinks.counters.errors,
+            stream.denoise_errors().saturating_sub(errors_before),
+        );
     }
     JobOutput {
         stream,
@@ -795,6 +831,7 @@ pub(crate) fn spawn_worker<M: SpeechModel + 'static>(
     tee: Arc<VadTee>,
     out: GuardedSender,
     counters: Arc<VadCounters>,
+    denoise: Option<DenoiseWiring>,
 ) -> TaskGuard {
     // Once per pool and model for the process: the sessions are per pool thread.
     let keyed_by_type = setup.model_id.is_none();
@@ -846,9 +883,43 @@ pub(crate) fn spawn_worker<M: SpeechModel + 'static>(
             .instrument(span),
         )
     });
+    // The warm-up above builds streams without the denoiser (it only prepares the speech model);
+    // the worker's own streams get one.
+    let (factory, sinks) = match denoise {
+        Some(wiring) => {
+            let plain = Arc::clone(&setup.factory);
+            let make = Arc::clone(&wiring.make);
+            let counters = Arc::clone(&wiring.counters);
+            // A suppressor that cannot be built (a missing model, a rate the speech model does not
+            // work at) costs the call its suppression, not its VAD: the stream is built plain,
+            // the failure is counted and logged, and `down` tells the STT stage to send plain audio.
+            let factory: StreamFactory<M> = Arc::new(move || {
+                match make().and_then(|denoiser| plain()?.with_denoiser(denoiser)) {
+                    Ok(stream) => Ok(stream),
+                    Err(error) => {
+                        bump(&counters.build_failures);
+                        tracing::warn!(
+                            target: "brisvox::engine",
+                            stage = "vad",
+                            %error,
+                            "noise suppression could not be built: this call runs without it"
+                        );
+                        plain()
+                    }
+                }
+            });
+            let sinks = DenoiseSinks {
+                feeds: wiring.sinks,
+                counters: wiring.counters,
+            };
+            (factory, Some(Arc::new(sinks)))
+        }
+        None => (Arc::clone(&setup.factory), None),
+    };
     let worker = Worker {
         _warm: warm,
-        factory: setup.factory,
+        sinks,
+        factory,
         offload: setup.offload,
         config: setup.config,
         tee,
@@ -875,6 +946,8 @@ pub(crate) fn spawn_worker<M: SpeechModel + 'static>(
 struct Worker<M: SpeechModel + 'static> {
     /// The start-of-call model warm-up, if enabled; aborted with the worker.
     _warm: Option<TaskGuard>,
+    /// Noise suppression: where the enhanced audio goes.
+    sinks: Option<Arc<DenoiseSinks>>,
     factory: StreamFactory<M>,
     offload: Offload,
     config: VadWorkerConfig,
@@ -1004,6 +1077,7 @@ impl<M: SpeechModel + 'static> Worker<M> {
             batch,
         });
         let slot = Arc::clone(&self.slot);
+        let sinks = self.sinks.clone();
         // A VAD batch is short and a call needs one every 20-32 ms: it goes in the pool's
         // high-priority line, ahead of the multi-millisecond jobs (Smart Turn analyses) that
         // would otherwise queue in front of it and overflow the queue.
@@ -1022,7 +1096,7 @@ impl<M: SpeechModel + 'static> Worker<M> {
                             Err(error) => return Some(Err(Box::new((batch, error)))),
                         },
                     };
-                    Some(Ok(run_batch(stream, batch)))
+                    Some(Ok(run_batch(stream, batch, sinks.as_deref())))
                 },
             )
             .await;
@@ -1186,6 +1260,11 @@ impl<M: SpeechModel + 'static> Worker<M> {
     fn recover(&mut self) {
         self.failed_open = false;
         self.counters.failed_open.store(false, Ordering::Relaxed);
+        if let Some(sinks) = &self.sinks {
+            // A call below the filter's rate stays without it.
+            let narrowband = sinks.counters.narrowband.load(Ordering::Relaxed);
+            sinks.counters.down.store(narrowband, Ordering::Relaxed);
+        }
         self.last_probe = None;
         bump(&self.counters.recoveries);
         tracing::warn!(
@@ -1217,6 +1296,9 @@ impl<M: SpeechModel + 'static> Worker<M> {
         self.last_probe = end;
         self.stream = None;
         self.counters.failed_open.store(true, Ordering::Relaxed);
+        if let Some(sinks) = &self.sinks {
+            sinks.counters.down.store(true, Ordering::Relaxed);
+        }
         tracing::error!(
             target: "brisvox::engine",
             stage = "vad",

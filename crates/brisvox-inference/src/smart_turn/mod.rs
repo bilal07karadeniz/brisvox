@@ -232,6 +232,26 @@ impl SmartTurn {
         self.filled = self.filled.saturating_add(pcm.len()).min(WINDOW_SAMPLES);
     }
 
+    /// Replaces audio already in the ring with `pcm`: the `pcm.len()` samples that end `back`
+    /// samples before the newest one (`back == 0`: the newest samples). For a stage that
+    /// improves audio after it was pushed (noise suppression runs on the pool and finishes a
+    /// few milliseconds after the plain samples arrived). Samples older than what the ring
+    /// holds are skipped; nothing is added, so the held duration does not change.
+    pub fn overwrite(&mut self, back: usize, pcm: &[i16]) {
+        let len = pcm.len();
+        for (j, sample) in pcm.iter().enumerate() {
+            // Age of this sample: 0 is the newest one in the ring.
+            let age = back.saturating_add(len - 1 - j);
+            if age >= self.filled {
+                continue; // older than the ring holds
+            }
+            let index = (self.write + WINDOW_SAMPLES - 1 - age) % WINDOW_SAMPLES;
+            if let Some(slot) = self.history.get_mut(index) {
+                *slot = *sample;
+            }
+        }
+    }
+
     /// Audio held (at most 8 s).
     #[must_use]
     pub fn buffered(&self) -> Duration {
@@ -397,6 +417,33 @@ mod tests {
         let mut out = Vec::new();
         turn.snapshot_into(&mut out);
         out
+    }
+
+    #[test]
+    fn overwrite_replaces_samples_counted_back_from_the_newest() {
+        let mut turn = SmartTurn::new(Arc::new(Fixed));
+        turn.push(&[1, 2, 3, 4, 5, 6]);
+        turn.overwrite(0, &[50, 60]);
+        assert_eq!(snapshot(&turn), [1, 2, 3, 4, 50, 60]);
+        turn.overwrite(2, &[30, 40]);
+        assert_eq!(snapshot(&turn), [1, 2, 30, 40, 50, 60]);
+        // Older than the ring holds (or beyond its start): skipped, never added.
+        turn.overwrite(5, &[9, 9]);
+        assert_eq!(snapshot(&turn), [9, 2, 30, 40, 50, 60]);
+        turn.overwrite(100, &[7]);
+        assert_eq!(snapshot(&turn), [9, 2, 30, 40, 50, 60]);
+    }
+
+    #[test]
+    fn overwrite_follows_the_ring_across_its_wrap_point() {
+        let mut turn = SmartTurn::new(Arc::new(Fixed));
+        let long: Vec<i16> = (0..WINDOW_SAMPLES + 5).map(|i| (i % 100) as i16).collect();
+        turn.push(&long);
+        turn.overwrite(0, &[-1, -2, -3]);
+        let snap = snapshot(&turn);
+        assert_eq!(snap.len(), WINDOW_SAMPLES);
+        assert_eq!(snap[WINDOW_SAMPLES - 3..], [-1, -2, -3]);
+        assert_eq!(snap[WINDOW_SAMPLES - 4], long[WINDOW_SAMPLES + 5 - 4]);
     }
 
     #[test]

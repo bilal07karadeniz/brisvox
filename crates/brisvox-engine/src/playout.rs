@@ -670,6 +670,25 @@ impl PlayoutBook {
         })
     }
 
+    /// The text most recently sent to TTS, at most `max_chars` characters from its end: what the
+    /// bot has just said or is about to say. Used to recognise the bot's own voice coming back
+    /// in the caller's transcript.
+    pub fn recent_sent_text(&self, max_chars: usize) -> String {
+        let state = self.lock();
+        let mut ids: Vec<u64> = state.utterances.keys().copied().collect();
+        ids.sort_unstable();
+        let mut text = String::new();
+        for id in ids.iter().rev().take(2).rev() {
+            if let Some(u) = state.utterances.get(id) {
+                text.push_str(u.played.sent());
+                text.push(' ');
+            }
+        }
+        let text = text.trim_end();
+        let skip = text.chars().count().saturating_sub(max_chars);
+        text.chars().skip(skip).collect()
+    }
+
     /// The TTS failed or was cut off without a clean end: the audio and words after this point
     /// are missing, so the whole message can no longer count as heard.
     pub fn mark_lost(&self, utterance: u64) {
@@ -996,6 +1015,25 @@ mod tests {
             assert!(book.push_word(utterance, word, ms(start)));
         }
         assert!(book.add_audio(utterance, ms(2_000)));
+    }
+
+    #[test]
+    fn the_recent_sent_text_is_the_tail_of_the_latest_utterances() {
+        let book = PlayoutBook::new(8);
+        assert_eq!(book.recent_sent_text(100), "");
+        speaking(&book, key(0, 0), 1);
+        assert_eq!(book.recent_sent_text(100).trim(), "Merhaba dünya nasılsın");
+        // Only the tail when it is longer than asked.
+        assert_eq!(book.recent_sent_text(8).trim(), "nasılsın");
+        speaking(&book, key(1, 0), 2);
+        speaking(&book, key(2, 0), 3);
+        // The two newest utterances only.
+        assert_eq!(
+            book.recent_sent_text(1_000).matches("Merhaba").count(),
+            2,
+            "{}",
+            book.recent_sent_text(1_000)
+        );
     }
 
     #[test]

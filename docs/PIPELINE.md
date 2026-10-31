@@ -326,6 +326,33 @@ decisions that go beyond sections 1 to 3 and 7:
   the window heals with the next successful job. `EnergyModel` (320-sample windows, RMS threshold) lets paused-time simulations run
   this exact path; with the simulator's thresholds the hybrid marks speech at the same instants
   as the reference energy VAD.
+- **Noise suppression** (`[audio] noise_suppression`, off by default; `crates/brisvox-engine/src/denoise.rs`,
+  `SessionBuilder::with_denoise`). The audio path never waits for it. The VAD worker's stream
+  (`VadStream::with_denoiser`) runs each batch through a streaming `Denoiser` (RNNoise, on the
+  pool, inside the batch job, so it inherits the worker's one-job-in-flight order, retries and
+  fail-open) before the speech model hears it, and the enhanced audio goes to a `DenoiseFeed` per
+  consumer (bounded, drop oldest, counted) before the batch's VAD events are sent. The suppressor's
+  fade-in is dropped and its delay subtracted, so enhanced audio and VAD events are dated on the
+  caller's timeline. The **turn driver** overwrites the plain samples in its Smart Turn ring with the
+  enhanced ones (`SmartTurn::overwrite`, positioned by timestamps) with every audio frame and just
+  before every snapshot; what the feed did not deliver stays plain. With `denoise_stt`, the **STT
+  stage** holds each plain frame (at most 5, 100 ms) until the enhanced samples covering it arrive
+  and sends those instead; a frame that waits longer, and every held frame at a VAD stop (the
+  `Finalize` must follow all the audio) or when the VAD worker has failed open, goes out as it was.
+  Stale enhanced samples are discarded, so every sample reaches the provider exactly once and none is
+  lost. Counters: `DenoiseStatsSnapshot` (chunks, errors, feed drops, STT fallbacks). Tests:
+  `tests/denoise_call.rs`, unit tests in `denoise.rs`, `vad.rs` and `smart_turn/mod.rs`.
+- **Level gate and echo text** (`[vad] level_gate_db`, `interruption.echo_text_match`; `brisvox-inference`
+  `gate.rs`, `turn_driver.rs`). The server wraps every call's Silero stream in `Gated` (a pass-through unless
+  the gate is configured): the model always runs on the window, the gate only overrides the probability it
+  reports, and only at the start of speech, against the 85th percentile of the levels of the last 3 s of
+  windows that passed (it learns from 16 windows, about 0.5 s, on). The turn driver, with
+  `echo_text_match`, compares every interim of a barge-in candidate with the bot's recent text (read from the
+  `PlayoutBook`, the text sent to TTS) and sets `TurnMachine::set_echo` (`brisvox_agent::is_bot_echo`:
+  a young candidate, under 1.5 s, is held while 75 % of its words are the bot's, an older one from three
+  words; short commands are never held). Per interim it builds a set of the words of the last 400
+  characters the bot sent (a few microseconds and one small allocation, on the turn driver's task, not per
+  audio frame).
 - **Tests**: `tests/{pump,audio_in,audio_in_alloc,vad_worker,hybrid_input}.rs` (paused time and
   real-time pool tests) and `tests/silero_realtime.rs` (feature `silero-tract`).
 

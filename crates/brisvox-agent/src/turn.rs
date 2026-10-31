@@ -621,6 +621,8 @@ pub struct BargeInCandidate {
     words: u32,
     text: TextKind,
     recheck: Option<Instant>,
+    /// The driver found the candidate's words to be the bot's own ([`TurnMachine::set_echo`]).
+    echo: bool,
 }
 
 impl BargeInCandidate {
@@ -714,6 +716,24 @@ impl TurnMachine {
         }
     }
 
+    /// Tells the machine whether the words heard so far from the pending barge-in candidate are
+    /// the bot's own voice coming back (the latest interim text matches what the bot has just
+    /// said). While it is `true` the candidate is blocked (`VetoReason::EchoGuard`); the driver
+    /// sets it again with every interim, so a caller whose later words are not the bot's gets
+    /// through. No effect without a candidate. Call it before feeding the interim.
+    pub fn set_echo(&mut self, echo: bool) {
+        if let Some(candidate) = self.candidate.as_mut() {
+            candidate.echo = echo;
+        }
+    }
+
+    /// Replaces the interruption policy. The policy is read afresh at every assessment, so a
+    /// candidate in progress is judged by the new one from the next input on; the caller that
+    /// adapts the guards to the noise on the line calls this when the noise floor moves.
+    pub fn set_interruption(&mut self, interruption: InterruptionPolicy) {
+        self.interruption = interruption;
+    }
+
     /// The policy this machine decides with.
     pub fn policy(&self) -> TurnPolicy {
         self.policy
@@ -796,6 +816,7 @@ impl TurnMachine {
             speech: now.saturating_duration_since(candidate.started_at),
             words: candidate.words,
             text: candidate.text,
+            echo_text: candidate.echo,
             bot_audio_age: self
                 .bot_audio_at
                 .map(|started| now.saturating_duration_since(started)),
@@ -931,6 +952,7 @@ impl TurnMachine {
                     words: 0,
                     text: TextKind::None,
                     recheck: None,
+                    echo: false,
                 });
                 self.istats.candidates = self.istats.candidates.saturating_add(1);
                 self.evaluate_candidate(at, out);

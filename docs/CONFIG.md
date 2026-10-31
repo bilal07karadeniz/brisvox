@@ -265,7 +265,33 @@ Durations are whole milliseconds (`*_ms`). Ranges are inclusive.
 (0..=5000), `min_words` (0..=20), `confirm` (`"all"`/`"any"`), `echo_guard_ms` (0..=5000),
 `echo_min_words` (1..=20), `backchannels` (array of `"en"`, `"tr"`; `[]` turns them off),
 `backchannel_wait_ms` (0..=5000), `backchannel_max_speech_ms` (0..=10000), `vad_hangover_ms`
-(0..=2000). Meanings: `InterruptionConfig` in `crates/brisvox-engine/src/config.rs`.
+(0..=2000), `echo_text_match` (bool, false). Meanings: `InterruptionConfig` in
+`crates/brisvox-engine/src/config.rs`.
+
+`echo_text_match = true` holds a barge-in candidate whose transcript is made of words the bot has
+just said (the bot's own voice coming back through the caller's line, which the echo window only
+covers for the first 400 ms). It needs `min_words >= 1` (and the guards on; otherwise a candidate
+is confirmed by its duration before any transcript exists, a start-up error says so), and then
+removes the echo case entirely in the measurements (`docs/LATENCY.md`, "Noise handling beyond a
+denoiser") without touching the barge-ins of the test calls. `min_words = 1` itself costs the wait for the first
+interim, about 0.3 s on the time to interrupt, and also stops the voices the recognizer does not hear.
+The trade-off: the text of an echo and of a caller repeating the bot is the same, so a caller who
+reads the bot's words back (an address, a number) while the bot is still speaking is held like the
+echo until the transcript shows other words. Short commands are never held: an utterance of at most
+two words with "stop", "wait", "hold", "pause", "cancel", "enough", "quiet", "sorry", "excuse", "no",
+"hang" or "listen" in it goes through even if the bot just said that word. A candidate older than 1.5 s
+is held only with three or more words that are the bot's.
+
+### `[vad]` (optional)
+
+`level_gate_db` (5..=30, absent: off) lets speech start only in audio at most that many dB under the
+caller's own level (the 85th percentile of the last 3 s of what the detector called speech; the gate
+acts after 0.5 s of the caller's speech and never cuts into an utterance that has started). A second
+voice quieter than the caller then cannot start speech or a barge-in. Measured: `10` took the
+background-speech false interruptions at 20 dB under the caller from 8/8 to 2/8 and lowered the VAD
+starts in quiet calls by a quarter, without missing a real barge-in; a caller who speaks much more
+softly than before can be gated, so keep it off unless you see background voices. About 0.3
+microseconds per window, no allocation.
 
 ### `[speculation]` and `[early_analysis]`
 
@@ -283,6 +309,55 @@ the VAD half itself (`SessionBuilder::with_vad`).
 `frame_ms` (5..=100, 20) must be a whole number of samples at 16 kHz and at `call_sample_rate`;
 `call_sample_rate` (8000, 16000, 22050, 24000, 44100 or 48000; default 16000) is only the
 fallback for a transport that reports no rate (telephony transports report 8000 themselves).
+
+`noise_suppression` (`"off"` default, `"rnnoise"` or `"hush"`) filters the caller's audio before the
+voice activity detector and the turn detector hear it; `denoise_stt` (bool, default `false`, needs
+`noise_suppression`) also sends the filtered audio to the speech-to-text provider.
+
+```toml
+[audio]
+noise_suppression = "hush"      # the VAD and Smart Turn hear the filtered audio
+denoise_stt = false             # the STT provider hears the original (the default)
+```
+
+- **Off by default** because it costs CPU on every call and has to earn its place:
+  - `"hush"` (**experimental**; Hush by Weya AI, Apache-2.0 code and weights, pure Rust, trained for voice
+    agents with competing speakers; needs a build with `--features denoise-hush`). **Not for telephone
+    calls and not for quiet callers**: its gain depends on the input level (it attenuated clean speech
+    by 8 dB at the fixtures' level, left speech alone at 12 dB lower, and removed speech at 20 dB
+    lower: median gain -28 dB, a third of the utterances never detected), and on 8 kHz phone audio it
+    attenuated clean speech by 12 dB and distorted it until the local recognizer got 97 % of the words
+    wrong (31 % without). A call whose transport delivers less than 16 kHz therefore runs without it
+    (logged once as a warning, `DenoiseStatsSnapshot::bypassed_narrowband`, and counted per call in
+    `brisvox_engine_events_total{event="denoise_bypassed_narrowband"}`), and `audio.call_sample_rate` below
+    16000 with Hush is a start error. Do not combine it with `denoise_stt = true`: the recognizer's
+    word error rate got worse with it at every noise level (10 dB: 25 to 29 %, 0 dB: 52 to 60 %).
+    Cost: 1.0 % of one core per call (0.2 ms per 20 ms frame, on the inference pool;
+    100 calls about one core), 10 ms of delay on a 16 kHz call (26 ms on an 8 kHz call). Measured
+    (`docs/LATENCY.md`, "Noise handling beyond a denoiser"): it lowers the VAD starts in calls with
+    background speech or echo by a quarter, takes a second voice 20 dB under the caller out of the barge-ins
+    in half the calls (15 dB under: one in eight) and the bot's echo in 10 of 16, misses no real barge-in and adds
+    no delay to it; it does not help against a voice within 10 dB of the caller; against plain noise it is no better than nothing (more VAD
+    starts at 0 to 5 dB), and on 8 kHz phone audio it fragments utterances more and flips more Smart Turn
+    verdicts at low signal-to-noise ratios. Enable it for background voices and echo, not for noise.
+  - `"rnnoise"` (BSD-3-Clause): 0.3 % of one core, 20 ms of delay; leaves clean speech and quiet callers
+    alone on both paths, but measured worse than nothing for the VAD (more noise starts and fragments,
+    no fewer false barge-ins). Kept for completeness; not in the server's default features.
+- **The provider hears the original unless `denoise_stt = true`**, on purpose: independent studies
+  found that denoised audio often *raises* the word error rate of Whisper-class and cloud
+  recognizers, while it can reduce what the detectors mistake for speech. Turn it on only after
+  measuring on your own calls (`brisvox-bench denoise transcribe`). With `denoise_stt`, a frame the
+  filter has not finished within 100 ms goes to the provider as it was, so no audio is ever lost or
+  sent twice (counters: `DenoiseStatsSnapshot`).
+- **Never loses audio under load.** If the inference pool refuses a batch, it is retried; a filter
+  that fails on a batch lets that audio through unfiltered; a filter that cannot be built (a model
+  that will not load, a rate the speech model does not work at) leaves the call with the plain audio
+  and a warning; a VAD that fails open turns the filter off with it (`docs/PIPELINE.md`). The
+  metrics `brisvox_engine_events_total{event="denoise_build_failures" | "denoise_errors" |
+  "denoise_feed_dropped"}` count these.
+- **Server build.** `"hush"` needs the `denoise-hush` cargo feature, `"rnnoise"` the `denoise-rnnoise`
+  feature (neither is on by default); a server built without the one an agent names refuses the file with
+  the key's position. A speech-to-speech call ignores the setting.
 
 ### `[filler]`
 

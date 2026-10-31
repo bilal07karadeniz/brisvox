@@ -172,6 +172,27 @@ Evaluation of Universal Representations of Speech." arXiv:2205.12446, 2022.
 ### TTS-free alternatives
 All above are human recordings. Self-recorded clips by the maintainers would avoid licenses entirely (and give clean silence) but need a human; consider them if FLEURS ends up unsuitable. Synthetic silence/noise gaps are produced by the fixture builder, not downloaded.
 
+## Noise recordings (`fixtures/noise/`)
+
+Real noise to mix into the speech fixtures for the noise suppression evaluation
+(`brisvox-bench denoise ...`). Survey of corpora and licenses: `docs/providers/noise-suppression.md`.
+
+- Source: MUSAN `noise/free-sound` (Snyder, Chen, Povey, arXiv:1510.08484; https://www.openslr.org/17/).
+  `noise/free-sound/LICENSE` of the corpus: "All selected recordings were marked as in the Public
+  Domain on Free Sound"; the corpus as a whole is CC BY 4.0 on OpenSLR.
+- Read file by file (no 11 GB archive) from the Hugging Face mirror
+  https://huggingface.co/datasets/FluidInference/musan at revision
+  `3edcfdf89b56dbe6a395ff29f9c29489e03d1321` (2026-10-30). Candidates: the 37 recordings the corpus
+  itself lists as background noises (`noise/free-sound/ANNOTATIONS`), 34 of them present in the mirror
+  under 4.5 MB; chosen from their spectral flatness and centroid and the variation of their level so
+  that the nine cover a hiss (0441), a steady broadband noise (0841), a steady mid-frequency machine
+  (0230), ambient rooms and streets (0824, 0234, 0064), clatter (0431, 0232) and a low hum (0086).
+- Committed: nine 8-second excerpts, 16 kHz mono PCM16, 2.3 MB in all, the loudest 8 s window of each
+  recording, untouched otherwise. `fixtures/noise/sources.lock` has the exact URL, the SHA-256 of the
+  original recording, the window offset and its level; `fixtures/noise/NOTICE` the license text.
+- The mixes (20, 10, 5 and 0 dB signal-to-noise ratio, also through 8 kHz mu-law) are made in memory by
+  the benchmark; none is committed.
+
 ## Open items for the implementer
 1. Run the fetch script once; record: HTTP status chain for the `resolve` URL, whether Range is honoured, tar member names, WAV header (channels, bit depth), first-member order, leading/trailing silence of chosen clips.
 2. Pick clips by `num_samples <= 96000` from the dev TSV, balance genders where possible, compute end-of-speech by energy gate, write `manifest.json`.

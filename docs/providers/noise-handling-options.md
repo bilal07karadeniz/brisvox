@@ -253,6 +253,27 @@ Krisp VIVA / ai-coustics (proprietary SDK licenses), AEC (later, large).
   CAM++ PDF): only abstract pages or search snippets were used for those (the CAM++ efficiency table came from the
   arXiv html v3).
 
+## 9. Measured afterwards (2026-10-31, same day)
+
+The shortlist items 1 and 3 were built and measured with a harness that drives the real turn machine and
+interruption policy over calls with the bot speaking, background speech (LibriSpeech, CC BY 4.0), bot echo and
+MUSAN noise: `bench/results/noise-handling-calls.md`, reading in `docs/LATENCY.md`, "Noise handling beyond a
+denoiser". In short: noise never gets through the guards; what does is a second voice and the bot's own echo;
+nothing model-free or denoiser-based separates a voice within 10 dB of the caller (item 2, the speaker check,
+stays open); `min_words >= 1` plus the echo-text match removes the echo case completely (cost: the first-interim
+wait); Hush helps with voices 15 to 20 dB down and the echo at 1 % of a core and no added delay, and fragments
+more on 8 kHz phone audio; the rolling-percentile level gate works at the start of speech only (applied to every
+window it adds 70 to 160 fragments to the 48 barge-in calls); noise-floor-adapted guards cost 300 ms on
+every noisy call for no gain; VAD threshold and hangover sweeps do not change the false barge-ins. Shipped as
+agent-file options: `noise_suppression = "hush"` (experimental, see below), `interruption.echo_text_match`,
+`[vad] level_gate_db`. **Correction**, found by the word error rate run: Hush's gain depends on the input level
+(it removes the speech of a caller about 20 dB under the fixtures' level, attenuates normal-level speech by 8 dB
+and phone-band speech by 12 dB), so it is skipped on calls below 16 kHz, left out of the default features and
+checked by `brisvox-bench denoise safety` (`docs/LATENCY.md`).
+The Hush crate facts in section 2 were confirmed: `hush-vani` 0.1.2 (2026-10-29), Apache-2.0, depends on
+`rustfft` only, `HushStream` streams 160-sample frames, weights load once per
+process (8 ms), measured 0.20 ms per 20 ms frame.
+
 ## Sources (all fetched 2026-10-31)
 
 - Local: `docs/providers/noise-suppression.md`; `docs/providers/vad-alternatives.md`; `docs/ARCHITECTURE.md` "Interruption

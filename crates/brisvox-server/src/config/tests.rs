@@ -536,6 +536,126 @@ fn a_frame_must_be_whole_samples_at_the_call_rate() {
 }
 
 #[test]
+fn noise_suppression_is_off_by_default() {
+    assert!(load(BASE).unwrap().denoise().is_none());
+    let text = format!("{BASE}\n[audio]\nnoise_suppression = \"off\"\n");
+    assert!(load(&text).unwrap().denoise().is_none());
+}
+
+#[test]
+fn an_unknown_noise_suppression_is_rejected_at_its_value() {
+    let text = format!("{BASE}\n[audio]\nnoise_suppression = \"fastenhancer\"\n");
+    let error = load(&text).unwrap_err().to_string();
+    assert!(error.contains("audio.noise_suppression"), "{error}");
+    assert!(
+        error.contains("rnnoise"),
+        "the valid values are listed: {error}"
+    );
+}
+
+#[test]
+fn denoise_stt_needs_a_noise_suppression() {
+    let text = format!("{BASE}\n[audio]\ndenoise_stt = true\n");
+    let issue = only_issue(&text);
+    assert_eq!(issue.key, "audio.denoise_stt");
+    // False is the default and always fine.
+    let text = format!("{BASE}\n[audio]\ndenoise_stt = false\n");
+    assert!(load(&text).is_ok());
+}
+
+#[cfg(feature = "denoise-rnnoise")]
+#[test]
+fn rnnoise_builds_a_denoise_setup_that_follows_denoise_stt() {
+    let text = format!("{BASE}\n[audio]\nnoise_suppression = \"rnnoise\"\n");
+    let setup = load(&text).unwrap().denoise().unwrap();
+    assert!(
+        !setup.to_stt(),
+        "the provider hears the original by default"
+    );
+    let text = format!("{BASE}\n[audio]\nnoise_suppression = \"rnnoise\"\ndenoise_stt = true\n");
+    assert!(load(&text).unwrap().denoise().unwrap().to_stt());
+}
+
+#[cfg(feature = "denoise-hush")]
+#[test]
+fn hush_builds_a_denoise_setup() {
+    let text = format!("{BASE}\n[audio]\nnoise_suppression = \"hush\"\n");
+    let setup = load(&text).unwrap().denoise().unwrap();
+    assert!(!setup.to_stt());
+}
+
+#[cfg(feature = "denoise-hush")]
+#[test]
+fn hush_is_refused_for_an_8_khz_call_rate() {
+    let text = format!(
+        "{BASE}
+[audio]
+noise_suppression = \"hush\"
+call_sample_rate = 8000
+"
+    );
+    let issue = only_issue(&text);
+    assert_eq!(issue.key, "audio.noise_suppression");
+    assert!(issue.message.contains("8000 Hz"), "{issue}");
+    // At 16 kHz it is fine.
+    let text = format!(
+        "{BASE}
+[audio]
+noise_suppression = \"hush\"
+call_sample_rate = 16000
+"
+    );
+    assert!(load(&text).is_ok());
+}
+
+#[cfg(not(feature = "denoise-hush"))]
+#[test]
+fn hush_without_the_feature_is_a_positioned_start_error() {
+    let text = format!("{BASE}\n[audio]\nnoise_suppression = \"hush\"\n");
+    let issue = only_issue(&text);
+    assert_eq!(issue.key, "audio.noise_suppression");
+    assert!(issue.message.contains("denoise-hush"), "{issue}");
+}
+
+#[test]
+fn echo_text_match_needs_min_words() {
+    let text = format!("{BASE}\n[interruption]\necho_text_match = true\n");
+    let issue = only_issue(&text);
+    assert_eq!(issue.key, "interruption.echo_text_match");
+    assert!(issue.message.contains("min_words"), "{issue}");
+    let text = format!(
+        "{BASE}\n[interruption]\npreset = \"off\"\nmin_words = 1\necho_text_match = true\n"
+    );
+    assert_eq!(only_issue(&text).key, "interruption.echo_text_match");
+    let text = format!("{BASE}\n[interruption]\nmin_words = 1\necho_text_match = true\n");
+    let config = load(&text).unwrap();
+    assert!(config.engine().interruption.echo_text_match);
+    assert!(!load(BASE).unwrap().engine().interruption.echo_text_match);
+}
+
+#[test]
+fn the_vad_level_gate_is_off_by_default_and_reads_its_offset() {
+    assert!(load(BASE).unwrap().level_gate().is_none());
+    let text = format!("{BASE}\n[vad]\nlevel_gate_db = 12\n");
+    let gate = load(&text).unwrap().level_gate().unwrap();
+    let rolling = gate.rolling.unwrap();
+    assert!((rolling.offset_db + 12.0).abs() < f32::EPSILON);
+    assert!(gate.onset_only);
+    let text = format!("{BASE}\n[vad]\nlevel_gate_db = 2\n");
+    assert!(load(&text).is_err(), "out of range");
+}
+
+#[cfg(not(feature = "denoise-rnnoise"))]
+#[test]
+fn rnnoise_without_the_feature_is_a_positioned_start_error() {
+    let text = format!("{BASE}\n[audio]\nnoise_suppression = \"rnnoise\"\n");
+    let issue = only_issue(&text);
+    assert_eq!(issue.key, "audio.noise_suppression");
+    assert!(issue.message.contains("denoise-rnnoise"), "{issue}");
+    assert!(issue.position.is_some());
+}
+
+#[test]
 fn stt_models_without_turkish_are_rejected_for_turkish() {
     let tr = edit("language = \"en\"", "language = \"tr\"");
     let text = format!("{tr}\n[stt.deepgram]\nmodel = \"enhanced\"\n");

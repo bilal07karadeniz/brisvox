@@ -140,10 +140,20 @@ impl Vad {
             #[cfg(feature = "silero-tract")]
             Self::Silero(model) => {
                 let model = Arc::clone(model);
+                // The level gate of `[vad]` (absent: the wrapper passes every window through).
+                let gate = agent.level_gate().unwrap_or_default();
                 builder.with_vad(brisvox_engine::VadSetup::new(
                     offload.clone(),
                     brisvox_engine::VadWorkerConfig::from_engine(&agent.engine()),
-                    move || model.stream(),
+                    move || {
+                        model.stream().map(|stream| {
+                            brisvox_inference::Gated::new(
+                                stream,
+                                gate,
+                                brisvox_inference::NoiseFloorHandle::default(),
+                            )
+                        })
+                    },
                 ))
             }
         }

@@ -18,9 +18,23 @@
 //! - `model_cpu` (feature `models`): CPU time per Smart Turn analysis and per Silero window for
 //!   each ONNX Runtime session configuration and VAD backend.
 //!
+//! - `denoise_eval` and `denoise_stt` (feature `denoise`): noise suppression of the caller's audio:
+//!   CPU per stream, false barge-ins and Smart Turn verdicts under real noise, and the transcripts
+//!   for the word error rate.
+//!
 //! Comparisons against the Pipecat baseline use the same client.
 
 pub mod capacity;
+#[cfg(feature = "denoise")]
+pub mod denoise_calls;
+#[cfg(feature = "denoise")]
+pub mod denoise_catalog;
+#[cfg(feature = "denoise")]
+pub mod denoise_eval;
+#[cfg(feature = "denoise")]
+pub mod denoise_safety;
+#[cfg(feature = "denoise")]
+pub mod denoise_stt;
 pub mod fixture_load;
 pub mod infer_load;
 #[cfg(feature = "models")]

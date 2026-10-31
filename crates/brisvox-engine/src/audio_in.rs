@@ -58,6 +58,7 @@ use bytes::{BufMut, Bytes, BytesMut};
 use tokio::time::Instant;
 
 use crate::config::EngineConfig;
+use crate::denoise::DenoiseWiring;
 use crate::guard::{GuardedSender, TaskGuard};
 use crate::vad::{VadCounters, VadSetup, VadStats, VadTee, spawn_worker};
 
@@ -66,8 +67,10 @@ use crate::vad::{VadCounters, VadSetup, VadStats, VadTee, spawn_worker};
 const RING_SLOTS: usize = 32;
 
 /// Starts the worker once the stage knows its neighbour.
-type WorkerSpawner =
-    Box<dyn FnOnce(Arc<VadTee>, GuardedSender, Arc<VadCounters>) -> TaskGuard + Send>;
+type WorkerSpawner = Box<
+    dyn FnOnce(Arc<VadTee>, GuardedSender, Arc<VadCounters>, Option<DenoiseWiring>) -> TaskGuard
+        + Send,
+>;
 
 #[derive(Debug, Default)]
 struct Counters {
@@ -123,13 +126,13 @@ impl AudioInStats {
 }
 
 /// A ring of reusable buffers that frames are cut from without allocating.
-struct FrameRing {
+pub(crate) struct FrameRing {
     slots: Vec<BytesMut>,
     next: usize,
 }
 
 impl FrameRing {
-    fn new() -> Self {
+    pub(crate) fn new() -> Self {
         Self {
             // `BytesMut::new` does not allocate.
             slots: (0..RING_SLOTS).map(|_| BytesMut::new()).collect(),
@@ -140,7 +143,7 @@ impl FrameRing {
     /// `pcm` as little-endian bytes in the next slot, frozen into a `Bytes` that shares the
     /// slot's buffer. The slot gets the buffer back (`reserve`) once every `Bytes` cut from it
     /// was dropped.
-    fn freeze(&mut self, pcm: &[i16]) -> Bytes {
+    pub(crate) fn freeze(&mut self, pcm: &[i16]) -> Bytes {
         let index = self.next;
         self.next = (self.next + 1) % RING_SLOTS;
         let Some(slot) = self.slots.get_mut(index) else {
@@ -199,6 +202,8 @@ pub struct AudioIn {
     worker: Option<TaskGuard>,
     /// Whether a VAD was configured (otherwise the tee is not fed).
     vad: bool,
+    /// Noise suppression for the VAD worker's streams ([`Self::with_denoise`]).
+    denoise: Option<DenoiseWiring>,
     counters: Arc<Counters>,
     vad_stats: VadStats,
 }
@@ -231,6 +236,7 @@ impl AudioIn {
             spawner: None,
             worker: None,
             vad: false,
+            denoise: None,
             counters: Arc::new(Counters::default()),
             vad_stats,
         }
@@ -241,9 +247,18 @@ impl AudioIn {
     #[must_use]
     pub fn with_vad<M: SpeechModel + 'static>(mut self, setup: VadSetup<M>) -> Self {
         self.vad = true;
-        self.spawner = Some(Box::new(move |tee, out, counters| {
-            spawn_worker(setup, tee, out, counters)
+        self.spawner = Some(Box::new(move |tee, out, counters, denoise| {
+            spawn_worker(setup, tee, out, counters, denoise)
         }));
+        self
+    }
+
+    /// Suppresses noise in the audio the VAD worker hears and hands the enhanced audio to the
+    /// feeds of `wiring` (see `crate::denoise`). Needs [`Self::with_vad`]; the frames this stage
+    /// forwards are never changed.
+    #[must_use]
+    pub(crate) fn with_denoise(mut self, wiring: DenoiseWiring) -> Self {
+        self.denoise = Some(wiring);
         self
     }
 
@@ -259,6 +274,11 @@ impl AudioIn {
     pub(crate) fn with_boxed_tap(mut self, tap: Box<dyn CallerAudioTap>) -> Self {
         self.tap = Some(tap);
         self
+    }
+
+    /// Whether a VAD worker was configured ([`Self::with_vad`]).
+    pub(crate) const fn has_vad(&self) -> bool {
+        self.vad
     }
 
     /// Counters of this stage (usable after the stage moved into a pipeline).
@@ -294,6 +314,7 @@ impl AudioIn {
             Arc::clone(&self.tee),
             out,
             self.vad_stats.counters(),
+            self.denoise.clone(),
         ));
     }
 
@@ -405,8 +426,29 @@ impl AudioIn {
         .ok()
     }
 
+    /// Noise suppression is for calls at or above the filter's minimum rate: the first frame below
+    /// it switches the filter off for the call (and says so once).
+    fn check_denoise_rate(&mut self, rate: SampleRate) {
+        let Some(wiring) = &self.denoise else {
+            return;
+        };
+        if rate.hz() < wiring.min_call_hz
+            && !wiring.counters.narrowband.swap(true, Ordering::Relaxed)
+        {
+            wiring.counters.down.store(true, Ordering::Relaxed);
+            tracing::warn!(
+                target: "brisvox::engine",
+                rate_hz = rate.hz(),
+                min_hz = wiring.min_call_hz,
+                "noise suppression is not used on this call: its audio is below the filter's minimum \
+                 sample rate"
+            );
+        }
+    }
+
     async fn audio(&mut self, audio: AudioFrame, ctx: &mut ProcessorContext) -> CoreResult<()> {
         self.counters.frames_in.fetch_add(1, Ordering::Relaxed);
+        self.check_denoise_rate(audio.sample_rate());
         if let Some(tap) = self.tap.as_mut() {
             tap.observe(&audio);
         }

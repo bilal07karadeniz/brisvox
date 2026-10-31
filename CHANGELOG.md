@@ -10,6 +10,26 @@ named plain `brisvox` on crates.io, PyPI and npm, are released together under on
 
 ### Added
 
+- **Noise suppression of the caller's audio**, opt in per agent: `[audio] noise_suppression = "rnnoise"`
+  (default `"off"`) filters the audio before the voice activity detector and the turn detector hear it,
+  with RNNoise through the pure-Rust `nnnoiseless` crate (BSD-3-Clause; cargo feature `denoise-rnnoise`,
+  not in the default features of `brisvox-server`; a server built without it refuses the file at the key's position).
+  The filter runs on the inference pool inside the VAD batch job, costs about 0.35 % of one core per
+  call (0.45 % on an 8 kHz call) and adds 20 to 25 ms of delay to what the VAD hears; it never delays or
+  drops the caller's audio, and a failing or overloaded filter lets the audio through unfiltered.
+  `denoise_stt = true` also sends the filtered audio to the speech-to-text provider (default `false`:
+  independent studies found that denoised audio often raises the word error rate). Library:
+  `brisvox_inference::denoise` (the streaming `Denoiser` trait, `VadStream::with_denoiser`),
+  `SessionBuilder::with_denoise`, `DenoiseStatsSnapshot`. A call below a filter's minimum sample rate
+  runs without it (logged once), and a filter that cannot be built leaves the call with the plain audio and
+  a warning; both are counted in `brisvox_engine_events_total{event="denoise_bypassed_narrowband" |
+  "denoise_build_failures" | "denoise_errors" | "denoise_feed_dropped"}`. Measured with 34 real noise recordings
+  (`bench/results/denoise-*.md`): it does no harm on clean audio but did not reduce false speech starts
+  on wideband audio and shifted Smart Turn verdicts on telephone audio, so it stays off by default and is
+  meant to be tested on one's own calls. `brisvox-bench denoise cpu|quality|transcribe` measures the CPU
+  per call, the false barge-ins and turn verdicts under licensed noise (`fixtures/noise`, public domain),
+  and streams the same mixes to a sherpa-onnx server for the word error rate.
+
 - **Reload the agent file without a restart.** Edit the agent file and `POST /admin/reload` on
   the health listener (or `kill -HUP` the server on Unix, or set `BRISVOX_AGENT_RELOAD_POLL_MS` to
   have the file polled for changes): new calls run the new definition, calls in progress keep
@@ -57,6 +77,29 @@ named plain `brisvox` on crates.io, PyPI and npm, are released together under on
   values with struct literals must add the fields; code that matches `SttEvent::Transcript`
   without `..` must name the new field. The agent protocol gains the `language.switched` event
   (new `LanguageSwitched` message in the Python and TypeScript SDKs).
+
+- **Background speech and echo handling**, measured against the engine's real barge-in guards
+  (`bench/results/noise-handling-calls.md`, `docs/LATENCY.md`, "Noise handling beyond a denoiser"):
+  - `[audio] noise_suppression = "hush"` (experimental): Hush (Apache-2.0, pure Rust, trained for voice
+    agents with competing speakers; cargo feature `denoise-hush`, not in the default features) as the filter in
+    front of the VAD and the turn detector: 1 % of a core per call, 10 ms of delay; takes a second voice 15 to
+    20 dB under the caller and the bot's echo out of the barge-ins in many calls, no extra delay for a real
+    barge-in. Its gain depends on the input level (it removes the speech of a quiet caller and distorts 8 kHz
+    phone audio), so a call below 16 kHz runs without it (logged, counted) and the agent file refuses it with
+    `call_sample_rate` below 16000. `brisvox-bench denoise safety` checks that a filter leaves clean speech at
+    three caller levels alone. `"rnnoise"` measured worse than nothing for the VAD and is not in the default
+    features either.
+  - `[interruption] echo_text_match`: holds a barge-in whose words are the bot's own, just said (the bot's
+    voice coming back); needs `min_words >= 1`. Removed the echo case completely in the measurements. A caller who repeats
+    the bot's words back while it speaks is held like the echo until other words appear (the texts are the
+    same); short commands (at most two words with "stop", "wait", "no", ...) always get through.
+  - `[vad] level_gate_db`: speech may only start within that many dB of the caller's own level, so a quieter
+    second voice cannot start a barge-in.
+  - Library: `brisvox_inference::Gated` (level gates and a noise-floor estimate over any speech model),
+    `brisvox_inference::denoise::blend::Blended` (dry/wet mix for any denoiser),
+    `brisvox_agent::{TurnMachine::set_echo, TurnMachine::set_interruption, echoes_bot, is_bot_echo, NoiseAdapt}`.
+    `brisvox-bench denoise calls` drives the real turn machine and policy over calls with background
+    speech (LibriSpeech, `fixtures/interferers`), bot echo and noise.
 
 ### Fixed
 

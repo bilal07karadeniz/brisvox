@@ -1131,10 +1131,54 @@ impl AgentConfig {
             .with_language(self.language)
             .with_voice(self.voice())
             .with_system_prompt(self.system_prompt());
+        let builder = match self.denoise() {
+            Some(setup) => builder.with_denoise(setup),
+            None => builder,
+        };
         match self.languages() {
             Some(settings) => builder.with_languages(settings),
             None => builder,
         }
+    }
+
+    /// Noise suppression for this agent's calls (`[audio] noise_suppression`); `None` when it is
+    /// off, or the backend is not compiled in (validation rejects such a file).
+    pub fn denoise(&self) -> Option<brisvox_engine::DenoiseSetup> {
+        use brisvox_inference::DenoiseBackend;
+        use schema::NoiseSuppression;
+        let audio = &self.file.audio;
+        let backend = match audio.noise_suppression.as_ref().map(|n| *n.get_ref()) {
+            Some(NoiseSuppression::Rnnoise) => DenoiseBackend::Rnnoise,
+            Some(NoiseSuppression::Hush) => DenoiseBackend::Hush,
+            Some(NoiseSuppression::Off) | None => return None,
+        };
+        if !backend.compiled() {
+            return None; // validation rejects such a file
+        }
+        let to_stt = audio.denoise_stt.as_ref().is_some_and(|b| *b.get_ref());
+        let setup = brisvox_engine::DenoiseSetup::new(move || {
+            brisvox_inference::denoise::build(backend, 16_000, None)
+        })
+        .with_stt(to_stt);
+        Some(match backend {
+            // Hush was measured to attenuate clean 8 kHz speech by 12 dB and distort it until a
+            // recognizer lost most of the words (`docs/LATENCY.md`): never on a telephone call.
+            DenoiseBackend::Hush => setup.with_min_call_rate(16_000),
+            _ => setup,
+        })
+    }
+
+    /// The level gate of the voice activity detector (`[vad] level_gate_db`); `None` when off.
+    pub fn level_gate(&self) -> Option<brisvox_inference::GateConfig> {
+        let db = self.file.vad.level_gate_db?;
+        Some(brisvox_inference::GateConfig {
+            rolling: Some(brisvox_inference::RollingGate {
+                offset_db: -(db.get() as f32),
+                ..brisvox_inference::RollingGate::default()
+            }),
+            onset_only: true,
+            ..brisvox_inference::GateConfig::default()
+        })
     }
 
     /// The languages the call follows the caller between (`[languages]`), or `None` when the

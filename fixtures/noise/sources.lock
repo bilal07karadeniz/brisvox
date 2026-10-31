@@ -1,0 +1,65 @@
+{
+  "noise-free-sound-0064.wav": {
+    "rms_dbfs": -16.5,
+    "source": "https://huggingface.co/datasets/FluidInference/musan/resolve/3edcfdf89b56dbe6a395ff29f9c29489e03d1321/noise/free-sound/noise-free-sound-0064.wav",
+    "source_sha256": "a1189d0c56eba46059cc18041e6bbeed67b05a144bd229f7f099dd068decf1d6",
+    "window_s": 8.0,
+    "window_start_s": 17.0
+  },
+  "noise-free-sound-0086.wav": {
+    "rms_dbfs": -10.6,
+    "source": "https://huggingface.co/datasets/FluidInference/musan/resolve/3edcfdf89b56dbe6a395ff29f9c29489e03d1321/noise/free-sound/noise-free-sound-0086.wav",
+    "source_sha256": "cad689668dd4ec9cf626ac4e7d2f71c1193b80d9cfe7265b36750ad9caee743f",
+    "window_s": 8.0,
+    "window_start_s": 25.0
+  },
+  "noise-free-sound-0230.wav": {
+    "rms_dbfs": -14.0,
+    "source": "https://huggingface.co/datasets/FluidInference/musan/resolve/3edcfdf89b56dbe6a395ff29f9c29489e03d1321/noise/free-sound/noise-free-sound-0230.wav",
+    "source_sha256": "aece1ed77a64e5e3a60b86689b4e5f82a09c2dc90c8f86cfe02f83688572c5e6",
+    "window_s": 8.0,
+    "window_start_s": 15.0
+  },
+  "noise-free-sound-0232.wav": {
+    "rms_dbfs": -16.5,
+    "source": "https://huggingface.co/datasets/FluidInference/musan/resolve/3edcfdf89b56dbe6a395ff29f9c29489e03d1321/noise/free-sound/noise-free-sound-0232.wav",
+    "source_sha256": "be147d201bc97d3456ada4b08806ca6aa6b133fedb80d1b96f7e3aca2083a764",
+    "window_s": 8.0,
+    "window_start_s": 0.0
+  },
+  "noise-free-sound-0234.wav": {
+    "rms_dbfs": -18.2,
+    "source": "https://huggingface.co/datasets/FluidInference/musan/resolve/3edcfdf89b56dbe6a395ff29f9c29489e03d1321/noise/free-sound/noise-free-sound-0234.wav",
+    "source_sha256": "17d3b415c3bdcbb99841a2e5e7fcaee4779b7c889ac3639cdc6f7da211d3cccf",
+    "window_s": 8.0,
+    "window_start_s": 53.0
+  },
+  "noise-free-sound-0431.wav": {
+    "rms_dbfs": -21.1,
+    "source": "https://huggingface.co/datasets/FluidInference/musan/resolve/3edcfdf89b56dbe6a395ff29f9c29489e03d1321/noise/free-sound/noise-free-sound-0431.wav",
+    "source_sha256": "f44ad5ce289e5e610b15bf896b59495522c6a3eb87b9f11e13d08e5942996f41",
+    "window_s": 8.0,
+    "window_start_s": 11.0
+  },
+  "noise-free-sound-0441.wav": {
+    "rms_dbfs": -13.4,
+    "source": "https://huggingface.co/datasets/FluidInference/musan/resolve/3edcfdf89b56dbe6a395ff29f9c29489e03d1321/noise/free-sound/noise-free-sound-0441.wav",
+    "source_sha256": "21cc1f2d18d0636e945b226a5a2141cfe1beb3ca40f8f5f5a54ac058a1a973d0",
+    "window_s": 8.0,
+    "window_start_s": 3.0
+  },
+  "noise-free-sound-0824.wav": {
+    "rms_dbfs": -17.8,
+    "source": "https://huggingface.co/datasets/FluidInference/musan/resolve/3edcfdf89b56dbe6a395ff29f9c29489e03d1321/noise/free-sound/noise-free-sound-0824.wav",
+    "source_sha256": "bf359661c220287d69021924cd4190e9cb939130999eb8a457abf1233144c49a",
+    "window_s": 8.0,
+    "window_start_s": 4.0
+  },
+  "noise-free-sound-0841.wav": {
+    "rms_dbfs": -12.8,
+    "source": "https://huggingface.co/datasets/FluidInference/musan/resolve/3edcfdf89b56dbe6a395ff29f9c29489e03d1321/noise/free-sound/noise-free-sound-0841.wav",
+    "source_sha256": "9e5e4724a7f88eeab4f3c7ef27732a4a191a63af6eea98a028976d68a2a4665f",
+    "window_s": 8.0,
+    "window_start_s": 34.0
+  }
+}

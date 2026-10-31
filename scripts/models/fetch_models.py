@@ -7,6 +7,7 @@ Models are not committed (size, separate licenses); this script downloads them i
 Usage (from the repository root):
     python3 scripts/models/fetch_models.py           # fetch missing models
     python3 scripts/models/fetch_models.py --check   # verify present models, fetch nothing
+    python3 scripts/models/fetch_models.py --evaluation   # also the evaluation-only models below
 
 Standard library only.
 """
@@ -37,6 +38,21 @@ PINNED = {
     ),
 }
 
+# Evaluation-only models (`--evaluation`): used by `brisvox-bench denoise` to size what a better noise
+# suppressor would cost and gain; the server never loads them. FastEnhancer-T, waveform graph with
+# streaming caches (hop 256 samples, 16 kHz), trained on DNS Challenge 3 wideband data. The code is MIT
+# (https://github.com/aask1357/fastenhancer/blob/main/LICENSE) but the release files carry no license
+# statement of their own, so the weights are NOT cleared for shipping: docs/providers/noise-suppression.md,
+# "Verified on 2026-10-30".
+EVALUATION = {
+    "fastenhancer_t.onnx": (
+        "https://github.com/aask1357/fastenhancer/releases/download/onnx-dns-v1.0.0/fastenhancer_t.onnx",
+        "a64663672b31bd1445502ee23328d291af13fb312e11bb574c010e7261a5ee7d",
+        125233,
+        "UNCLEAR (repo MIT; the release files state no license; evaluation only)",
+    ),
+}
+
 
 def sha256_of(path):
     digest = hashlib.sha256()
@@ -58,10 +74,16 @@ def fetch(url, size):
 def main():
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--check", action="store_true", help="verify only, do not download")
+    parser.add_argument(
+        "--evaluation", action="store_true", help="also the evaluation-only models (license unclear)"
+    )
     args = parser.parse_args()
     os.makedirs(MODELS, exist_ok=True)
     ok = True
-    for name, (url, sha256, size, license_) in PINNED.items():
+    wanted = dict(PINNED)
+    if args.evaluation:
+        wanted.update(EVALUATION)
+    for name, (url, sha256, size, license_) in wanted.items():
         path = os.path.join(MODELS, name)
         if os.path.exists(path):
             actual = sha256_of(path)

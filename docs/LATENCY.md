@@ -662,6 +662,196 @@ benefit depends on the STT final arriving fast, the waste ratio on conversationa
 measured yet, and the sample is six stops). Recommended settings: `fall_delay` 64 ms with the
 default 100 ms `min_silence`.
 
+## Noise suppression of the caller's audio (measured 2026-10-30, Windows)
+
+`[audio] noise_suppression` (`docs/CONFIG.md`) filters the caller's audio before the VAD and the
+turn detector hear it. Method: `brisvox-bench denoise cpu|quality|transcribe`
+(`crates/brisvox-bench/src/denoise_*.rs`); candidates and licenses: `docs/providers/noise-suppression.md`.
+Machine: Ryzen 9950X, 32 logical cores, release build, Windows (trends, not Linux numbers).
+
+**Cost per call** (`bench/results/denoise-cpu.md`; one thread, 120 s of the speech fixtures in 20 ms
+frames, steady state; three runs, the range is the run-to-run spread on a machine that was not
+otherwise idle):
+
+| backend | call rate | delay added | one 20 ms frame, p50 / p99 | CPU, % of one core | 100 calls |
+|---|---|---|---|---|---|
+| RNNoise (`nnnoiseless`, shipped) | 16 kHz | 20 ms | 0.06-0.07 ms / 0.18-0.38 ms | 0.33-0.38 | ~0.35 core |
+| RNNoise | 8 kHz | 25 ms | 0.07-0.08 ms / 0.16-0.41 ms | 0.39-0.47 | ~0.45 core |
+| FastEnhancer-T (evaluation only) | 16 kHz | 16 ms | 0.17-0.28 ms / 0.7-1.2 ms | 1.1-1.6 | ~1.3 cores |
+| FastEnhancer-T | 8 kHz | 32 ms | 0.18-0.31 ms / 0.8-1.1 ms | 1.15-1.8 | ~1.6 cores |
+
+Both are above the ~50 microsecond bar for inline work (docs/ARCHITECTURE.md), so they run on the inference pool, inside the VAD
+worker's batch job (`docs/PIPELINE.md`, section 12), not on a tokio worker. The delay is what the
+filter adds to the audio the VAD hears: a speech start or stop is noticed that much later (the events
+are dated to the audio itself, so `UserStartedSpeaking` carries the true onset); it is not added to the
+STT audio unless `denoise_stt` is set (then also to what the provider hears). 8 kHz calls pay two
+resampler passes more (the model works at 48 kHz for RNNoise, 16 kHz for FastEnhancer). Building the RNNoise
+state for a call takes 0.2 ms (the first batch job of a call pays it on the pool); the engine always filters
+at the 16 kHz model rate, an 8 kHz call is resampled up by `AudioIn` first (the 8 kHz rows are the
+backend alone on 8 kHz audio, which the quality runs reach through the same resampling).
+
+**Does it help?** `bench/results/denoise-quality.md` (the nine committed recordings, `fixtures/noise`) and
+`bench/results/denoise-quality-musan-background.md` (34 of the recordings the corpus lists as background
+noises, 102 mixes per cell: three fixtures, six utterances, 20/10/5/0 dB, wideband and 8 kHz mu-law).
+The VAD is the engine's Silero stream with the production parameters; the backend sits in front of it as
+in the engine. Sums over the four SNRs of the 34-recording set (a *false start* is a speech start in a
+pause: while the bot talks it is a false barge-in; a *fragment* is a second start inside one utterance;
+a *flip* is a Smart Turn verdict that differs from the verdict on the clean audio of the same path;
+816 utterances per backend and path):
+
+| path | backend | false starts | fragments | missed | verdict flips | noise alone, starts/min (mean of the SNRs) |
+|---|---|---|---|---|---|---|
+| wideband | none | 9 | 15 | 0 | 18 | 0.15 |
+| wideband | RNNoise | 21 | 89 | 0 | 24 | 0.4 |
+| wideband | FastEnhancer-T | 18 | 57 | 1 | 19 | 0.3 |
+| telephone | none | 19 | 81 | 2 | 7 | 0.13 |
+| telephone | RNNoise | 11 | 122 | 0 | 27 | 0.3 |
+| telephone | FastEnhancer-T | 1 | 436 | 7 | 65 | 0.1 |
+
+Reading (honest):
+- **On clean audio the filters cost nothing measurable** (no flips, no missed utterances, onsets within
+  a few tens of ms of the unfiltered stream); a clean telephone call even starts a fragment less.
+- **No help for false starts on wideband audio.** Silero already ignores most of these recordings; with a
+  filter in front it found *more* false starts and about 4 to 6 times as many fragments (the filter
+  removes parts of the speech at low SNR and the detector loses and finds it again).
+- **Telephone audio**: fewer false starts with a filter (RNNoise 19 to 11, FastEnhancer-T 19 to 1), but
+  the price is high: fragments and Smart Turn flips go up (RNNoise 7 to 27 flips, FastEnhancer-T 7 to 65,
+  and 7 missed utterances at 0 dB), and onsets shift later by 40 to 120 ms at 0 dB. Both models were trained
+  on wideband speech; the empty 4 to 8 kHz band and mu-law quantisation noise of a phone call are outside
+  that.
+- The numbers are small counts (single digits per cell for false starts); the pattern, not any one cell,
+  is the result. Noise levels were set against the speech RMS of the fixtures, and the fixtures have a
+  clean sentence-by-sentence structure, not a real conversation.
+- **Decision**: the filters ship **off by default** and the provider hears the original by default
+  (`denoise_stt = false`); the documentation says to test on one's own calls. The measurements do not
+  support turning RNNoise on for the recordings we have. The word error rate with the local sherpa-onnx
+  recognizer (`brisvox-bench denoise transcribe`, `bench/results/denoise-wer-sherpa-en.md` for RNNoise and
+  FastEnhancer, `denoise-wer-sherpa-en-hush.md` for Hush) is the other half, and it does not change that:
+  on wideband audio clean speech is equal (17.2 %) and noisy speech is worse with every filter (10 dB:
+  25.3 % without, 28.7 % RNNoise, 26.1 % FastEnhancer); RNNoise is worse on phone audio too except at 20 dB
+  (74.3 % to 70.1 %); only FastEnhancer, an evaluation backend that is not shipped, lowers the phone error
+  rate (10 dB: 91.2 % to 55.2 %); and Hush forced on 8 kHz phone audio destroys it (31 % to 97 % on clean audio;
+  see the Hush measurements below).
+
+### Noise handling beyond a denoiser: background speech, echo, and the guards (measured 2026-10-31, Windows)
+
+The run above counted speech starts of the VAD. The engine decides later: a start while the bot talks is
+only a candidate, and the guards (`min_speech`, the echo window, `min_words`, the backchannel lists;
+`docs/ARCHITECTURE.md`, "Interruption policy") decide whether the bot is cut off. And it only mixed
+recorded noise, while the problem people report is a second *voice* (a television, a person nearby) and
+the bot's own voice leaking back. `brisvox-bench denoise calls` (`crates/brisvox-bench/src/denoise_calls.rs`)
+closes both gaps:
+
+- every call is a real timeline: the caller's first utterance (the first turn), the bot's answer, and then
+  the disturbance. A *quiet call* has a silent caller (every interruption is a false barge-in); a *barge-in
+  call* has the caller speak over the bot (counted: never allowed through, and the time to interrupt).
+- the disturbances: another speaker (eight LibriSpeech clips, CC BY 4.0, `fixtures/interferers`) 5, 10, 15
+  and 20 dB below the caller; the bot's own voice coming back at 15 and 25 dB below the caller; the nine
+  MUSAN noise recordings at 10, 5 and 0 dB. Wideband and through 8 kHz mu-law. 246 calls per configuration.
+- the decision is the real `TurnMachine` with the real `InterruptionPolicy` (the agent file's
+  `recommended` guards) on the events of the real Silero stream with the configuration's front end in front
+  of it. What stands in for the recognizer is an **oracle**: the words of every source within 15 dB of the
+  caller appear in interims 350 ms after the VAD start and then every 250 ms, with a 300 ms lag; noise has no
+  words. A real recognizer hears less (distant voices) and more (noise as words); read the words-dependent
+  rows (`min_words`) as an upper bound of what words can do.
+
+Results, `bench/results/noise-handling-calls.md` (wideband, 246 calls: 75 quiet: 32 speech, 16 echo, 27
+noise; 48 barge-in; the telephone table is in the file):
+
+| front end | quiet calls interrupted: background speech / echo / noise | VAD starts in quiet calls (before the guards) | real barge-ins missed | median time to interrupt | cost |
+|---|---|---|---|---|---|
+| shipped defaults | 32/32 / 16/16 / 1/27 | 49/75 | 0/48 | 392 ms | - |
+| `min_words = 1` | 24/32 / 8/16 / 0/27 | 49/75 | 0/48 | 680 ms | +290 ms to interrupt (waits for the first interim) |
+| `min_words = 1` + `echo_text_match` | 24/32 / **0/16** / 0/27 | 49/75 | 0/48 | 690 ms | the same +290 ms |
+| `echo_text_match` alone | 32/32 / 16/16 / 1/27 | 49/75 | 0/48 | 392 ms | no effect without `min_words` |
+| `[vad] level_gate_db = 10` | 26/32 / 8/16 / 1/27 | 37/75 | 0/48 | 378 ms | none measured |
+| `[vad] level_gate_db = 15` | 32/32 / 9/16 / 1/27 | 43/75 | 0/48 | 378 ms | none measured |
+| Hush (`noise_suppression = "hush"`) | 27/32 / 6/16 / 2/27 | 36/75 | 0/48 | 380 ms | 1.0 % of a core, 10 ms delay |
+| Hush + `min_words = 1` + `echo_text_match` | 23/32 / **0/16** / **0/27** | 36/75 | 0/48 | 700 ms | both |
+| RNNoise | 32/32 / 16/16 / 6/27 | 53/75 | 0/48 | 378 ms | 0.3 % of a core |
+| noise-adapted guards (not shipped) | 32/32 / 16/16 / 0/27 | 49/75 | 0/48 | 690 ms | +300 ms on every call with noise |
+| VAD threshold 0.6 / 0.7 / `min_silence` 200 / 300 ms | 32/32 / 16/16 / 0-1/27 | 48-49/75 | 0/48 | 392 / 392 / 492 / 592 ms | later stops, fewer fragments (2 to 0) |
+
+By level (`bench/results/noise-handling-calls.md`, "By level"): background speech 5 and 10 dB below the caller
+interrupts the bot in every configuration, 8 calls out of 8 (a voice that loud is, to the VAD and to the
+recognizer, a second caller: telling them apart needs to know who the caller is). At 15 dB below, only Hush
+changes anything (7/8); at 20 dB below, `min_words = 1` (the recognizer does not hear it), `level_gate_db = 10`
+(2/8) and Hush (4/8) do. Echo is the clear win: with `min_words = 1` the echo of the bot at 15 dB below the
+caller is the one case where the words are the bot's own, and the text match removes all of it (8/8 to 0/8) without
+touching a real barge-in. Noise alone is not a problem after the guards in any configuration (0 to 1 call of 27;
+49 of the 75 quiet calls still had a VAD start, so the false starts counted earlier were pre-guard).
+
+Reading:
+- **What the guards already do**: noise never interrupts the bot (1/27 at most), a start without words that
+  lasts under 300 ms never does either. What gets through today is a voice, the bot's echo, and a start that
+  lasts 300 ms with nothing else to look at (`min_words = 0`).
+- **What each option buys**: `min_words = 1` stops everything the recognizer does not hear (quiet voices, the
+  echo at 25 dB below the caller) at the price of waiting for the first interim; `echo_text_match` (needs
+  `min_words >= 1`) removes the bot's own voice for free, with one trade-off: a caller who repeats the bot's
+  own words back to it while it speaks is held like the echo until other words appear (the texts are the
+  same), and short commands ("stop", "wait") are exempt so that they always get through; Hush lowers the VAD starts by a quarter and gives
+  the borderline 15 to 20 dB voices a chance of being dropped without any latency, at 1 % of a core;
+  `level_gate_db` does the same for quiet voices for nothing, but the gain is small and it only
+  acts after the caller has spoken (0.5 s of speech); RNNoise and the VAD sweeps do not help the false
+  barge-in (RNNoise adds noise starts).
+- **What none of them does**: separate a second voice that is within 10 dB of the caller. That is the job
+  of a speaker check on the barge-in candidate (not built; the hook is `TurnMachine::set_echo`, see
+  `docs/ARCHITECTURE.md`).
+- **Telephone (8 kHz mu-law)**: the same ordering. Hush lowers background speech 32/32 to 25/32 and echo 16/16
+  to 4/16, but adds fragments (5 against 2 in the barge-in calls) and no Smart Turn flips beyond the 7 of 48 the
+  telephone path already has; on the noise run (`bench/results/denoise-quality-hush.md`) it fragments more at
+  20 and 10 dB and flips more verdicts at 5 and 0 dB (3 and 7 of 54 against 0).
+- **Hush against plain noise** (VAD level, 34 recordings, 102 mixes per cell,
+  `bench/results/denoise-quality-hush-musan-background.md`): it does not lower the false starts (wideband, 4
+  SNRs: 18 against 9 without) and the noise alone starts the VAD more often (1.6 a minute at 0 dB, against
+  0.2); on the phone path the fragments rise (44 against 5 at 20 dB) and the Smart Turn flips at 0 dB are 16 of 204
+  against 3. The guards absorb the noise starts (2 of 27 quiet calls interrupted against 1), so the filter is
+  worth enabling for background voices and echo, not for noise.
+- **Clean speech must survive: Hush is not safe** (`brisvox-bench denoise safety`,
+  `bench/results/denoise-safety.md`, `denoise-safety-forced.md`). The first telephone word error rate run with
+  the local recognizer showed Hush turning clean phone audio into noise for it (31 % without, 97 % with). Root
+  cause: not our 8 kHz path (rate, resampler, frame size, gain, delay): the crate's own `Hush::enhance`, its
+  `HushStream` and our wrapper give the same samples (`examples/hush_probe.rs`, identical to the decimal).
+  The model's gain depends on the input level and band: median gain on the clean fixture, wideband, by input
+  level 6 dB above the fixtures / as recorded / 6 / 12 / 20 dB below: -11.5 / -8.4 / -3.9 / -0.6 / -26 dB; on
+  the telephone band: -16 / -11.8 / -8.9 / -4.8 / -27.5 dB. Speech at the recorded level is pushed down
+  8 dB (wideband) to 12 dB (phone band) with a 0.90 correlation to the input; speech about 20 dB below it is
+  removed (VAD recall 0.46 against 0.99, an utterance missed). Filling the empty band above 4 kHz with noise
+  does not change it. RNNoise leaves every level on both paths alone (gain 0.0 dB, recall equal). So: the engine
+  runs Hush only on calls delivering 16 kHz or more (`DenoiseSetup::with_min_call_rate`; the agent file
+  refuses `call_sample_rate` below 16000 with Hush), says so once in the log and in the counters, and the
+  `denoise-hush` feature is out of the server's default features; wideband quiet callers are still at risk,
+  hence "experimental". A level-matched input (a slow gain bringing the caller's speech to about -35 dBFS
+  before the model and undoing it after) would probably cure the level dependence; it is not built and has
+  not been tried with a recognizer.
+- The safety check (`denoise safety`, 3 levels x 2 paths x every backend, clean fixtures) fails a backend that
+  loses more than 10 dB of speech level, more than 5 points of VAD recall or an utterance against no filter,
+  and exits non-zero; it is the run to repeat for any new backend, crate version or change to the audio
+  path.
+- Telephone rows of the calls table after the refusal (`bench/results/noise-handling-calls.md`): "hush" is now
+  the baseline (32/32, 16/16, 1/27 interrupted, 49/75 VAD starts, 7/48 Smart Turn flips); the row "hush,
+  forced on 8 kHz audio" has the old numbers (25/32, 4/16, 2/27, 36/75, 7/48). The harness measures the VAD and
+  the barge-in decision, which Hush on phone audio did not break; what it broke is what the recognizer hears,
+  so these rows cannot show the damage: only the word error rate and the safety check do.
+- **Blend**: `Blended` (any denoiser, dry/wet) mixes the input back in. At 25 % dry Hush loses all of its effect
+  on the second voice (32/32, 15/16) and RNNoise stays worse than nothing: the blend is in the library for
+  tuning against a recognizer, not in the agent file.
+- **CPU** (`bench/results/denoise-cpu-hush.md`): Hush 0.20 ms per 20 ms frame, 1.0 % of a core at 16 kHz,
+  1.1 % through an 8 kHz call's resampling, 10 ms (16 kHz) or 26 ms (8 kHz) of delay, 8 ms once per process to
+  load the weights (2.4 MB in the binary); the level gate costs a few hundred nanoseconds per 32 ms window
+  and no allocation; the echo text match, per interim only (not per audio frame), builds a set of the words of the last 400
+  characters the bot sent and looks the interim's words up in it: a few microseconds and one small
+  allocation on the turn driver's task.
+
+What the oracle cannot tell: whether a real recognizer transcribes a distant television (the 15 dB line is
+an assumption). What the quiet-caller set (`denoise safety`, above) and the word error rate runs
+(`bench/results/denoise-wer-sherpa-en-hush.md`, sherpa-onnx, English) showed for Hush: forced on phone audio
+the word error rate is 31 % without and 97 % with on clean audio (74 % against 97 % at 20 dB SNR), on wideband
+audio equal on clean audio (17.2 %) and slightly worse with noise (10 dB: 25.3 % against 28.7 %; 0 dB: 51.7 %
+against 60.2 %); a quiet wideband caller (20 dB below the fixtures) loses 28 dB of speech level and more than
+half of the VAD's speech time. Not measured: a recognizer other than the local one, languages other than
+English, real calls. That is why Hush stays experimental and `denoise_stt` is off.
+
 ## Voice-to-voice benchmark over the websocket
 `brisvox-bench v2v` (code: `brisvox_bench::v2v`; options, JSON format and definitions in
 `bench/results/README.md`) measures the V2V of the definitions above from the outside: a client

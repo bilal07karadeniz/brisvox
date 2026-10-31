@@ -27,8 +27,8 @@ use brisvox_core::{
 };
 use brisvox_engine::{
     ClearHook, EngineConfig, EngineEvent, EngineEvents, EventStream, InterruptionConfig, Offload,
-    TextTurn, TextTurnReceiver, TextTurnSender, TurnDriver, TurnDriverConfig, TurnDriverStats,
-    TurnProbe, text_turns,
+    PlayoutBook, RoundKey, TextTurn, TextTurnReceiver, TextTurnSender, TurnDriver,
+    TurnDriverConfig, TurnDriverStats, TurnProbe, text_turns,
 };
 use brisvox_inference::smart_turn::{SmartTurn, TurnModel};
 use brisvox_inference::{InferencePool, PoolConfig};
@@ -233,6 +233,13 @@ fn adaptive(require_final: bool) -> TurnPolicy {
     }
 }
 
+/// How a rig's driver judges barge-ins beyond its config.
+#[derive(Default)]
+struct Judging {
+    policy: Option<InterruptionPolicy>,
+    book: Option<Arc<PlayoutBook>>,
+}
+
 impl Rig {
     async fn new(config: TurnDriverConfig, model: Option<Arc<dyn TurnModel>>) -> Self {
         Self::with(config, model, None).await
@@ -248,7 +255,21 @@ impl Rig {
 
     /// A rig whose driver judges barge-ins with `policy` (`TurnDriver::with_interruption`).
     async fn with_policy(config: TurnDriverConfig, policy: InterruptionPolicy) -> Self {
-        Self::build_with(config, None, None, None, None, Some(policy), None).await
+        let judging = Judging {
+            policy: Some(policy),
+            book: None,
+        };
+        Self::build_with(config, None, None, None, None, judging, None).await
+    }
+
+    /// A rig whose driver holds barge-ins that repeat the text in `book`
+    /// (`TurnDriver::with_bot_text`).
+    async fn with_bot_text(config: TurnDriverConfig, book: Arc<PlayoutBook>) -> Self {
+        let judging = Judging {
+            policy: None,
+            book: Some(book),
+        };
+        Self::build_with(config, None, None, None, None, judging, None).await
     }
 
     /// A rig with every optional part: a transport `commands` or a clear `hook`, and an
@@ -260,7 +281,16 @@ impl Rig {
         hook: Option<ClearHook>,
         offload: Option<Offload>,
     ) -> Self {
-        Self::build_with(config, model, commands, hook, offload, None, None).await
+        Self::build_with(
+            config,
+            model,
+            commands,
+            hook,
+            offload,
+            Judging::default(),
+            None,
+        )
+        .await
     }
 
     async fn build_with(
@@ -269,7 +299,7 @@ impl Rig {
         commands: Option<brisvox_transport::CommandSender>,
         hook: Option<ClearHook>,
         offload: Option<Offload>,
-        policy: Option<InterruptionPolicy>,
+        judging: Judging,
         observed: Option<(EngineEvents, TextTurnReceiver)>,
     ) -> Self {
         let clock = SimClock::new();
@@ -285,8 +315,11 @@ impl Rig {
             let offload = offload.unwrap_or_else(|| Offload::Inline(Arc::clone(&shared)));
             driver = driver.with_smart_turn(probability, offload);
         }
-        if let Some(policy) = policy {
+        if let Some(policy) = judging.policy {
             driver = driver.with_interruption(policy);
+        }
+        if let Some(book) = judging.book {
+            driver = driver.with_bot_text(book);
         }
         if let Some(commands) = commands {
             driver = driver.with_commands(commands);
@@ -1111,6 +1144,58 @@ async fn control_run_without_the_second_bot_audio_the_same_vad_interrupts_at_onc
     let rig = Rig::new(config(FIXED, echo_guard_only()), None).await;
     bot_speaking(&rig).await;
     rig.vad_start(3000).await;
+    assert_eq!(rig.count("interrupt:1"), 1, "{:?}", rig.labels());
+}
+
+/// `min_words = 1` with the echo window off, so that only the transcript decides.
+fn words_decide() -> InterruptionConfig {
+    let mut guards = InterruptionConfig::OFF;
+    guards.min_words = 1;
+    guards
+}
+
+/// A book that holds what the bot said in its one utterance.
+fn book_with(said: &str) -> Arc<PlayoutBook> {
+    let book = PlayoutBook::shared(8);
+    let key = RoundKey::new(TurnEpoch::ZERO, 0);
+    book.register_round(key);
+    book.register_utterance(key, 1);
+    assert!(book.push_sent(1, said));
+    book
+}
+
+#[tokio::test(start_paused = true)]
+async fn the_bots_own_words_do_not_interrupt_it_but_a_stop_and_a_repeat_of_one_word_do() {
+    let said = "Please wait a moment while I check. Stop by the desk when you arrive.";
+    // The echo: the same words as the bot's, one interim, no barge-in.
+    let rig = Rig::with_bot_text(config(FIXED, words_decide()), book_with(said)).await;
+    bot_speaking(&rig).await;
+    rig.vad_start(3000).await;
+    rig.at(3300).await;
+    rig.interim("please wait a moment while").await;
+    assert_eq!(rig.count("interrupt"), 0, "{:?}", rig.labels());
+    // The next interim has words of the caller's own: it goes through.
+    rig.at(3600).await;
+    rig.interim("please wait a moment while no that is wrong")
+        .await;
+    assert_eq!(rig.count("interrupt:1"), 1, "{:?}", rig.labels());
+
+    // "stop" and "wait", though the bot said both a moment ago: a real barge-in at once.
+    for command in ["stop", "wait"] {
+        let rig = Rig::with_bot_text(config(FIXED, words_decide()), book_with(said)).await;
+        bot_speaking(&rig).await;
+        rig.vad_start(3000).await;
+        rig.at(3300).await;
+        rig.interim(command).await;
+        assert_eq!(rig.count("interrupt:1"), 1, "{command}: {:?}", rig.labels());
+    }
+
+    // Without the book (the match off) the echo interrupts, the control for the first half.
+    let rig = Rig::new(config(FIXED, words_decide()), None).await;
+    bot_speaking(&rig).await;
+    rig.vad_start(3000).await;
+    rig.at(3300).await;
+    rig.interim("please wait a moment while").await;
     assert_eq!(rig.count("interrupt:1"), 1, "{:?}", rig.labels());
 }
 
@@ -2420,7 +2505,16 @@ async fn observed(config: TurnDriverConfig) -> (Rig, EventStream, TextTurnSender
     let events = EngineEvents::new(64);
     let stream = events.subscribe();
     let (text, input) = text_turns(8);
-    let rig = Rig::build_with(config, None, None, None, None, None, Some((events, input))).await;
+    let rig = Rig::build_with(
+        config,
+        None,
+        None,
+        None,
+        None,
+        Judging::default(),
+        Some((events, input)),
+    )
+    .await;
     (rig, stream, text)
 }
 

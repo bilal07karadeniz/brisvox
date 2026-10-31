@@ -1113,6 +1113,7 @@ fn stats_with(tokens: [u64; 3], audio_ms: u64, chars: u64) -> brisvox_engine::se
         stages: StageCounters {
             audio_in: Default::default(),
             vad: Default::default(),
+            denoise: Default::default(),
             stt: SttStatsSnapshot {
                 audio_ms_sent: audio_ms,
                 ..Default::default()
@@ -1280,6 +1281,38 @@ async fn the_usage_series_are_bounded() {
         Duration::from_secs(1),
     );
     assert_eq!(obs.metrics().llm_tokens("openai", "model-3"), [5, 0, 1]);
+}
+
+/// A call that ran without the noise filter (its audio was below the filter's rate) shows in
+/// `/metrics`, next to the other trouble the engine counts.
+#[tokio::test(start_paused = true)]
+async fn a_call_without_its_noise_filter_is_counted() {
+    let obs = Arc::new(Observability::new());
+    let names = models("gpt-test");
+    obs.metrics().register_usage(&names);
+    let mut stats = stats_with([1, 0, 1], 0, 0);
+    stats.stages.denoise.bypassed_narrowband = true;
+    stats.stages.denoise.build_failures = 2;
+    observe(&obs, &names, &stats, Duration::from_secs(1));
+    observe(
+        &obs,
+        &names,
+        &stats_with([1, 0, 1], 0, 0),
+        Duration::from_secs(1),
+    );
+    let text = obs.render(&manager());
+    let families = parse(&text).unwrap_or_else(|e| panic!("{e}\n{text}"));
+    let events = family(&families, "brisvox_engine_events_total");
+    for (event, want) in [
+        ("denoise_bypassed_narrowband", 1.0),
+        ("denoise_build_failures", 2.0),
+        ("denoise_errors", 0.0),
+    ] {
+        let sample = events
+            .find("brisvox_engine_events_total", &[("event", event)])
+            .unwrap_or_else(|| panic!("no {event}:\n{text}"));
+        assert_eq!(sample.value, want, "{event}");
+    }
 }
 
 /// One `call summary` line at info on `brisvox::server`, with the numbers as fields.

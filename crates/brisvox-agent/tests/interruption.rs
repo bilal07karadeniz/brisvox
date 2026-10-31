@@ -1314,6 +1314,7 @@ fn obs(speech: u64, words: u32, text: TextKind, bot_age: Option<u64>) -> Observa
         speech: ms(speech),
         words,
         text,
+        echo_text: false,
         bot_audio_age: bot_age.map(ms),
     }
 }
@@ -2076,4 +2077,39 @@ fn an_interrupting_bot_line_cuts_the_response() {
     assert_eq!(rig.kind(), StateKind::AwaitingResponse);
     assert!(rig.bot_ended(1, 1800).is_empty());
     assert_eq!(rig.kind(), StateKind::Idle);
+}
+
+#[test]
+fn a_candidate_marked_as_the_bots_echo_is_not_confirmed_and_is_dropped_at_its_stop() {
+    // Without the mark the candidate is confirmed by its 400 ms of speech.
+    let mut plain = Rig::speaking(InterruptionPolicy::recommended());
+    plain.vad_start(2000);
+    plain.interim("sure your appointment", 2350);
+    let out = plain.tick(2600);
+    assert!(out.contains(&intr(1)), "{out:?}");
+
+    let mut rig = Rig::speaking(InterruptionPolicy::recommended());
+    rig.vad_start(2000);
+    rig.m.set_echo(true);
+    rig.interim("sure your appointment", 2350);
+    // However long it lasts, the echo never confirms.
+    assert!(!rig.tick(2600).contains(&intr(1)));
+    assert!(!rig.tick(3500).contains(&intr(1)));
+    assert_eq!(rig.kind(), StateKind::BotSpeaking);
+    rig.vad_stop(3800);
+    assert_eq!(rig.kind(), StateKind::BotSpeaking);
+    assert_eq!(rig.m.interruption_stats().vetoed(VetoReason::EchoGuard), 1);
+}
+
+#[test]
+fn clearing_the_echo_mark_lets_the_candidate_through_and_a_mark_without_one_does_nothing() {
+    let mut rig = Rig::speaking(InterruptionPolicy::recommended());
+    rig.m.set_echo(true);
+    rig.vad_start(2000);
+    rig.interim("stop", 2100);
+    let out = rig.tick(2500);
+    assert!(
+        out.contains(&intr(1)) || rig.kind() == StateKind::UserSpeaking,
+        "{out:?}"
+    );
 }

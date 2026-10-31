@@ -13,6 +13,9 @@
 //! brisvox-bench capacity (--sim | --url URL [--pid PID] --floor-ms MS) [--steps 1,5,10,20] ...
 //! brisvox-bench model-cpu --models DIR [--configs 2:1,1:1,2:0,1:0] [--rounds 30] [--batch 20]
 //!                         [--gap-ms 40] [--silero-batch 2000] [--out FILE]   (feature `models`)
+//! brisvox-bench denoise (cpu | quality --models DIR | calls --set S --models DIR | safety |
+//!                        transcribe --stt-url URL) [--backends none,rnnoise]
+//!                        [--paths wideband,telephone] [--snrs 20,10,5,0] [--out FILE]   (feature `denoise`)
 //! brisvox-bench engine-server [--bind 127.0.0.1:0] [--workers N] [--max-calls N] ...
 //! ```
 //!
@@ -26,6 +29,8 @@
 //! (or the `BRISVOX_BENCH_URL` environment variable) any server.
 
 mod capacity_cli;
+#[cfg(feature = "denoise")]
+mod denoise_cli;
 
 use std::process::ExitCode;
 use std::time::Duration;
@@ -74,7 +79,26 @@ const USAGE: &str = "usage:\n  brisvox-bench sim-load [--sessions 10,100,300,500
                      [--min-gap-ms 4000] [--max-calls 1024] [--workers N] \
                      [--exit-on-stdin-eof] [--models DIR] [--turn-threads N] and the engine target flags of v2v\n  \
                      brisvox-bench model-cpu --models DIR [--configs 2:1,1:1,2:0,1:0] \
-                     [--rounds 30] [--batch 20] [--gap-ms 40] [--silero-batch 2000] [--out FILE]";
+                     [--rounds 30] [--batch 20] [--gap-ms 40] [--silero-batch 2000] [--out FILE]\n  \
+                     brisvox-bench denoise (cpu [--seconds 60] | quality --models DIR | calls --set \
+                     guards|gates|vad|denoisers|all --models DIR [--threads 8] [--levels] \
+                     [--voices-dir DIR] | safety [--force] | transcribe \
+                     --stt-url ws://HOST:PORT [--noise-limit N] [--no-clean] [--dump-dir DIR] \
+                     [--dump-only] [--language en] [--out-jsonl FILE]) [--backends none,rnnoise] \
+                     [--paths wideband,telephone] [--snrs 20,10,5,0] [--fixtures a,b] \
+                     [--noise-dir DIR] [--out FILE]  (needs --features denoise)";
+
+#[cfg(feature = "denoise")]
+fn denoise_cmd(args: impl Iterator<Item = String>, command: &str) -> Result<bool, BenchError> {
+    denoise_cli::denoise_cmd(args, command)
+}
+
+#[cfg(not(feature = "denoise"))]
+fn denoise_cmd(_: impl Iterator<Item = String>, _: &str) -> Result<bool, BenchError> {
+    Err(BenchError::Config(
+        "denoise needs a build with --features denoise".into(),
+    ))
+}
 
 fn resample_cmd(mut args: impl Iterator<Item = String>, command: &str) -> Result<bool, BenchError> {
     let (mut seconds, mut out) = (5usize, None);
@@ -727,6 +751,7 @@ fn run() -> Result<bool, BenchError> {
         Some("infer-load") => infer_load_cmd(args, &command),
         Some("resample") => resample_cmd(args, &command),
         Some("model-cpu") => model_cpu_cmd(args, &command),
+        Some("denoise") => denoise_cmd(args, &command),
         Some("fixtures") => fixtures_cmd(args, &command),
         Some("v2v") => v2v_cmd(args, &command),
         Some("speculation") => speculation_cmd(args, &command),

@@ -40,6 +40,15 @@ webrtc = ["brisvox-transport/webrtc"]
 # The calls' VAD: the bundled Silero model on tract, pure Rust. Without it calls run
 # without a VAD (turns end on the turn policy's deadlines and the STT's finals).
 silero-tract = ["brisvox-inference/silero-tract"]
+# Noise suppression of the caller's audio (`[audio] noise_suppression = "rnnoise"`, off per agent
+# by default): RNNoise through the pure-Rust `nnnoiseless` crate. Without it that setting is a
+# start error.
+denoise-rnnoise = ["brisvox-inference/denoise-rnnoise"]
+# Hush (Apache-2.0 code and weights, pure Rust, 2.4 MB of weights in the binary) as the noise
+# suppression of `[audio] noise_suppression = "hush"`. Experimental and off by default in the build too:
+# Hush is level-sensitive (docs/LATENCY.md, "Clean speech must survive"). Without the feature that
+# setting is a start error.
+denoise-hush = ["brisvox-inference/denoise-hush"]
 # Smart Turn v3.2 on ONNX Runtime for adaptive turns: the model file
 # (`BRISVOX_SMART_TURN_MODEL`, default `models/smart-turn-v3.2-cpu.onnx`, fetched by
 # scripts/models/fetch_models.py) is loaded at startup. Off by default (the ORT binaries are

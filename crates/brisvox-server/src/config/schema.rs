@@ -29,6 +29,9 @@ pub struct AgentFile {
     /// Which barge-ins interrupt the bot.
     #[serde(default)]
     pub interruption: InterruptionSection,
+    /// The voice activity detector's level gate.
+    #[serde(default)]
+    pub vad: VadSection,
     /// Speculative LLM generation at a candidate end of turn.
     #[serde(default)]
     pub speculation: SpeculationSection,
@@ -243,6 +246,25 @@ pub struct InterruptionSection {
     pub backchannel_max_speech_ms: Option<Millis<0, 10_000>>,
     /// The VAD's minimum silence before it reports the stop.
     pub vad_hangover_ms: Option<Millis<0, 2_000>>,
+    /// Drop a barge-in whose words are the bot's own voice coming back: an interim made of words
+    /// the bot has just said holds the candidate. Default `false`. Needs `min_words` of at least 1
+    /// (without words a candidate is confirmed by its duration before any transcript exists).
+    #[cfg_attr(feature = "schema", schemars(with = "Option<bool>"))]
+    pub echo_text_match: Option<Spanned<bool>>,
+}
+
+/// `[vad]`.
+#[derive(Debug, Clone, Default, PartialEq, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+#[serde(deny_unknown_fields)]
+pub struct VadSection {
+    /// Speech may only start in audio at most this many dB below the caller's own level (the 85th
+    /// percentile of the last 3 s of what the detector called speech). A second voice quieter than
+    /// the caller (a television, a person across the room) cannot start speech, so it cannot start
+    /// a barge-in; the caller's soft syllables inside an utterance are kept. Absent: off. 10 to 15
+    /// is the useful range (`docs/LATENCY.md`, "Noise handling"); the gate waits for 0.5 s of the
+    /// caller's speech before it acts.
+    pub level_gate_db: Option<Count<5, 30>>,
 }
 
 /// `[speculation]`.
@@ -281,6 +303,28 @@ pub struct EarlyAnalysisSection {
     pub max_per_turn: Option<Count<1, 32>>,
 }
 
+/// `audio.noise_suppression`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+#[serde(rename_all = "lowercase")]
+pub enum NoiseSuppression {
+    /// No noise suppression (the default).
+    Off,
+    /// RNNoise (BSD-3-Clause, pure Rust): about 0.3 percent of one core per call. Needs a server
+    /// built with the `denoise-rnnoise` feature. Leaves the level of speech alone, but measured
+    /// no help for the voice activity detector (more speech fragments, shifted turn verdicts) and
+    /// no help against background speech.
+    Rnnoise,
+    /// Hush (Apache-2.0 code and weights, pure Rust), experimental: about 1 percent of one core per
+    /// call and 10 ms of delay. Needs a server built with the `denoise-hush` feature and a call
+    /// rate of 16000 or more (refused at `call_sample_rate` below that; a call that turns out to be
+    /// narrowband runs without it, logged and counted). Takes a second voice 15 to 20 dB under the
+    /// caller and the bot's echo out of the barge-ins in many calls, but it is level dependent: it
+    /// attenuates the caller by 8 dB at normal level and removes the speech of a quiet caller
+    /// (-20 dB input) almost entirely.
+    Hush,
+}
+
 /// `[audio]`.
 #[derive(Debug, Clone, Default, PartialEq, Deserialize)]
 #[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
@@ -294,6 +338,23 @@ pub struct AudioSection {
     /// transports report 8000 themselves). Default 16000.
     #[cfg_attr(feature = "schema", schemars(with = "Option<Rate>"))]
     pub call_sample_rate: Option<Spanned<Rate>>,
+    /// Noise suppression of the caller's audio: `off` (default), `rnnoise` or `hush`
+    /// (experimental). The enhanced audio goes to the voice activity detector and the turn
+    /// detector; the speech-to-text provider hears the original unless `denoise_stt`. Costs CPU
+    /// on every call. Measured with real noise recordings (see `docs/LATENCY.md`): steady noise
+    /// never started a barge-in through the engine's guards even with `off`, so a denoiser
+    /// mostly helps against a second voice 15 to 20 dB under the caller and the bot's own echo
+    /// (`hush`), and hurts when the caller is quiet (`hush`) or for the voice activity detector
+    /// (`rnnoise`). A competing voice within 10 dB of the caller's interrupts with every setting.
+    /// Test it on your own calls before turning it on.
+    #[cfg_attr(feature = "schema", schemars(with = "Option<NoiseSuppression>"))]
+    pub noise_suppression: Option<Spanned<NoiseSuppression>>,
+    /// Also send the enhanced audio to the speech-to-text provider. Default `false`: denoised
+    /// audio raised the word error rate of the recognizers measured (clean wideband speech
+    /// unchanged, noisy speech slightly worse with `hush`, telephone audio destroyed), so only
+    /// turn it on after measuring on your own calls. Needs `noise_suppression`.
+    #[cfg_attr(feature = "schema", schemars(with = "Option<bool>"))]
+    pub denoise_stt: Option<Spanned<bool>>,
 }
 
 /// `[filler]`: when a slow tool round is announced with a filler phrase. The phrase

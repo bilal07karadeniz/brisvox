@@ -102,6 +102,9 @@ use tokio_util::sync::CancellationToken;
 use crate::agent_input::{EditReceiver, SayReceiver};
 use crate::audio_in::{AudioIn, AudioInStats, AudioInStatsSnapshot, CallerAudioTap};
 use crate::config::EngineConfig;
+use crate::denoise::{
+    DenoiseFeed, DenoiseSetup, DenoiseStats, DenoiseStatsSnapshot, DenoiseWiring,
+};
 use crate::error::{Error, Result};
 use crate::events::{EngineEvents, Observed, Observer, Site};
 use crate::filler_clip::FillerClipStore;
@@ -201,6 +204,7 @@ pub struct SessionBuilder<S: SttProvider, L: LlmProvider, T: TtsProvider> {
     tts: Arc<T>,
     offload: Offload,
     audio_in: AudioIn,
+    denoise: Option<DenoiseSetup>,
     smart_turn: Option<Arc<dyn TurnModel>>,
     /// Where the Smart Turn analyses run when not on `offload` ([`Self::with_smart_turn_offload`]).
     turn_offload: Option<Offload>,
@@ -281,6 +285,7 @@ impl<S: SttProvider, L: LlmProvider, T: TtsProvider> SessionBuilder<S, L, T> {
         config.validate()?;
         Ok(Self {
             audio_in: AudioIn::new(&config),
+            denoise: None,
             offload,
             config,
             clock,
@@ -359,6 +364,16 @@ impl<S: SttProvider, L: LlmProvider, T: TtsProvider> SessionBuilder<S, L, T> {
             .with_warm_up(self.config.timeouts.connect)
             .with_timeline(self.timeline.clone(), self.clock.clone());
         self.audio_in = AudioIn::new(&self.config).with_vad(setup);
+        self
+    }
+
+    /// Suppresses noise in the caller's audio before the VAD and the turn detector hear it (and
+    /// the speech-to-text provider, with [`DenoiseSetup::with_stt`]); see [`crate::denoise`].
+    /// Needs [`Self::with_vad`] (the VAD worker is where the suppressor runs, on the builder's
+    /// offload) and is ignored without one, and in a speech-to-speech call.
+    #[must_use]
+    pub fn with_denoise(mut self, setup: DenoiseSetup) -> Self {
+        self.denoise = Some(setup);
         self
     }
 
@@ -575,6 +590,8 @@ pub struct SessionHandles {
     pub audio_in: AudioInStats,
     /// The VAD worker (includes the model warm-up counters).
     pub vad: VadStats,
+    /// Noise suppression (all zero unless [`SessionBuilder::with_denoise`] was used).
+    pub denoise: DenoiseStats,
     /// The STT stage.
     pub stt: SttStats,
     /// The turn driver (includes the Smart Turn warm-up counters).
@@ -706,6 +723,7 @@ where
         tts,
         offload,
         audio_in,
+        denoise,
         smart_turn,
         turn_offload,
         language,
@@ -753,11 +771,39 @@ where
         Some(tap) => audio_in.with_boxed_tap(tap),
         None => audio_in,
     };
+    // Noise suppression runs in the VAD worker: without a VAD (or in a speech-to-speech call,
+    // whose stage reads the plain frames) there is nowhere to run it.
+    let denoise = denoise.filter(|_| audio_in.has_vad() && s2s.is_none());
+    let denoise_stats = DenoiseStats::default();
+    let turn_feed = denoise.as_ref().filter(|_| smart_turn.is_some()).map(|_| {
+        Arc::new(DenoiseFeed::new(
+            Arc::clone(&denoise_stats.counters),
+            denoise_frame_samples(&config),
+        ))
+    });
+    let stt_feed = denoise.as_ref().filter(|d| d.to_stt()).map(|_| {
+        Arc::new(DenoiseFeed::new(
+            Arc::clone(&denoise_stats.counters),
+            denoise_frame_samples(&config),
+        ))
+    });
+    let audio_in = match &denoise {
+        Some(setup) => audio_in.with_denoise(DenoiseWiring {
+            make: Arc::clone(&setup.make),
+            sinks: turn_feed.iter().chain(stt_feed.iter()).cloned().collect(),
+            counters: Arc::clone(&denoise_stats.counters),
+            min_call_hz: setup.min_call_hz,
+        }),
+        None => audio_in,
+    };
     let audio_stats = audio_in.stats();
     let vad_stats = audio_in.vad_stats();
 
     let mut stt_stage = SttStage::new(stt, SttStageConfig::from_engine(&config), clock.clone())
         .with_timeline(timeline.clone());
+    if let Some(feed) = stt_feed {
+        stt_stage = stt_stage.with_denoised_input(feed, Arc::clone(&denoise_stats.counters));
+    }
     if let Some(tracker) = &tracker {
         stt_stage = stt_stage.with_languages(Arc::clone(tracker));
     }
@@ -776,6 +822,12 @@ where
     }
     if let Some(model) = smart_turn {
         driver = driver.with_smart_turn(model, turn_offload.unwrap_or_else(|| offload.clone()));
+    }
+    if let Some(feed) = turn_feed {
+        driver = driver.with_denoised_feed(feed);
+    }
+    if config.interruption.echo_text_match {
+        driver = driver.with_bot_text(Arc::clone(&book));
     }
     if let Some(probe) = probe.clone() {
         driver = driver.with_probe(probe);
@@ -939,6 +991,7 @@ where
         handles: SessionHandles {
             audio_in: audio_stats,
             vad: vad_stats,
+            denoise: denoise_stats,
             stt: stt_stats,
             driver: driver_stats,
             llm: llm_stats,
@@ -963,6 +1016,15 @@ where
             clock,
         },
     })
+}
+
+/// Samples of one audio frame at the model rate (the size hint of a noise suppression feed).
+fn denoise_frame_samples(config: &EngineConfig) -> usize {
+    usize::try_from(
+        u128::from(config.rates.model.hz()) * config.rates.frame.as_nanos() / 1_000_000_000,
+    )
+    .unwrap_or(320)
+    .max(1)
 }
 
 /// A running call: the started pipeline, the pump that feeds it from the transport, and the
@@ -1008,6 +1070,8 @@ pub struct StageCounters {
     pub audio_in: AudioInStatsSnapshot,
     /// The VAD worker: jobs, pool saturations and timeouts, fail-open, warm-up.
     pub vad: VadStatsSnapshot,
+    /// Noise suppression.
+    pub denoise: DenoiseStatsSnapshot,
     /// The STT stage.
     pub stt: SttStatsSnapshot,
     /// The turn driver: finals-gate timeouts, analyses, clears, warm-up.
@@ -1040,6 +1104,7 @@ impl StageCounters {
         Self {
             audio_in: handles.audio_in.snapshot(),
             vad: handles.vad.snapshot(),
+            denoise: handles.denoise.snapshot(),
             stt: handles.stt.snapshot(),
             driver: handles.driver.snapshot(),
             llm: handles.llm.snapshot(),

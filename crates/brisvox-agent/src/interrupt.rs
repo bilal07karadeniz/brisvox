@@ -349,6 +349,9 @@ pub struct Observation {
     pub words: u32,
     /// What the latest interim looks like.
     pub text: TextKind,
+    /// The driver found the candidate's words to be the bot's own voice coming back
+    /// ([`TurnMachine::set_echo`](crate::turn::TurnMachine::set_echo)).
+    pub echo_text: bool,
     /// How long the bot's audio has been playing (`None`: the bot has not produced audio yet).
     pub bot_audio_age: Option<Duration>,
 }
@@ -559,6 +562,9 @@ impl InterruptionPolicy {
         waive_min_speech: bool,
         hangover: Duration,
     ) -> Assessment {
+        if o.echo_text {
+            return Assessment::Blocked(VetoReason::EchoGuard);
+        }
         if self.backchannel_blocks(o) {
             return Assessment::Blocked(VetoReason::Backchannel);
         }
@@ -594,6 +600,10 @@ impl InterruptionPolicy {
     /// the answer. A returned time is not a promise that the candidate is confirmed then, only
     /// that it must be assessed again.
     pub fn recheck_in(&self, o: &Observation) -> Option<Duration> {
+        if o.echo_text {
+            // Only the VAD stop ends an echo candidate; no time changes the answer.
+            return None;
+        }
         if self.backchannel_blocks(o) {
             // Only the cap (time) or new text can change the answer.
             return if self.backchannel_max_speech.is_zero() {
@@ -625,4 +635,106 @@ impl InterruptionPolicy {
         }
         soonest
     }
+
+    /// The policy for a line whose noise floor is `floor_db` (dBFS, the 10th percentile of the
+    /// levels of the last seconds): on a noisy line `min_speech` grows by `adapt.extra_min_speech`
+    /// and at least `adapt.min_words` words are required, so that noise bursts and background
+    /// voices that the VAD calls speech need more evidence. A quiet line keeps the policy as it is.
+    /// Pure; the caller recomputes it as the floor moves ([`TurnMachine::set_interruption`]).
+    ///
+    /// [`TurnMachine::set_interruption`]: crate::turn::TurnMachine::set_interruption
+    pub fn adapted_to_noise(&self, floor_db: f32, adapt: &NoiseAdapt) -> InterruptionPolicy {
+        if self.is_disabled() || floor_db < adapt.noisy_above_db {
+            return self.clone();
+        }
+        let mut adapted = self.clone();
+        adapted.min_speech = self.min_speech.saturating_add(adapt.extra_min_speech);
+        adapted.min_words = self.min_words.max(adapt.min_words);
+        adapted
+    }
+}
+
+/// How the barge-in guards tighten when the line is noisy ([`InterruptionPolicy::adapted_to_noise`]).
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct NoiseAdapt {
+    /// A noise floor at or above this level (dBFS) counts as a noisy line.
+    pub noisy_above_db: f32,
+    /// Added to `min_speech` on a noisy line.
+    pub extra_min_speech: Duration,
+    /// Words required on a noisy line (at least; a larger `min_words` stays).
+    pub min_words: u32,
+}
+
+impl Default for NoiseAdapt {
+    /// A floor above -45 dBFS (an office or a street behind the caller, 15 to 20 dB under
+    /// the speech) adds 200 ms and asks for one word.
+    fn default() -> Self {
+        Self {
+            noisy_above_db: -45.0,
+            extra_min_speech: Duration::from_millis(200),
+            min_words: 1,
+        }
+    }
+}
+
+/// A barge-in candidate younger than this is held while its words are the bot's own
+/// ([`is_bot_echo`]); an older one needs [`ECHO_MIN_WORDS_OLD`] words.
+pub const ECHO_HOLD: Duration = Duration::from_millis(1_500);
+/// Words an interim of a young candidate needs to be called the bot's echo. One is enough: the
+/// first transcript of an echo (350 ms of the bot's voice) is often a single word, and requiring
+/// two lets that echo confirm the barge-in (measured: 7 of 16 echo calls interrupted against 0).
+/// Short commands are exempt, see [`echoes_bot`].
+pub const ECHO_MIN_WORDS: usize = 1;
+/// Words an interim of a candidate older than [`ECHO_HOLD`] needs to be called the bot's echo.
+pub const ECHO_MIN_WORDS_OLD: usize = 3;
+
+/// Whether `interim`, the latest transcript of a barge-in candidate that began `candidate_age`
+/// ago, is the bot's own voice coming back (see [`echoes_bot`]): at least [`ECHO_MIN_WORDS`]
+/// words for a young candidate, [`ECHO_MIN_WORDS_OLD`] for an older one. The trade-off: a caller
+/// who repeats the bot's words back to it (reading an address back while the bot still speaks) is
+/// held like the echo until the transcript shows other words, because the text of a repeat and of
+/// an echo is the same; the measured echo of the bot's voice was held
+/// completely (`docs/LATENCY.md`, "Noise handling beyond a denoiser"). Short commands ("stop",
+/// "wait") are never held, whatever the bot said.
+pub fn is_bot_echo(interim: &str, bot_recent: &str, candidate_age: Duration) -> bool {
+    let min = if candidate_age < ECHO_HOLD {
+        ECHO_MIN_WORDS
+    } else {
+        ECHO_MIN_WORDS_OLD
+    };
+    echoes_bot(interim, bot_recent, min)
+}
+
+/// Words that mean "stop talking" when short utterances say them. A transcript of at most two
+/// words with one of them is never taken for the bot's echo, even if the bot just said it
+/// ("please wait", "stop"): missing a real "stop" costs more than a false interruption.
+const COMMAND_WORDS: &[&str] = &[
+    "stop", "wait", "hold", "pause", "cancel", "enough", "quiet", "sorry", "excuse", "no", "hang",
+    "listen",
+];
+
+/// Whether an interim transcript is the bot's own voice coming back: at least `min_words` words
+/// (and two for a short command: see below), and at least three quarters of them are among the
+/// words the bot has just said (`bot_recent`, the text played in the last few seconds). Words are
+/// compared as lower-cased alphanumeric runs. An interim of at most two words that contains a
+/// command word ("stop", "wait", "no", ...) is not an echo. The caller reports the result with
+/// `TurnMachine::set_echo` before the interim reaches the machine, which blocks the barge-in
+/// while it holds (`VetoReason::EchoGuard`) and clears it with the next interim that does not.
+pub fn echoes_bot(interim: &str, bot_recent: &str, min_words: usize) -> bool {
+    fn words(text: &str) -> impl Iterator<Item = String> + '_ {
+        text.split(|c: char| !c.is_alphanumeric())
+            .filter(|w| !w.is_empty())
+            .map(|w| w.chars().flat_map(char::to_lowercase).collect::<String>())
+    }
+    let said: std::collections::HashSet<String> = words(bot_recent).collect();
+    let (mut total, mut shared, mut command) = (0usize, 0usize, false);
+    for word in words(interim) {
+        total += 1;
+        shared += usize::from(said.contains(&word));
+        command |= COMMAND_WORDS.contains(&word.as_str());
+    }
+    if total <= 2 && command {
+        return false;
+    }
+    total >= min_words.max(1) && shared * 4 >= total * 3
 }
