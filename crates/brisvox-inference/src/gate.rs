@@ -12,7 +12,7 @@
 //!   kept for a few seconds; their `percentile` (85th by default) is the caller's level. A window more
 //!   than `offset_db` below it (-15 dB by default) is not speech. With less than `min_windows` of
 //!   speech heard the gate stays open (fail open: the first words of a call are never gated).
-//! - **noise floor** ([`NoiseFloor`]): the 10th percentile of the levels of the last few seconds of
+//! - **noise floor** ([`NoiseFloorHandle`]): the 10th percentile of the levels of the last few seconds of
 //!   windows, published through a shared handle so that the turn driver can raise its guards when the
 //!   line is noisy.
 

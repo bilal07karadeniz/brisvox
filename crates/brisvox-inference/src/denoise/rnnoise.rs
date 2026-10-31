@@ -2,7 +2,7 @@
 //!
 //! RNNoise works on 10 ms frames (480 samples) of 48 kHz, 16-bit-scaled `f32` audio, so a call
 //! at 16 kHz or 8 kHz goes up to 48 kHz, through the model and back down
-//! ([`RateConverter`](super::rate::RateConverter)). The model is a small GRU stack (about 60 K
+//! ([`super::rate::RateConverter`]). The model is a small GRU stack (about 60 K
 //! parameters), 40 to 100 microseconds per 10 ms frame on a modern core.
 
 use std::time::Duration;
