@@ -1,6 +1,6 @@
 {
   "name": "@brisvox/agent",
-  "version": "0.1.2",
+  "version": "0.1.3",
   "description": "TypeScript SDK for the brisvox agent protocol: the application logic of a real-time voice call (tools, events, commands) in async TypeScript.",
   "keywords": [
     "voice",

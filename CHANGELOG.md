@@ -8,6 +8,8 @@ named plain `brisvox` on crates.io, PyPI and npm, are released together under on
 
 ## [Unreleased]
 
+## [0.1.3] - 2026-10-31
+
 ### Added
 
 - **Noise suppression of the caller's audio**, opt in per agent: `[audio] noise_suppression = "rnnoise"`
@@ -259,7 +261,8 @@ First public release.
   and Windows (x86_64) with checksums, and a multi-architecture image at
   `ghcr.io/bilal07karadeniz/brisvox-server`.
 
-[Unreleased]: https://github.com/bilal07karadeniz/brisvox/compare/v0.1.2...HEAD
+[Unreleased]: https://github.com/bilal07karadeniz/brisvox/compare/v0.1.3...HEAD
+[0.1.3]: https://github.com/bilal07karadeniz/brisvox/compare/v0.1.2...v0.1.3
 [0.1.2]: https://github.com/bilal07karadeniz/brisvox/compare/v0.1.1...v0.1.2
 [0.1.1]: https://github.com/bilal07karadeniz/brisvox/compare/v0.1.0...v0.1.1
 [0.1.0]: https://github.com/bilal07karadeniz/brisvox/releases/tag/v0.1.0
