@@ -1,0 +1,21 @@
+{
+  "name": "libri_5338",
+  "sample_rate": 16000,
+  "samples": 215040,
+  "segments": [
+    {
+      "start": 8000,
+      "end": 86880,
+      "lang": "en",
+      "text": "THEY SEEM VERY IGNORANT POOR THINGS SAID ANOTHER IN REPLY",
+      "source": "librispeech:dev-clean:5338-284437-0006"
+    },
+    {
+      "start": 110880,
+      "end": 191040,
+      "lang": "en",
+      "text": "CORALIE DO YOU CONSIDER MAJESTY A PROPER WORD TO USE WHEN ADDRESSING A QUEEN",
+      "source": "librispeech:dev-clean:5338-284437-0017"
+    }
+  ]
+}

@@ -1,0 +1,201 @@
+[
+  {
+    "file": "librispeech-5683-0003.wav",
+    "speaker": "5683",
+    "sex": "F",
+    "seconds": 3.51,
+    "text": "THEY ARE COUSINS YOU KNOW WE ARE ALL COUSINS",
+    "kind": "dry",
+    "source": "LibriSpeech test-clean 5683-32865-0003",
+    "source_flac_sha256": "9a5e8328c6476a5eb70d3bd2f63340584a5320451073de39b641d5551b56512c"
+  },
+  {
+    "file": "librispeech-4992-0003.wav",
+    "speaker": "4992",
+    "sex": "F",
+    "seconds": 4.64,
+    "text": "SO THERE IS TO ME ADDED SANDFORD WITH A SARCASTIC SNEER",
+    "kind": "dry",
+    "source": "LibriSpeech test-clean 4992-23283-0003",
+    "source_flac_sha256": "c047e460bc13041cbae6f71ccc8c6dc3839dded56059d3af68716bd26d5d4227"
+  },
+  {
+    "file": "librispeech-6829-0003.wav",
+    "speaker": "6829",
+    "sex": "F",
+    "seconds": 4.21,
+    "text": "IT WAS A DELIBERATE THEFT FROM HIS EMPLOYERS TO PROTECT A GIRL HE LOVED",
+    "kind": "dry",
+    "source": "LibriSpeech test-clean 6829-68769-0003",
+    "source_flac_sha256": "2cabcf1f4673305e08cdfd5614b8790ca1305a05f8bb6e63bd0946a796d60c7c"
+  },
+  {
+    "file": "librispeech-8463-0000.wav",
+    "speaker": "8463",
+    "sex": "F",
+    "seconds": 4.73,
+    "text": "THIS WAS WHAT DID THE MISCHIEF SO FAR AS THE RUNNING AWAY WAS CONCERNED",
+    "kind": "dry",
+    "source": "LibriSpeech test-clean 8463-287645-0000",
+    "source_flac_sha256": "055fc9fb67be0272bde9aaf2019bb6a306c652a823ca62b0cb61cdf0a27c05c4"
+  },
+  {
+    "file": "librispeech-908-0009.wav",
+    "speaker": "908",
+    "sex": "M",
+    "seconds": 4.06,
+    "text": "WHY SHOULD THE MISTRESS OF THE VALES OF HAR UTTER A SIGH",
+    "kind": "dry",
+    "source": "LibriSpeech test-clean 908-157963-0009",
+    "source_flac_sha256": "0a405e23d60bda5ae56af77181ef458768c33e089bf40a3da611d0ff54e265c0"
+  },
+  {
+    "file": "librispeech-260-0005.wav",
+    "speaker": "260",
+    "sex": "M",
+    "seconds": 4.81,
+    "text": "I AM NOT COMPLAINING THAT THE RATE IS SLOW BUT THAT THE SEA IS SO WIDE",
+    "kind": "dry",
+    "source": "LibriSpeech test-clean 260-123286-0005",
+    "source_flac_sha256": "4a8782c6fc11289057c003ad243f3127183d25ff6e8fb014c224e89613f639b1"
+  },
+  {
+    "file": "librispeech-5639-0010.wav",
+    "speaker": "5639",
+    "sex": "M",
+    "seconds": 4.12,
+    "text": "IT IS THE ONLY AMENDS I ASK OF YOU FOR THE WRONG YOU HAVE DONE ME",
+    "kind": "dry",
+    "source": "LibriSpeech test-clean 5639-40744-0010",
+    "source_flac_sha256": "3a989f96d32fd414f653e14967ea67b34cbc921ddc94573df45848338205bc85"
+  },
+  {
+    "file": "librispeech-7176-0005.wav",
+    "speaker": "7176",
+    "sex": "M",
+    "seconds": 4.7,
+    "text": "ONCE FAIRLY A WING HOWEVER HE WHEELED AND MADE BACK HURRIEDLY FOR HIS PERCH",
+    "kind": "dry",
+    "source": "LibriSpeech test-clean 7176-88083-0005",
+    "source_flac_sha256": "4b865c3cd266c960ef09b6e75b763c7ff0ccbd0e2a10b00452daa4f3d3daccc8"
+  },
+  {
+    "file": "librispeech-4077-0013.wav",
+    "speaker": "4077",
+    "sex": "M",
+    "seconds": 4.32,
+    "text": "THEIR SUFFERINGS HAVE NEVER YET BEEN FITLY CHRONICLED BY HUMAN SCRIBE",
+    "kind": "dry",
+    "source": "LibriSpeech test-clean 4077-13751-0013",
+    "source_flac_sha256": "b3e16f623554220cbbe6cf7ef49e65f0d3cc6dde08c407e4a8f40668c25f4ea6"
+  },
+  {
+    "file": "librispeech-672-0000.wav",
+    "speaker": "672",
+    "sex": "M",
+    "seconds": 4.07,
+    "text": "OUT IN THE WOODS STOOD A NICE LITTLE FIR TREE",
+    "kind": "dry",
+    "source": "LibriSpeech test-clean 672-122797-0000",
+    "source_flac_sha256": "776b1ce553e7ecb2dc0254b2aa4b35af0bde50db65dbf7bdbdfa1560a2c9ec36"
+  },
+  {
+    "file": "voices-rm1-sp0159.wav",
+    "speaker": "voices-159",
+    "sex": "M",
+    "seconds": 5.0,
+    "words": 12,
+    "text": "",
+    "kind": "farfield",
+    "source": "Lab41-SRI-VOiCES-rm1-none-sp0159-ch121902-sg0018-mc05-stu-far-dg140.wav",
+    "source_wav_sha256": "68d7cc0dca0d26cd93c8299e260ca11d1402d4d94b4e3bc0feb59ecde11cbb73"
+  },
+  {
+    "file": "voices-rm1-sp0188.wav",
+    "speaker": "voices-188",
+    "sex": "F",
+    "seconds": 5.0,
+    "words": 12,
+    "text": "",
+    "kind": "farfield",
+    "source": "Lab41-SRI-VOiCES-rm1-none-sp0188-ch141613-sg0013-mc05-stu-far-dg120.wav",
+    "source_wav_sha256": "97543443494127859fabfc1074ddf2ff6e9b64c65de7e15ca7b60b3a1c49eddc"
+  },
+  {
+    "file": "voices-rm1-sp0250.wav",
+    "speaker": "voices-250",
+    "sex": "F",
+    "seconds": 5.0,
+    "words": 12,
+    "text": "",
+    "kind": "farfield",
+    "source": "Lab41-SRI-VOiCES-rm1-none-sp0250-ch140277-sg0008-mc05-stu-far-dg160.wav",
+    "source_wav_sha256": "cba6737cb83062c7516ee87828e154597c35485d2d2c7c8b82f5f974f5d32fba"
+  },
+  {
+    "file": "voices-rm1-sp0480.wav",
+    "speaker": "voices-480",
+    "sex": "M",
+    "seconds": 5.0,
+    "words": 12,
+    "text": "",
+    "kind": "farfield",
+    "source": "Lab41-SRI-VOiCES-rm1-none-sp0480-ch126336-sg0000-mc05-stu-far-dg110.wav",
+    "source_wav_sha256": "9ef54b9437dd952cc29c374a8baae0643ca842946012ed48d777baa417593ef5"
+  },
+  {
+    "file": "voices-rm1-sp0652.wav",
+    "speaker": "voices-652",
+    "sex": "M",
+    "seconds": 5.0,
+    "words": 12,
+    "text": "",
+    "kind": "farfield",
+    "source": "Lab41-SRI-VOiCES-rm1-none-sp0652-ch129742-sg0003-mc05-stu-far-dg010.wav",
+    "source_wav_sha256": "4f10982025aceaf28714ad69e913402755ca76d5d9f9c9baa2264f610730bd4f"
+  },
+  {
+    "file": "voices-rm1-sp1066.wav",
+    "speaker": "voices-1066",
+    "sex": "F",
+    "seconds": 5.0,
+    "words": 12,
+    "text": "",
+    "kind": "farfield",
+    "source": "Lab41-SRI-VOiCES-rm1-none-sp1066-ch005330-sg0005-mc05-stu-far-dg130.wav",
+    "source_wav_sha256": "9fa99c451aef6b7bb70f5699580b3e1e4a1b05f2e7e3106745752fd37f0e8f8e"
+  },
+  {
+    "file": "mediaspeech-tr-0.wav",
+    "speaker": "mediaspeech-0",
+    "sex": "",
+    "seconds": 5.0,
+    "text": "bahsediyoruz ingiltere'de de otomobil satlar mays'ta da kt imdi nisan aynda",
+    "kind": "turkish",
+    "source": "MediaSpeech TR TR/fa0a9f25-1dad-494e-97ba-3e144fb4163d.flac",
+    "source_flac_sha256": "0c48e32b2e7611b456f996e01a2528349ee2168e8e7d6da9a51c45aa49f335d7",
+    "note": "excerpt 1.0-6.0 s of a 14.5 s clip; text is the first words of the clip's transcript in proportion, not an alignment; non-ASCII characters of the original text are left out, only the word count matters"
+  },
+  {
+    "file": "mediaspeech-tr-1.wav",
+    "speaker": "mediaspeech-1",
+    "sex": "",
+    "seconds": 5.0,
+    "text": "gereklii biz biliyoruz olacan da bilim insanlar tarih vermese de o",
+    "kind": "turkish",
+    "source": "MediaSpeech TR TR/bbe5af72-964d-4aae-a707-c644c7615a45.flac",
+    "source_flac_sha256": "72ac4898747221073e43c7ae4e8692d937ae46f67d71b55024a10b49a03105f1",
+    "note": "excerpt 1.0-6.0 s of a 14.5 s clip; text is the first words of the clip's transcript in proportion, not an alignment; non-ASCII characters of the original text are left out, only the word count matters"
+  },
+  {
+    "file": "mediaspeech-tr-2.wav",
+    "speaker": "mediaspeech-2",
+    "sex": "",
+    "seconds": 5.0,
+    "text": "en ok burada var en ok bizim grdmz bu yani memleketten",
+    "kind": "turkish",
+    "source": "MediaSpeech TR TR/07cc87b6-ef6a-42c4-98c3-729f87be1612.flac",
+    "source_flac_sha256": "14c5eb0a35c770f23b3bc5d0e3d548d092ba15c96f84f79a083edb17b62b4419",
+    "note": "excerpt 1.0-6.0 s of a 14.5 s clip; text is the first words of the clip's transcript in proportion, not an alignment; non-ASCII characters of the original text are left out, only the word count matters"
+  }
+]

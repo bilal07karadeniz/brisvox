@@ -192,6 +192,16 @@ pub enum TransportEvent {
         /// Audio sent to the client and not yet played.
         lead: Duration,
     },
+    /// The hold buffer of a paused playout is full ([`TransportCommand::Pause`]): more audio is
+    /// waiting than the session is willing to hold. Sent once per pause; the engine commits the
+    /// interruption (overflow = commit). `pause` names the pause (the value of
+    /// [`CommandSender::pause_seq`](crate::CommandSender::pause_seq) right after its `Pause`
+    /// was applied), so a report that arrives late, after a resume and a new pause, is not taken
+    /// for the new pause's.
+    HoldFull {
+        /// The pause the report belongs to.
+        pause: u64,
+    },
     /// A non-fatal transport fault reported by the client protocol.
     Error {
         /// Rendered description (never credentials).
@@ -212,6 +222,7 @@ impl Overflowing for TransportEvent {
             Self::PlaybackPosition { .. } | Self::PlaybackLead { .. } | Self::Stopped { .. } => {
                 Overflow::Displace
             }
+            // Lossless like the marks.
             _ => Overflow::Backpressure,
         }
     }
@@ -271,6 +282,24 @@ pub enum TransportCommand {
     Clear {
         /// The epoch now current.
         epoch: TurnEpoch,
+    },
+    /// Pause the playout now (pause-then-decide). Out of band like [`Clear`](Self::Clear): it
+    /// takes effect while `send` runs. The output stops writing audio and marks (what is still
+    /// queued stays queued, bounded by the queues and the hold limit of the session, and the
+    /// engine sees back-pressure), the audio and marks waiting in the wire queue are pulled back,
+    /// and the client is told to clear its buffers (`WireOut::Clear` of the current epoch, so the
+    /// caller hears silence as soon as a barge-in's clear would give it). The epoch does not
+    /// change. Ignored while already paused. Ended by [`Resume`](Self::Resume) or by a
+    /// [`Clear`](Self::Clear) (a commit), which also drops the held audio.
+    Pause,
+    /// Continue after a [`Pause`](Self::Pause). `rewind` is the part of the already released
+    /// audio the caller had not heard when the pause cleared the client's buffers (the client's
+    /// reported lead, or the engine's margin): it is sent again before anything new, so the
+    /// response goes on from the paused point. Unplayed marks are sent again after it. Ignored
+    /// when not paused.
+    Resume {
+        /// How much of the most recently released audio to send again.
+        rewind: Duration,
     },
     /// Asks the client to echo `id` once everything released before this point has played. Marks
     /// queued behind audio are sent to the client when the audio ahead of them is released; a mark

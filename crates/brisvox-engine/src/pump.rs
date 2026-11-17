@@ -640,6 +640,7 @@ impl State {
                 Some(_) => bump(&self.counters.marks_cleared),
                 None => bump(&self.counters.unknown_marks),
             },
+            TransportEvent::HoldFull { pause } => self.book.note_hold_full(pause),
             TransportEvent::PlaybackLead { lead } => {
                 self.book.set_client_lead(lead);
                 bump(&self.counters.leads);

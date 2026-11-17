@@ -1,0 +1,58 @@
+[
+  {
+    "file": "rir-rvb2014-smallroom1.wav",
+    "room": "RVB2014_smallroom1",
+    "source": "RIRS_NOISES/real_rirs_isotropic_noises/RVB2014_type1_rir_smallroom1_far_angla.wav",
+    "rt60_s": 0.2,
+    "sha256_note": "see NOTICE"
+  },
+  {
+    "file": "rir-rvb2014-mediumroom1.wav",
+    "room": "RVB2014_mediumroom1",
+    "source": "RIRS_NOISES/real_rirs_isotropic_noises/RVB2014_type1_rir_mediumroom1_far_angla.wav",
+    "rt60_s": 0.45,
+    "sha256_note": "see NOTICE"
+  },
+  {
+    "file": "rir-rvb2014-largeroom1.wav",
+    "room": "RVB2014_largeroom1",
+    "source": "RIRS_NOISES/real_rirs_isotropic_noises/RVB2014_type1_rir_largeroom1_far_angla.wav",
+    "rt60_s": 0.61,
+    "sha256_note": "see NOTICE"
+  },
+  {
+    "file": "rir-rvb2014-mediumroom2.wav",
+    "room": "RVB2014_mediumroom2",
+    "source": "RIRS_NOISES/real_rirs_isotropic_noises/RVB2014_type1_rir_mediumroom2_far_angla.wav",
+    "rt60_s": 0.68,
+    "sha256_note": "see NOTICE"
+  },
+  {
+    "file": "rir-air-binaural-office-0.wav",
+    "room": "air_binaural_office_0",
+    "source": "RIRS_NOISES/real_rirs_isotropic_noises/air_type1_air_binaural_office_0_2.wav",
+    "rt60_s": 0.62,
+    "sha256_note": "see NOTICE"
+  },
+  {
+    "file": "rir-air-binaural-meeting-0.wav",
+    "room": "air_binaural_meeting_0",
+    "source": "RIRS_NOISES/real_rirs_isotropic_noises/air_type1_air_binaural_meeting_0_3.wav",
+    "rt60_s": 0.3,
+    "sha256_note": "see NOTICE"
+  },
+  {
+    "file": "rir-rwcp-cirline-jr1.wav",
+    "room": "RWCP_cirline_jr1",
+    "source": "RIRS_NOISES/real_rirs_isotropic_noises/RWCP_type1_rir_cirline_jr1_imp120.wav",
+    "rt60_s": 0.61,
+    "sha256_note": "see NOTICE"
+  },
+  {
+    "file": "rir-air-binaural-lecture-0.wav",
+    "room": "air_binaural_lecture_0",
+    "source": "RIRS_NOISES/real_rirs_isotropic_noises/air_type1_air_binaural_lecture_0_4.wav",
+    "rt60_s": 0.86,
+    "sha256_note": "see NOTICE"
+  }
+]

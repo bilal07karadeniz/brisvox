@@ -127,6 +127,18 @@ impl Histogram {
         self.count.fetch_add(1, Ordering::Relaxed);
     }
 
+    /// Adds observations that were counted elsewhere: `per_bucket` holds the number per bucket
+    /// (not cumulative, one slot per bound and one for `+Inf`), `sum_us` their sum.
+    pub fn add_counts(&self, per_bucket: &[u64], sum_us: u64) {
+        let mut total = 0u64;
+        for (bucket, n) in self.buckets.iter().zip(per_bucket) {
+            bucket.fetch_add(*n, Ordering::Relaxed);
+            total = total.saturating_add(*n);
+        }
+        self.sum_us.fetch_add(sum_us, Ordering::Relaxed);
+        self.count.fetch_add(total, Ordering::Relaxed);
+    }
+
     /// Observations so far.
     pub fn count(&self) -> u64 {
         self.count.load(Ordering::Relaxed)

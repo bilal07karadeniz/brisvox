@@ -829,6 +829,12 @@ where
     if config.interruption.echo_text_match {
         driver = driver.with_bot_text(Arc::clone(&book));
     }
+    if config.interruption.pause.enabled {
+        driver = driver.with_pause_hook(
+            crate::playout::pause_hook(commands.clone(), Arc::clone(&book), config.lead_margin),
+            Arc::clone(&book),
+        );
+    }
     if let Some(probe) = probe.clone() {
         driver = driver.with_probe(probe);
     }

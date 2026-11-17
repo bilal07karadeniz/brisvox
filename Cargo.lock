@@ -561,6 +561,7 @@ dependencies = [
  "brisvox-transport",
  "bytes",
  "futures",
+ "realfft",
  "serde",
  "serde_json",
  "sysinfo",

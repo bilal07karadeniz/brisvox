@@ -224,6 +224,11 @@ impl Utterance {
     }
 }
 
+#[derive(Debug, Clone, Copy)]
+struct PauseNote {
+    at: Option<Instant>,
+}
+
 #[derive(Debug, Default)]
 struct State {
     rounds: BTreeMap<RoundKey, Round>,
@@ -233,6 +238,14 @@ struct State {
     /// The client's latest report of audio it holds unplayed (`TransportEvent::PlaybackLead`),
     /// for transports that send one (Twilio). Reset by a clear.
     client_lead: Option<Duration>,
+    /// The playout is paused (pause-then-decide): the transport cleared the client's buffer, so
+    /// the lead it reports from now on is not the one the utterance was played with. The lead
+    /// in force at the pause is kept, and so is the time of the pause for the margin's fade.
+    paused: Option<PauseNote>,
+    /// The transport reported a full hold buffer ([`PlayoutBook::note_hold_full`]), for this pause.
+    hold_full: Option<u64>,
+    /// The transport's number of the pause in force ([`PlayoutBook::set_pause_seq`]).
+    pause_seq: Option<u64>,
     /// Number of clears that covered a new utterance so far.
     clears: u64,
     stats: BookStats,
@@ -472,6 +485,47 @@ pub fn clear_hook(commands: CommandSender, book: Arc<PlayoutBook>) -> ClearHook 
             })
         }),
     )
+}
+
+/// The turn driver's [`PauseHook`](crate::turn_driver::PauseHook): pauses and resumes the
+/// transport's playout through `commands` (the fast path) and keeps `book` in step: the pause is
+/// noted BEFORE the command (the transport's clear of the client's buffer resets the lead it
+/// reports, which must not replace the one the paused audio was played with), and the resume
+/// asks the transport to send again the client's lead in force at the pause, else `lead_margin`
+/// (the same estimate of unplayed audio the played-text truncation uses).
+pub fn pause_hook(
+    commands: CommandSender,
+    book: Arc<PlayoutBook>,
+    lead_margin: Duration,
+) -> crate::turn_driver::PauseHook {
+    use crate::turn_driver::PlayoutOp;
+    Arc::new(move |op| {
+        let commands = commands.clone();
+        let book = Arc::clone(&book);
+        let command = match op {
+            PlayoutOp::Pause => {
+                book.note_pause();
+                TransportCommand::Pause
+            }
+            PlayoutOp::Resume => TransportCommand::Resume {
+                rewind: book.client_lead().unwrap_or(lead_margin),
+            },
+        };
+        Box::pin(async move {
+            let sent = commands
+                .send(command)
+                .await
+                .map_err(|error| error.to_string());
+            // A resume ends the pause; so does a pause that failed (nothing was paused).
+            if op == PlayoutOp::Resume || sent.is_err() {
+                book.note_resume();
+            } else {
+                // Name the pause: a full-hold report of an earlier one must not count.
+                book.set_pause_seq(commands.pause_seq());
+            }
+            sent
+        })
+    })
 }
 
 /// The ordering of [`clear_hook`], over any way of sending the command: the book is told BEFORE
@@ -848,6 +902,8 @@ impl PlayoutBook {
         // The client's buffer is flushed by the clear: the lead it reported until now belongs to
         // the utterances this clear cuts.
         let lead = state.client_lead.take();
+        // A commit after a pause: the client's buffer was flushed when the pause began, not now.
+        let at = state.paused.take().map_or(at, |pause| pause.at.or(at));
         let seq = state.clears.saturating_add(1);
         let mut covered = false;
         for u in state.utterances.values_mut() {
@@ -870,7 +926,74 @@ impl PlayoutBook {
     /// place of the fixed `lead_margin`. A `Clear` ([`Self::note_clear`]) takes the report along
     /// to the utterances it cuts; a report that arrives after it belongs to the next audio.
     pub fn set_client_lead(&self, lead: Duration) {
-        self.lock().client_lead = Some(lead);
+        let mut state = self.lock();
+        if state.paused.is_none() {
+            state.client_lead = Some(lead);
+        }
+    }
+
+    /// The playout was paused (pause-then-decide). The transport clears the client's buffer, so
+    /// what it reports as the lead from now on says nothing about the audio already played: the
+    /// report in force is kept (ignoring later ones) and the time of the pause stands for the
+    /// moment the buffer was flushed. A [`Self::note_clear`] (the commit) uses both; a resume
+    /// ([`Self::note_resume`]) forgets them.
+    pub fn note_pause(&self) {
+        let at = self.clock.get().map(|clock| clock.now());
+        let mut state = self.lock();
+        // A full-hold report of an earlier pause must not make this one overflow at once.
+        state.hold_full = None;
+        state.pause_seq = None;
+        if state.paused.is_none() {
+            state.paused = Some(PauseNote { at });
+        }
+    }
+
+    /// The transport's hold buffer is full ([`TransportEvent::HoldFull`]); the turn driver reads
+    /// it with [`Self::take_hold_full`] while a pause is on.
+    ///
+    /// [`TransportEvent::HoldFull`]: brisvox_transport::TransportEvent::HoldFull
+    pub fn note_hold_full(&self, pause: u64) {
+        self.lock().hold_full = Some(pause);
+    }
+
+    /// The transport's number of the pause that was just applied
+    /// ([`CommandSender::pause_seq`](brisvox_transport::CommandSender::pause_seq)): a full-hold
+    /// report counts only when it names this pause.
+    pub fn set_pause_seq(&self, pause: u64) {
+        self.lock().pause_seq = Some(pause);
+    }
+
+    /// Whether the hold buffer was reported full since the last call (resets the flag).
+    #[must_use]
+    pub fn take_hold_full(&self) -> bool {
+        let mut state = self.lock();
+        match (state.hold_full, state.pause_seq) {
+            (Some(reported), Some(current)) if reported == current => {
+                state.hold_full = None;
+                true
+            }
+            // A report of an earlier pause that arrived late: dropped.
+            (Some(_), Some(_)) => {
+                state.hold_full = None;
+                false
+            }
+            // A hook that does not name its pauses, or a report that beat `set_pause_seq` (the
+            // hook sets it right after the command was applied; a report needs 2.5 s of held
+            // audio, so the race is theoretical): taken as the current pause's.
+            (Some(_), None) => {
+                state.hold_full = None;
+                true
+            }
+            (None, _) => false,
+        }
+    }
+
+    /// The paused playout went on: the lead reports count again.
+    pub fn note_resume(&self) {
+        let mut state = self.lock();
+        state.paused = None;
+        state.hold_full = None;
+        state.pause_seq = None;
     }
 
     /// The client's latest playback lead, if the transport reports one.
@@ -1754,6 +1877,56 @@ mod tests {
         assert_eq!(book.client_lead(), Some(Duration::from_millis(120)));
         book.note_clear(TurnEpoch::ZERO.next());
         assert_eq!(book.client_lead(), None);
+    }
+
+    #[test]
+    fn a_pause_keeps_the_lead_in_force_for_the_commit_and_a_resume_forgets_it() {
+        let book = PlayoutBook::new(4);
+        let k = key(0, 0);
+        speaking(&book, k, 1);
+        book.set_client_lead(Duration::from_millis(240));
+        book.note_pause();
+        // The transport's clear of the client's buffer resets what it reports: not the lead the
+        // paused audio was played with.
+        book.set_client_lead(Duration::ZERO);
+        assert_eq!(book.client_lead(), Some(Duration::from_millis(240)));
+        book.note_clear(TurnEpoch::ZERO.next());
+        assert_eq!(
+            book.snapshot(k).unwrap().client_lead,
+            Some(Duration::from_millis(240))
+        );
+        // A resume instead: reports count again.
+        let book = PlayoutBook::new(4);
+        book.set_client_lead(Duration::from_millis(240));
+        book.note_pause();
+        book.set_pause_seq(1);
+        book.note_hold_full(1);
+        book.note_resume();
+        assert!(!book.take_hold_full());
+        book.set_client_lead(Duration::from_millis(100));
+        assert_eq!(book.client_lead(), Some(Duration::from_millis(100)));
+    }
+
+    #[test]
+    fn the_hold_full_signal_is_read_once() {
+        let book = PlayoutBook::new(4);
+        assert!(!book.take_hold_full());
+        book.set_pause_seq(3);
+        book.note_hold_full(3);
+        assert!(book.take_hold_full());
+        assert!(!book.take_hold_full());
+    }
+
+    #[test]
+    fn a_full_hold_report_of_an_earlier_pause_is_not_the_current_ones() {
+        let book = PlayoutBook::new(4);
+        book.note_pause();
+        book.set_pause_seq(5);
+        // The report of the pause before arrives late.
+        book.note_hold_full(3);
+        assert!(!book.take_hold_full());
+        book.note_hold_full(5);
+        assert!(book.take_hold_full());
     }
 
     #[test]

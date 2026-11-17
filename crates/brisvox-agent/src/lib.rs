@@ -9,6 +9,7 @@ pub mod error;
 pub mod flows;
 pub mod interrupt;
 pub mod normalize;
+pub mod pause;
 pub mod played;
 pub mod segment;
 pub mod telephony;
@@ -27,9 +28,14 @@ pub use interrupt::{
     Assessment, BackchannelSet, Confirm, DEFAULT_BACKCHANNEL_MAX_SPEECH, DEFAULT_BACKCHANNEL_WAIT,
     DEFAULT_VAD_HANGOVER, ECHO_HOLD, ECHO_MIN_WORDS, ECHO_MIN_WORDS_OLD, InterruptionPolicy,
     NoiseAdapt, Observation, TextKind, VetoReason, count_words, echoes_bot, is_bot_echo,
+    is_command_text,
 };
 pub use normalize::{
     INLINE_CHUNK_CHARS, Normalizer, normalize, spell_cardinal, spell_digits, spell_ordinal,
+};
+pub use pause::{
+    DEFAULT_DECIDE, DEFAULT_TIGHTEN_AFTER, DEFAULT_TIGHTEN_WINDOW, NeverRule, PauseEvidence,
+    PauseOutcome, PausePolicy, PauseRule, PauseStats, PauseVerdict, WordsRule,
 };
 pub use played::{
     PlayedConfig, PlayedText, TruncateError, Truncation, TruncationOutcome, TruncationStats,

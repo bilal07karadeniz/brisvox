@@ -487,6 +487,8 @@ async fn inbound_invite(shared: Arc<Shared>, mut tx: Transaction, slot: OwnedSem
     drop(slot);
 
     let (mut link, ends) = call_pair();
+    // RTP already sent plays out at the far end: a clear does not flush it.
+    link.set_client_flush(false);
     link.set_ticket(ticket);
     let info = call_info(&call_id, Origin::Inbound, &offer.params(), metadata);
     if ends.events.send(WireEvent::Started(info)).await.is_err() {

@@ -794,9 +794,21 @@ Reading:
   `level_gate_db` does the same for quiet voices for nothing, but the gain is small and it only
   acts after the caller has spoken (0.5 s of speech); RNNoise and the VAD sweeps do not help the false
   barge-in (RNNoise adds noise starts).
-- **What none of them does**: separate a second voice that is within 10 dB of the caller. That is the job
-  of a speaker check on the barge-in candidate (not built; the hook is `TurnMachine::set_echo`, see
-  `docs/ARCHITECTURE.md`).
+- **Pause, then decide** (`[interruption] pause_then_decide`): the pause is applied like the clear of an interruption, around the command
+  queue, so the caller hears silence at the same moment (the transport adds nothing the clear does not add: one
+  frame the output task was writing, plus the adapter's buffer, which the adapter also clears). A real barge-in therefore
+  loses no time; what changes is what happens next: a candidate the `words` rule resumes costs the pause duration
+  in the bot's speech (at most `decide_ms`, observed in `brisvox_barge_in_pause_seconds`) plus one pacer underrun, and a
+  committed one is interrupted at the first recognised word instead of at the guards (a word that arrives before 300 ms of
+  speech is no longer held by `min_speech`). The decision window and the hold-buffer limits are bounded; resumed audio
+  continues from the paused point after re-sending the client's unplayed lead (160 ms where the protocol reports none). Measured in the call harness with
+  real and synthetic noise, second voices, an oracle and a modelled recognizer with assumed miss rates (`bench/results/barge-in-noise.md`, 5 187 calls per path and recognizer, 525 real barge-ins of each of three kinds): noise without speech cut the bot off on 13.1 % (wideband) and 18.9 % (telephone) of its
+  candidates with today's guards (driven by synthetic voiced coughs; the real recordings made 4 and 8 candidates), on none with the `words` rule and 1.7 % to 2.1 % when a tenth of the noise windows are heard as a word; interrupting only after 500 ms (LiveKit without resume) leaves 3.2 % and 4.9 %. With `pause_after_ms = 400`
+  the bot is silent 400 ms after the onset of a real barge-in (102 ms with no delay), as early as today's 400 ms, and short noises pause it 2.0 times per 100 noise calls instead of 9.9; the cut comes with the first word (median 698 ms, p90 878 ms against 400 ms). Real barge-ins: today's guards lose none by construction (they decide on duration); the `words` rule loses what the recognizer misses,
+  weighted 60 / 25 / 15 % over sentences, 0.9 s commands and 0.5 s command words: 0 with an oracle, 0.7 % and 2.7 % (wideband and telephone) when short utterances are missed as often as sentences, 1.2 % and 5.1 % at twice, 1.8 % and 7.8 % at three times, within 0.1 points of a LiveKit-like configuration and far under a `min_words = 1` one (7.3 % and 10.7 %). The default stays off because of that loss. Second voices and babble
+  are resumed only where the recognizer does not hear them (13 % to 57 % by kind).
+- **What none of them does**: separate a second voice that is within 10 dB of the caller. A second person who talks
+  interrupts the bot; only noise is the target of the pause.
 - **Telephone (8 kHz mu-law)**: the same ordering. Hush lowers background speech 32/32 to 25/32 and echo 16/16
   to 4/16, but adds fragments (5 against 2 in the barge-in calls) and no Smart Turn flips beyond the 7 of 48 the
   telephone path already has; on the noise run (`bench/results/denoise-quality-hush.md`) it fragments more at

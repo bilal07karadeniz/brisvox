@@ -22,6 +22,11 @@
 //!   CPU per stream, false barge-ins and Smart Turn verdicts under real noise, and the transcripts
 //!   for the word error rate.
 //!
+//! - `realistic`, `realistic_run` and `noise_synth` (feature `denoise`): barge-in calls with
+//!   loudspeaker-and-room second voices and background noise of many kinds at light to loud
+//!   levels, many caller x source pairs, a modelled recognizer, short and contaminated first
+//!   turns, and per-candidate metrics (`brisvox-bench denoise realistic`).
+//!
 //! Comparisons against the Pipecat baseline use the same client.
 
 pub mod capacity;
@@ -39,6 +44,12 @@ pub mod fixture_load;
 pub mod infer_load;
 #[cfg(feature = "models")]
 pub mod model_cpu;
+#[cfg(feature = "denoise")]
+pub mod noise_synth;
+#[cfg(feature = "denoise")]
+pub mod realistic;
+#[cfg(feature = "denoise")]
+pub mod realistic_run;
 pub mod resample_bench;
 pub mod resources;
 pub mod sim_load;

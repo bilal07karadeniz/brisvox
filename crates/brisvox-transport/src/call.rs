@@ -126,6 +126,9 @@ pub struct CallLink {
     /// The transport's call id (the `call_id` of its `started` message), for logs that tie a
     /// session to the call the client sees; `None` when the transport does not label it.
     pub(crate) call_id: Option<String>,
+    /// Whether a `WireOut::Clear` flushes what the client holds unplayed (see
+    /// [`CallLink::client_flush`]).
+    pub(crate) client_flush: bool,
 }
 
 impl CallLink {
@@ -140,6 +143,22 @@ impl CallLink {
     #[cfg_attr(not(any(feature = "websocket", feature = "sip")), allow(dead_code))]
     pub(crate) fn set_ticket(&mut self, ticket: Option<AdmissionTicket>) {
         self.ticket = ticket;
+    }
+
+    /// Whether a `WireOut::Clear` reaches what the client has buffered and not played yet
+    /// (Twilio and Telnyx `clear`, the WebSocket and RTVI clients' own clear). `true` unless the
+    /// adapter says otherwise. A pause relies on it: the audio the client had buffered is sent
+    /// again on resume. Where a clear does not flush the client (WebRTC and SIP: packets already
+    /// on the wire play out) that audio is played anyway, and a resume sends again only what the
+    /// session itself pulled back from its wire queue.
+    pub fn client_flush(&self) -> bool {
+        self.client_flush
+    }
+
+    /// Declares whether a clear flushes the client's buffer (see [`Self::client_flush`]); the
+    /// adapter, before it hands the call over.
+    pub fn set_client_flush(&mut self, flush: bool) {
+        self.client_flush = flush;
     }
 
     /// The transport that carried the call, when it is not the listener's own (see the field).
@@ -190,6 +209,7 @@ pub fn call_pair() -> (CallLink, CallEnds) {
             ticket: None,
             transport: None,
             call_id: None,
+            client_flush: true,
         },
         CallEnds {
             events: events_tx,

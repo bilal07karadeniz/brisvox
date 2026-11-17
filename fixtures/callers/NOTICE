@@ -1,0 +1,17 @@
+Callers for the barge-in measurements (brisvox-bench denoise realistic ...).
+
+Six clips (two utterances of one speaker each, 4 to 7 s per utterance, 16 kHz, mono, 16-bit PCM) of six
+different speakers, cut from the dev-clean set of LibriSpeech: Vassil Panayotov, Guoguo Chen, Daniel Povey,
+Sanjeev Khudanpur, "Librispeech: an ASR corpus based on public domain audio books", ICASSP 2015,
+https://www.openslr.org/12/ . Licensed under Creative Commons Attribution 4.0 International (CC BY 4.0),
+https://creativecommons.org/licenses/by/4.0/ ; the underlying LibriVox recordings are in the public domain.
+
+Why not the FLEURS fixtures of the parent directory: every English FLEURS utterance there is a different
+speaker, and a call needs a first turn and a barge-in of the same caller, so the measurement needs two
+utterances of one voice. (The Turkish fixture tr_two_utterances is one speaker and is used as it is.)
+
+Modifications by the brisvox project: two utterances per speaker (the ones nearest to 5 s of 3.8 to 7.5 s and at
+least nine words), decoded from FLAC and converted to 16 kHz mono PCM16, peak-normalized to -6 dBFS and joined
+with 1.5 s of silence behind a 0.5 s lead-in. The sidecar *.json files give each utterance's transcript and its
+LibriSpeech id (speaker-chapter-utterance). The speakers are not the ones of ../interferers. No endorsement by
+the corpus authors or speakers is implied.

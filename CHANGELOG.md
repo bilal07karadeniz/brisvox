@@ -8,6 +8,29 @@ named plain `brisvox` on crates.io, PyPI and npm, are released together under on
 
 ## [Unreleased]
 
+### Added
+
+- **Pause, then decide on barge-ins**, opt in per agent: `[interruption] pause_then_decide = true` (default `false`) pauses
+  the bot's playout the moment a barge-in candidate appears (the caller hears silence as early as an interruption would give it) and, within
+  `decide_ms` (300 to 1750, default 1500), either interrupts as before or **resumes the same response from the paused point**: a cough, a
+  door, a keyboard or a "mm-hmm" no longer cuts the bot off for good. The default rule (`rule = "words"`, the behaviour of LiveKit's
+  `resume_false_interruption`) interrupts at once on any recognised word of the caller or a command word ("stop", "wait", "dur", "bekle", ...), and resumes
+  when the speech has stopped and no word came; the bot's own echo does not count. Everything uncertain interrupts: speech that is still going at the end of
+  the window, a full hold buffer, a pause or a resume the transport cannot apply. `rule = "never"` leaves the decision to the guards and only resumes a
+  candidate they drop. After `tighten_after` resumed pauses in `tighten_window_ms` (default 2 in 60 s) the bot stops pausing on voice activity alone and waits for one
+  recognised word. Works on every transport (a pause is applied like a clear, and the audio the client had buffered and not played is sent again on resume), with limits: over WebRTC
+  and SIP a clear does not flush the client, so packets already sent play out and only the audio still in the server's own queue is sent again, and an RTVI client sees its
+  interruption events at a pause. The LLM context only ever holds what was played. New metrics `brisvox_barge_in_pauses_total{outcome}` and
+  `brisvox_barge_in_pause_seconds`. Turning it on also turns on the echo recognition. `pause_after_ms` (default 400) delays the pause until the speech has lasted that long, so a click or a door bang never pauses the bot. Measured with the built-in harness
+  (`bench/results/barge-in-noise.md`, `brisvox-bench denoise realistic --set fair`; assumed recognizer miss rates, mostly synthetic noise, no live transport): noise without speech cut the bot off on 13 % (wideband) and 19 % (telephone) of the candidates it made, driven by synthetic voiced coughs (the real recordings made 4 and 8
+  candidates), with the `words` rule on none (2 % if the recognizer writes a word for a tenth of the noise windows), while the real barge-ins the recognizer misses are lost: weighted 1.2 % (wideband) and 5.1 % (telephone) when short utterances are missed twice as often as sentences, 0.7 % and 2.7 % at the sentence rate, 0 with a recognizer that hears every word
+  (today's guards decide on duration and lose none; a LiveKit-style configuration loses the same as this one, a `min_words = 1` interruption several times more). That is why it is off by default.
+  A second person who talks still interrupts the bot. See `docs/CONFIG.md` and `docs/ARCHITECTURE.md`.
+- The short-command list that keeps "stop" and "wait" from being taken for the bot's echo has the Turkish "dur", "bekle", "yeter", "sus", "pardon", "dinle" and "hayır"
+  (case-insensitive, the Turkish dotted and dotless i folded). A candidate of at most two words with one of them is never held as the echo, **also with `pause_then_decide` off**: it changes what `echo_text_match` holds.
+- `brisvox-bench denoise realistic`: barge-in calls with background noise of many kinds (real recordings, synthetic cough, keyboard, door, dishes, music, street, babble),
+  second voices through a loudspeaker and a measured room, a modelled recognizer and per-candidate metrics, with committed fixtures and notices (`fixtures/realistic`, `fixtures/callers`).
+
 ## [0.1.3] - 2026-10-31
 
 ### Added

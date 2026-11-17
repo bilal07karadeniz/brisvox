@@ -34,7 +34,8 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::Duration;
 
 use brisvox_agent::{
-    InterruptionPolicy, NoiseAdapt, TurnAction, TurnInput, TurnMachine, TurnPolicy, is_bot_echo,
+    InterruptionPolicy, NeverRule, NoiseAdapt, PausePolicy, TurnAction, TurnInput, TurnMachine,
+    TurnPolicy, WordsRule, is_bot_echo,
 };
 use brisvox_core::{Clock, SystemClock};
 use brisvox_engine::InterruptionConfig;
@@ -47,22 +48,22 @@ use tokio::time::Instant;
 use crate::BenchError;
 use crate::denoise_eval::{NoiseClip, Path16, Speech, Variant, enhance, rms, verdicts};
 
-const FRAME: usize = 320;
-const HZ: f64 = 16_000.0;
+pub(crate) const FRAME: usize = 320;
+pub(crate) const HZ: f64 = 16_000.0;
 
 /// The caller's first utterance starts this long into the call.
-const FIRST_START: f64 = 0.3;
+pub(crate) const FIRST_START: f64 = 0.3;
 /// The bot's audio starts this long after the caller's first utterance ends (the turn-end silence
 /// and the response latency).
-const BOT_AFTER_FIRST: f64 = 1.5;
+pub(crate) const BOT_AFTER_FIRST: f64 = 1.5;
 /// A television clip starts this long after the bot.
-const TV_AFTER_BOT: f64 = 0.7;
+pub(crate) const TV_AFTER_BOT: f64 = 0.7;
 /// The caller's barge-in utterance starts this long after the bot.
-const BARGE_AFTER_BOT: f64 = 2.6;
+pub(crate) const BARGE_AFTER_BOT: f64 = 2.6;
 /// A quiet call ends this long after the bot began.
-const QUIET_AFTER_BOT: f64 = 7.0;
+pub(crate) const QUIET_AFTER_BOT: f64 = 7.0;
 /// A source is transcribed by the oracle when it is no more than this far below the caller.
-const STT_HEARS_DOWN_TO_DB: f32 = -15.0;
+pub(crate) const STT_HEARS_DOWN_TO_DB: f32 = -15.0;
 /// The oracle's recognizer lag and interim period.
 const STT_LAG: f64 = 0.30;
 const FIRST_INTERIM: f64 = 0.35;
@@ -70,7 +71,7 @@ const INTERIM_EVERY: f64 = 0.25;
 /// How much of the bot's recent speech the echo-text match looks at.
 const BOT_RECENT_S: f64 = 6.0;
 
-fn model_error(e: impl std::fmt::Display) -> BenchError {
+pub(crate) fn model_error(e: impl std::fmt::Display) -> BenchError {
     BenchError::Config(format!("{e}"))
 }
 
@@ -164,16 +165,19 @@ pub struct Suite {
     pub voices: Vec<Voice>,
     /// Noise recordings.
     pub noise: Vec<NoiseClip>,
+    /// Cut every barge-in utterance to its first this-many seconds: short commands ("stop",
+    /// "wait a second") instead of whole sentences. `None`: whole utterances.
+    pub barge_trim_s: Option<f64>,
 }
 
 /// A word of the oracle's transcripts.
 #[derive(Debug, Clone)]
-struct Word {
-    at: f64,
-    text: String,
+pub(crate) struct Word {
+    pub(crate) at: f64,
+    pub(crate) text: String,
 }
 
-fn spread(text: &str, start: f64, len: f64, out: &mut Vec<Word>) {
+pub(crate) fn spread(text: &str, start: f64, len: f64, out: &mut Vec<Word>) {
     let words: Vec<&str> = text.split_whitespace().collect();
     #[allow(clippy::cast_precision_loss)]
     let n = words.len() as f64;
@@ -193,24 +197,24 @@ fn spread(text: &str, start: f64, len: f64, out: &mut Vec<Word>) {
 /// the bot's answer starting a second and a half after it (the fixed-silence turn end plus the
 /// response latency), and from there the disturbance. In barge-in calls the caller speaks again
 /// over the bot.
-struct Assembled {
+pub(crate) struct Assembled {
     /// The line as the engine receives it (path applied).
-    pcm: Vec<i16>,
+    pub(crate) pcm: Vec<i16>,
     /// The caller's audio alone, path applied (the clean reference of the verdicts).
-    caller_only: Option<Vec<i16>>,
+    pub(crate) caller_only: Option<Vec<i16>>,
     /// Words the recognizer would hear, in time order.
-    words: Vec<Word>,
+    pub(crate) words: Vec<Word>,
     /// What the bot said, with times.
-    bot_words: Vec<Word>,
+    pub(crate) bot_words: Vec<Word>,
     /// When the bot's audio starts, seconds.
-    bot_start: f64,
+    pub(crate) bot_start: f64,
     /// The caller's barge-in utterance in seconds, if the call has one.
-    caller_span: Option<(f64, f64)>,
+    pub(crate) caller_span: Option<(f64, f64)>,
     /// The path the line took.
-    path: Path16,
+    pub(crate) path: Path16,
 }
 
-fn place(out: &mut [i16], at_s: f64, clip: &[i16], gain: f64) {
+pub(crate) fn place(out: &mut [i16], at_s: f64, clip: &[i16], gain: f64) {
     #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
     let start = (at_s * HZ) as usize;
     for (i, s) in clip.iter().enumerate() {
@@ -251,7 +255,16 @@ fn assemble(suite: &Suite, sc: &Scenario) -> Result<Assembled, BenchError> {
     let bot_start = first_start + seconds(first.len()) + BOT_AFTER_FIRST;
     let barge = match sc.caller {
         Some((f, s)) => {
-            Some(utterance(suite, f, s).ok_or_else(|| model_error("no barge-in utterance"))?)
+            let (seg, text) =
+                utterance(suite, f, s).ok_or_else(|| model_error("no barge-in utterance"))?;
+            #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+            let seg = match suite.barge_trim_s {
+                Some(trim) => seg
+                    .get(..((trim * HZ) as usize).min(seg.len()))
+                    .unwrap_or(seg),
+                None => seg,
+            };
+            Some((seg, text))
         }
         None => None,
     };
@@ -387,6 +400,43 @@ pub struct Config {
     pub policy: PolicyChoice,
     /// Use the denoiser even on a path below its minimum rate (the engine does not).
     pub force_narrowband: bool,
+    /// Pause-then-decide, run by the real turn machine (`[interruption] pause_then_decide`).
+    pub pause: Option<PauseSpec>,
+}
+
+/// The rule of a pause.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum PauseRuleSpec {
+    /// The guards decide as today; a candidate they drop resumes.
+    Never,
+    /// Resume when the recognizer has heard no word.
+    Words,
+}
+
+/// Pause-then-decide settings.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct PauseSpec {
+    /// The decision window from the pause.
+    pub decide: Duration,
+    /// How long the speech lasts before the bot is paused.
+    pub after: Duration,
+    /// The rule.
+    pub rule: PauseRuleSpec,
+}
+
+impl PauseSpec {
+    /// The machine's policy.
+    pub fn policy(&self) -> PausePolicy {
+        let rule: Arc<dyn brisvox_agent::PauseRule> = match self.rule {
+            PauseRuleSpec::Never => Arc::new(NeverRule),
+            PauseRuleSpec::Words => Arc::new(WordsRule),
+        };
+        PausePolicy {
+            decide: self.decide,
+            after: self.after,
+            ..PausePolicy::new(rule)
+        }
+    }
 }
 
 impl Config {
@@ -401,6 +451,7 @@ impl Config {
             gate: GateConfig::default(),
             policy: PolicyChoice::recommended(0),
             force_narrowband: false,
+            pause: None,
         }
     }
 }
@@ -410,23 +461,59 @@ impl Config {
 
 /// What happened in one call.
 #[derive(Debug, Clone, Default)]
-struct CallResult {
+pub(crate) struct CallResult {
     /// VAD starts after the bot began to speak (before the guards).
-    vad_starts: u32,
+    pub(crate) vad_starts: u32,
     /// Interruptions of the bot, as seconds into the call.
-    interrupts: Vec<f64>,
+    pub(crate) interrupts: Vec<f64>,
     /// Smart Turn verdict at the end of the barge-in utterance flipped against the caller alone.
     flip: Option<bool>,
     /// Starts of the VAD inside the barge-in utterance, minus one.
     fragments: u32,
+    /// Every barge-in candidate of the call, in order.
+    pub(crate) cands: Vec<Cand>,
+    /// The length of the call, seconds.
+    pub(crate) call_s: f64,
+}
+
+/// One barge-in candidate: a VAD start while the bot was speaking.
+#[derive(Debug, Clone)]
+pub(crate) struct Cand {
+    /// Seconds into the call where the VAD put the speech onset.
+    pub(crate) onset: f64,
+    /// When the machine learned of it (the VAD's start event).
+    pub(crate) arrival: f64,
+    /// When the VAD segment ended, if it did.
+    pub(crate) stop: Option<f64>,
+    /// When the machine interrupted the bot because of it.
+    pub(crate) interrupted: Option<f64>,
+    /// When the first interim transcript with words arrived while the segment was open.
+    pub(crate) first_words: Option<f64>,
+    /// Pause, then decide: the bot's playout was paused for it at this time.
+    pub(crate) paused: Option<f64>,
+    /// Pause, then decide: the bot resumed at this time.
+    pub(crate) resumed: Option<f64>,
 }
 
 /// An input for the turn machine, in arrival order.
 struct Timed {
     at: f64,
     kind: Kind,
+    /// The VAD segment the input belongs to (`NO_SEG` for none).
+    seg: usize,
 }
 
+/// `Timed::seg` of inputs that belong to no VAD segment.
+const NO_SEG: usize = usize::MAX;
+
+/// A VAD segment as the call saw it.
+struct Seg {
+    stop: Option<f64>,
+    /// Arrival time and text index of every interim transcript with words.
+    interims: Vec<(f64, usize)>,
+}
+
+#[derive(Clone)]
 enum Kind {
     BotStart,
     Start(Instant),
@@ -435,7 +522,7 @@ enum Kind {
     Final(usize),
 }
 
-fn run_call(
+pub(crate) fn run_call(
     asm: &Assembled,
     config: &Config,
     silero: &Arc<SileroTractModel>,
@@ -488,12 +575,16 @@ fn run_call(
     let mut timeline = vec![Timed {
         at: asm.bot_start,
         kind: Kind::BotStart,
+        seg: NO_SEG,
     }];
+    let mut segs: Vec<Seg> = Vec::new();
     let interims = |texts: &mut Vec<String>,
                     from_arrival: f64,
                     speech_start: f64,
                     until: f64,
-                    timeline: &mut Vec<Timed>| {
+                    timeline: &mut Vec<Timed>,
+                    seg: &mut Seg,
+                    seg_no: usize| {
         let mut k = 0.0;
         loop {
             let when = from_arrival + FIRST_INTERIM + k * INTERIM_EVERY;
@@ -506,7 +597,9 @@ fn run_call(
                 timeline.push(Timed {
                     at: when,
                     kind: Kind::Interim(texts.len() - 1),
+                    seg: seg_no,
                 });
+                seg.interims.push((when, texts.len() - 1));
             }
             k += 1.0;
         }
@@ -520,52 +613,79 @@ fn run_call(
                     vad_starts += 1;
                 }
                 open = Some((*arrival, seconds_of(*t)));
+                segs.push(Seg {
+                    stop: None,
+                    interims: Vec::new(),
+                });
                 timeline.push(Timed {
                     at: *arrival,
                     kind: Kind::Start(*t),
+                    seg: segs.len() - 1,
                 });
             }
             VadEvent::Stop { at: t } => {
                 if let Some((from_arrival, speech_start)) = open.take() {
-                    interims(
-                        &mut texts,
-                        from_arrival,
-                        speech_start,
-                        *arrival,
-                        &mut timeline,
-                    );
+                    let no = segs.len().saturating_sub(1);
+                    if let Some(seg) = segs.last_mut() {
+                        interims(
+                            &mut texts,
+                            from_arrival,
+                            speech_start,
+                            *arrival,
+                            &mut timeline,
+                            seg,
+                            no,
+                        );
+                        seg.stop = Some(*arrival);
+                    }
                     let text = words_in(speech_start - 0.25, *arrival);
                     timeline.push(Timed {
                         at: *arrival,
                         kind: Kind::Stop(*t),
+                        seg: no,
                     });
                     texts.push(text);
                     timeline.push(Timed {
                         at: *arrival + 0.2,
                         kind: Kind::Final(texts.len() - 1),
+                        seg: no,
                     });
+                    // The final transcript is words too, for the pause's decision.
+                    if let (Some(seg), Some(t)) = (segs.last_mut(), texts.last())
+                        && !t.trim().is_empty()
+                    {
+                        seg.interims.push((*arrival + 0.2, texts.len() - 1));
+                    }
                 }
             }
         }
     }
     if let Some((from_arrival, speech_start)) = open {
-        interims(
-            &mut texts,
-            from_arrival,
-            speech_start,
-            end + 3.0,
-            &mut timeline,
-        );
+        let no = segs.len().saturating_sub(1);
+        if let Some(seg) = segs.last_mut() {
+            interims(
+                &mut texts,
+                from_arrival,
+                speech_start,
+                end + 3.0,
+                &mut timeline,
+                seg,
+                no,
+            );
+        }
     }
     timeline.sort_by(|a, b| a.at.total_cmp(&b.at));
 
     // The turn machine. The first utterance is the first turn; the bot answers.
+    let base = config.policy.base.clone();
     let mut machine = TurnMachine::with_interruption(
         TurnPolicy::FixedSilence {
             silence: Duration::from_millis(700),
         },
-        config.policy.base.clone(),
+        base.clone(),
     );
+    machine.set_pause(config.pause.map(|p| p.policy()));
+    let pause_log: std::cell::RefCell<Vec<(u8, f64)>> = std::cell::RefCell::new(Vec::new());
     let mut actions: Vec<TurnAction> = Vec::new();
     let mut timer: Option<Instant> = None;
     let mut interrupts: Vec<f64> = Vec::new();
@@ -580,7 +700,18 @@ fn run_call(
             match a {
                 TurnAction::ArmTimer { deadline } => *timer = Some(*deadline),
                 TurnAction::CancelTimer => *timer = None,
-                TurnAction::Interrupt { .. } => interrupts.push(seconds_of(now)),
+                TurnAction::PausePlayout { .. } => {
+                    pause_log.borrow_mut().push((0, seconds_of(now)));
+                }
+                TurnAction::ResumePlayout { .. } => {
+                    pause_log.borrow_mut().push((1, seconds_of(now)));
+                }
+                TurnAction::PauseReleased { .. } => {
+                    pause_log.borrow_mut().push((2, seconds_of(now)));
+                }
+                TurnAction::Interrupt { .. } => {
+                    interrupts.push(seconds_of(now));
+                }
                 _ => {}
             }
         }
@@ -598,9 +729,31 @@ fn run_call(
         let i = ((t / 0.02) as usize).min(floors.len().saturating_sub(1));
         floors.get(i).copied().unwrap_or(-100.0)
     };
+    let mut cands: Vec<Cand> = Vec::new();
+    // Pause actions of the machine belong to the newest candidate.
+    let drain = |cands: &mut Vec<Cand>| {
+        for (kind, t) in pause_log.borrow_mut().drain(..) {
+            if let Some(c) = cands.last_mut() {
+                match kind {
+                    0 => c.paused = Some(t),
+                    _ => {
+                        if c.resumed.is_none() {
+                            c.resumed = Some(t);
+                        }
+                    }
+                }
+            }
+        }
+    };
     let mut last = 0.0f64;
     let mut candidate_arrival = 0.0f64;
-    for p in &timeline {
+    let mut idx = 0usize;
+    while let Some(p) = timeline.get(idx).map(|p| Timed {
+        at: p.at,
+        kind: p.kind.clone(),
+        seg: p.seg,
+    }) {
+        idx += 1;
         while let Some(d) = timer {
             if seconds_of(d) > p.at {
                 break;
@@ -613,9 +766,10 @@ fn run_call(
                 &mut timer,
                 &mut interrupts,
             );
+            drain(&mut cands);
         }
         if let Some(adapt) = &config.policy.noise_adapt {
-            machine.set_interruption(config.policy.base.adapted_to_noise(floor_at(p.at), adapt));
+            machine.set_interruption(base.adapted_to_noise(floor_at(p.at), adapt));
         }
         let now = at(p.at);
         last = p.at;
@@ -643,7 +797,41 @@ fn run_call(
                 at: now,
             },
         };
+        let had_candidate = machine.barge_in_candidate().is_some();
         feed(&mut machine, input, now, &mut timer, &mut interrupts);
+        match &p.kind {
+            Kind::Start(t) if !had_candidate && machine.barge_in_candidate().is_some() => {
+                cands.push(Cand {
+                    onset: seconds_of(*t),
+                    arrival: p.at,
+                    stop: None,
+                    interrupted: None,
+                    first_words: None,
+                    paused: None,
+                    resumed: None,
+                });
+            }
+            Kind::Stop(_) => {
+                if let Some(c) = cands.last_mut()
+                    && c.stop.is_none()
+                {
+                    c.stop = Some(p.at);
+                }
+            }
+            Kind::Interim(i) | Kind::Final(i) => {
+                let is_final = matches!(p.kind, Kind::Final(_));
+                if let Some(c) = cands.last_mut()
+                    && (c.stop.is_none()
+                        || (is_final && c.stop.is_some_and(|t| (p.at - t - 0.2).abs() < 1e-6)))
+                    && c.first_words.is_none()
+                    && texts.get(*i).is_some_and(|t| !t.trim().is_empty())
+                {
+                    c.first_words = Some(p.at);
+                }
+            }
+            _ => {}
+        }
+        drain(&mut cands);
     }
     let mut guard = 0;
     while let Some(d) = timer {
@@ -659,10 +847,19 @@ fn run_call(
             &mut timer,
             &mut interrupts,
         );
+        drain(&mut cands);
     }
     // Interruptions of the bot: those after the bot began to speak (the first turn ends by its own
     // silence, with no interruption).
     interrupts.retain(|t| *t >= asm.bot_start - 0.5);
+    // Each interruption belongs to the newest candidate that had arrived by then.
+    for t in &interrupts {
+        if let Some(c) = cands.iter_mut().rev().find(|c| c.arrival <= *t + 1e-6)
+            && c.interrupted.is_none()
+        {
+            c.interrupted = Some(*t);
+        }
+    }
 
     // Fragments and the Smart Turn verdict in barge-in calls.
     let mut fragments = 0;
@@ -691,11 +888,17 @@ fn run_call(
             flip = Some(p.first().map(|x| *x > 0.5) != reference.first().map(|x| *x > 0.5));
         }
     }
+    // Candidates that began before the bot's audio (a voice behind the first turn that runs on)
+    // are not barge-ins on a speaking bot; their interruptions were dropped above.
+    cands.retain(|c| c.arrival >= asm.bot_start - 0.5);
+    cands.sort_by(|a, b| a.arrival.total_cmp(&b.arrival));
     Ok(CallResult {
         vad_starts,
         interrupts,
         flip,
         fragments,
+        cands,
+        call_s: end,
     })
 }
 
@@ -725,6 +928,8 @@ pub struct Tally {
     pub verdicts: u32,
     /// Flipped verdicts.
     pub flips: u32,
+    /// Calls.
+    pub calls: u32,
 }
 
 impl Tally {
@@ -739,6 +944,7 @@ impl Tally {
         self.fragments += other.fragments;
         self.verdicts += other.verdicts;
         self.flips += other.flips;
+        self.calls += other.calls;
     }
 
     fn median_ms(&self) -> Option<f64> {
@@ -774,6 +980,7 @@ fn tally_of(sc: &Scenario, r: &CallResult, caller_start: Option<f64>) -> Tally {
         }
     }
     let _ = sc;
+    t.calls = 1;
     t
 }
 

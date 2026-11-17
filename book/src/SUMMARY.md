@@ -66,6 +66,7 @@
   - [Language switching (STT detection, TTS voices)](reference/providers/language-switching.md)
   - [Noise suppression (models, CPU, licenses)](reference/providers/noise-suppression.md)
   - [Noise handling options (VAD, gating, speaker veto)](reference/providers/noise-handling-options.md)
+  - [Speaker embeddings (licenses, training plan)](reference/providers/speaker-embedding.md)
   - [OpenAI Realtime (speech-to-speech)](reference/providers/openai-realtime.md)
   - [Gemini Live (speech-to-speech)](reference/providers/gemini-live.md)
   - [WebRTC](reference/providers/webrtc.md)

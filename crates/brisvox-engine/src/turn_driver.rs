@@ -275,6 +275,23 @@ pub type ClearFuture = Pin<Box<dyn Future<Output = Result<(), String>> + Send>>;
 /// How the driver clears the transport on a barge-in: called with the new epoch.
 pub type ClearHook = Arc<dyn Fn(TurnEpoch) -> ClearFuture + Send + Sync>;
 
+/// What the driver asks of the transport for pause-then-decide.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PlayoutOp {
+    /// Hold the playout now.
+    Pause,
+    /// Go on from the paused point.
+    Resume,
+}
+
+/// How the driver pauses and resumes the transport's playout
+/// ([`playout::pause_hook`](crate::playout::pause_hook) builds one over the command sender).
+pub type PauseHook = Arc<dyn Fn(PlayoutOp) -> ClearFuture + Send + Sync>;
+
+/// Upper bounds, in milliseconds, of the pause-duration histogram of [`TurnDriverStatsSnapshot`]
+/// (one more slot counts the longer ones).
+pub const PAUSE_BOUNDS_MS: [u64; 9] = [100, 200, 400, 600, 800, 1000, 1250, 1500, 2000];
+
 /// Settings of the [`TurnDriver`].
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct TurnDriverConfig {
@@ -391,6 +408,13 @@ struct Counters {
     text_rejected: AtomicU64,
     lines_started: AtomicU64,
     lines_rejected: AtomicU64,
+    pauses: AtomicU64,
+    pause_outcomes: [AtomicU64; 5],
+    pause_buckets: [AtomicU64; 10],
+    pause_sum_us: AtomicU64,
+    pause_failures: AtomicU64,
+    resume_failures: AtomicU64,
+    pause_tightened: AtomicU64,
 }
 
 fn bump(counter: &AtomicU64) {
@@ -515,6 +539,22 @@ pub struct TurnDriverStatsSnapshot {
     /// ([`MAX_HELD_LINES`]), superseded by an interrupting
     /// line, or still waiting at the hang-up.
     pub lines_rejected: u64,
+    /// Pauses begun (pause-then-decide).
+    pub pauses: u64,
+    /// Pauses by outcome: resumed, committed, overflow, deadline, ended (the order of
+    /// `brisvox_agent::PauseOutcome::ALL`).
+    pub pause_outcomes: [u64; 5],
+    /// Pause durations: observations per bucket of [`PAUSE_BOUNDS_MS`] (not cumulative), the last
+    /// slot for the longer ones.
+    pub pause_buckets: [u64; 10],
+    /// The sum of the pause durations, microseconds.
+    pub pause_sum_us: u64,
+    /// Pauses the transport could not apply (the call then interrupts as without the feature).
+    pub pause_failures: u64,
+    /// Resumes the transport could not apply: the response was interrupted instead.
+    pub resume_failures: u64,
+    /// Candidates that were not paused because repeated false pauses tightened the rule.
+    pub pause_tightened: u64,
 }
 
 /// Shared handle on the counters of one [`TurnDriver`].
@@ -578,6 +618,13 @@ impl TurnDriverStats {
             text_rejected: get(&c.text_rejected),
             lines_started: get(&c.lines_started),
             lines_rejected: get(&c.lines_rejected),
+            pauses: get(&c.pauses),
+            pause_outcomes: std::array::from_fn(|i| c.pause_outcomes.get(i).map_or(0, get)),
+            pause_buckets: std::array::from_fn(|i| c.pause_buckets.get(i).map_or(0, get)),
+            pause_sum_us: get(&c.pause_sum_us),
+            pause_failures: get(&c.pause_failures),
+            resume_failures: get(&c.resume_failures),
+            pause_tightened: get(&c.pause_tightened),
         }
     }
 }
@@ -914,6 +961,15 @@ pub struct TurnDriver {
     events: Option<EngineEvents>,
     /// The spoken user turn whose `UserStartedSpeaking` is not yet matched by a stop.
     user_speaking: Option<TurnEpoch>,
+    /// Pause-then-decide: how to pause and resume the transport, and the book that carries its
+    /// hold-full signal ([`Self::with_pause_hook`]).
+    pause_hook: Option<(PauseHook, Arc<crate::playout::PlayoutBook>)>,
+    /// The playout is paused for a candidate (the transport accepted the pause).
+    playout_paused: bool,
+    /// The one-per-call log of a pause the transport cannot apply was written.
+    pause_logged: bool,
+    /// A resume failed: the response is interrupted once the actions in hand are carried out.
+    abort_pending: bool,
     counters: Arc<Counters>,
 }
 
@@ -979,8 +1035,35 @@ impl TurnDriver {
             line_pending: None,
             events: None,
             user_speaking: None,
+            pause_hook: None,
+            playout_paused: false,
+            pause_logged: false,
+            abort_pending: false,
             counters: Arc::new(Counters::default()),
         }
+    }
+
+    /// Lets the driver pause the transport's playout on a barge-in candidate
+    /// (`[interruption] pause_then_decide`, [`PauseConfig`](crate::PauseConfig)) with `hook`;
+    /// `book` carries the transport's hold-full signal. Without a hook the setting has no effect
+    /// and the first candidate logs, once, that the old interruption is used. Also turns on the
+    /// echo recognition ([`Self::with_bot_text`] with the same book), which the rule needs to
+    /// leave the bot's own voice out of the caller's words.
+    #[must_use]
+    pub fn with_pause_hook(
+        mut self,
+        hook: PauseHook,
+        book: Arc<crate::playout::PlayoutBook>,
+    ) -> Self {
+        if self.config.interruption.pause.enabled {
+            self.machine
+                .set_pause(self.config.interruption.pause.policy());
+            if self.bot_text.is_none() {
+                self.bot_text = Some(Arc::clone(&book));
+            }
+        }
+        self.pause_hook = Some((hook, book));
+        self
     }
 
     /// Publishes the user turn events and barge-ins the driver decides to `events` (see
@@ -1239,7 +1322,11 @@ impl TurnDriver {
         }
     }
 
-    fn note_machine(&self) {
+    fn note_machine(&mut self) {
+        self.counters.pause_tightened.store(
+            self.machine.pause_stats().tightened_skips,
+            Ordering::Relaxed,
+        );
         if let Some(probe) = &self.probe {
             probe.set_machine(MachineSnapshot {
                 state: self.machine.state().kind(),
@@ -1269,7 +1356,24 @@ impl TurnDriver {
             }
             self.actions = actions;
             self.actions.clear();
+            // Taken before `result?`: a flag left behind by an error would interrupt a later,
+            // unrelated response.
+            let abort = std::mem::take(&mut self.abort_pending);
             result?;
+            if abort {
+                // A resume the transport could not apply: the bot may be silent for good, so the
+                // response is interrupted (the plain interrupt path) rather than left hanging.
+                let mut extra = Vec::new();
+                if self.machine.abort_response(&mut extra) {
+                    self.note_machine();
+                    for action in extra {
+                        if let Some(probe) = &self.probe {
+                            probe.record(action);
+                        }
+                        self.apply(action, ctx).await?;
+                    }
+                }
+            }
         }
         Ok(())
     }
@@ -1300,7 +1404,110 @@ impl TurnDriver {
                 Ok(())
             }
             TurnAction::StartBotTurn { epoch } => self.start_bot_turn(epoch, ctx).await,
+            TurnAction::PausePlayout { .. } => {
+                self.pause_playout().await;
+                Ok(())
+            }
+            TurnAction::ResumePlayout { paused_for, .. } => {
+                self.resume_playout(brisvox_agent::PauseOutcome::Resumed, paused_for)
+                    .await;
+                Ok(())
+            }
+            TurnAction::PauseReleased { paused_for, .. } => {
+                self.resume_playout(brisvox_agent::PauseOutcome::Ended, paused_for)
+                    .await;
+                Ok(())
+            }
+            TurnAction::PauseCommitted {
+                outcome,
+                paused_for,
+            } => {
+                self.note_pause_end(outcome, paused_for);
+                Ok(())
+            }
         }
+    }
+
+    /// Runs one transport pause op, bounded by the send timeout.
+    async fn playout_op(&self, op: PlayoutOp) -> Result<(), String> {
+        let Some((hook, _)) = &self.pause_hook else {
+            return Err("the transport cannot pause".to_owned());
+        };
+        tokio::select! {
+            sent = hook(op) => sent,
+            () = brisvox_core::clock::wait_for(&*self.clock, self.config.send_timeout) => {
+                Err("the transport did not take the command in time".to_owned())
+            }
+        }
+    }
+
+    /// Pause-then-decide: holds the playout. A transport that cannot pause (no hook, an error)
+    /// turns the feature off for the call, logs once, and the candidate is interrupted as it
+    /// would be without it.
+    async fn pause_playout(&mut self) {
+        match self.playout_op(PlayoutOp::Pause).await {
+            Ok(()) => {
+                bump(&self.counters.pauses);
+                self.playout_paused = true;
+            }
+            Err(reason) => {
+                // The hook noted the pause before it sent the command, and its own note of the
+                // end is in the future this error may have dropped (a timeout): end it here.
+                if let Some((_, book)) = &self.pause_hook {
+                    book.note_resume();
+                }
+                bump(&self.counters.pause_failures);
+                if !self.pause_logged {
+                    self.pause_logged = true;
+                    tracing::warn!(
+                        target: "brisvox::engine",
+                        %reason,
+                        "pause-then-decide: the transport cannot pause, barge-ins interrupt as without it"
+                    );
+                }
+                // The candidate in hand goes back to the interruption policy, as without the
+                // feature.
+                self.machine.pause_failed();
+                let now = self.clock.now();
+                self.followups.push_back(TurnInput::Tick { now });
+            }
+        }
+    }
+
+    /// Pause-then-decide: the response goes on from the paused point.
+    async fn resume_playout(&mut self, outcome: brisvox_agent::PauseOutcome, paused_for: Duration) {
+        self.note_pause_end(outcome, paused_for);
+        if !std::mem::take(&mut self.playout_paused) {
+            return;
+        }
+        if let Err(reason) = self.playout_op(PlayoutOp::Resume).await {
+            // The bot may stay silent for good: escalate to an interruption. A timeout dropped
+            // the hook's own note of the resume.
+            if let Some((_, book)) = &self.pause_hook {
+                book.note_resume();
+            }
+            bump(&self.counters.resume_failures);
+            tracing::warn!(
+                target: "brisvox::engine",
+                %reason,
+                "pause-then-decide: resume failed, the response is interrupted"
+            );
+            self.abort_pending = true;
+        }
+    }
+
+    /// Counts how a pause ended and how long it lasted.
+    fn note_pause_end(&self, outcome: brisvox_agent::PauseOutcome, paused_for: Duration) {
+        if let Some(slot) = self.counters.pause_outcomes.get(outcome.index()) {
+            bump(slot);
+        }
+        let ms = u64::try_from(paused_for.as_millis()).unwrap_or(u64::MAX);
+        let bucket = PAUSE_BOUNDS_MS.partition_point(|bound| *bound < ms);
+        if let Some(slot) = self.counters.pause_buckets.get(bucket) {
+            bump(slot);
+        }
+        let us = u64::try_from(paused_for.as_micros()).unwrap_or(u64::MAX);
+        self.counters.pause_sum_us.fetch_add(us, Ordering::Relaxed);
     }
 
     /// Offers the oldest waiting bot line to the machine when it is free for it (see "Bot
@@ -1611,6 +1818,8 @@ impl TurnDriver {
             self.vad_start_at
         };
         let old = self.epoch;
+        // A commit after a pause: the transport's clear below ends the pause.
+        self.playout_paused = false;
         self.timeline.interrupt(old, new_epoch, now, speech_start);
         self.after_interrupt = true;
         self.response = None;
@@ -2191,6 +2400,12 @@ impl TurnDriver {
             // The final text may have changed the partial text: that restarts the wait.
             self.note_partial();
         }
+        if self.bot_text.is_some() {
+            // The final of a paused candidate counts words too: the echo test applies to it as
+            // it does to an interim.
+            let echo = self.is_echo(&text, now);
+            self.machine.set_echo(echo);
+        }
         self.feed(TurnInput::SttFinal { text, at: now }, ctx)
             .await?;
         self.offer_final(ctx).await?;
@@ -2466,6 +2681,7 @@ impl TurnDriver {
         self.partial_gate = None;
         self.partial_seen = None;
         self.machine_deadline = None;
+        self.playout_paused = false;
         self.close_user();
         for _ in self.lines.drain(..) {
             bump(&self.counters.lines_rejected);
@@ -2598,6 +2814,23 @@ impl Processor for TurnDriver {
         ctx: &mut ProcessorContext,
     ) -> CoreResult<()> {
         self.ensure_started(ctx);
+        if self.config.interruption.pause.enabled && self.pause_hook.is_none() && !self.pause_logged
+        {
+            self.pause_logged = true;
+            tracing::warn!(
+                target: "brisvox::engine",
+                "pause-then-decide is on but this transport cannot pause: barge-ins interrupt as without it"
+            );
+        }
+        if self.playout_paused
+            && let Some((_, book)) = &self.pause_hook
+            && book.take_hold_full()
+        {
+            // The transport's hold buffer is full: commit (overflow).
+            self.machine.set_hold_full();
+            let now = self.clock.now();
+            self.feed(TurnInput::Tick { now }, ctx).await?;
+        }
         let mut result = match direction {
             Direction::Downstream => self.downstream(frame, ctx).await,
             Direction::Upstream => self.upstream(frame, ctx).await,

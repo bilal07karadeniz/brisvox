@@ -5,9 +5,17 @@
 //! brisvox-bench denoise quality --models DIR [--backends none,rnnoise] [--paths wideband,telephone]
 //!                            [--snrs 20,10,5,0] [--fixtures a,b] [--noise-dir DIR]
 //!                            [--noise-alone-s 8] [--out FILE]
-//! brisvox-bench denoise calls --set guards|gates|vad|denoisers|all --models DIR [--threads 8]
-//!                            [--voices-dir DIR] [--noise-dir DIR] [--paths wideband,telephone]
-//!                            [--levels] [--out FILE]
+//! brisvox-bench denoise calls --set guards|gates|vad|denoisers|all
+//!                            --models DIR [--threads 8] [--voices-dir DIR] [--noise-dir DIR]
+//!                            [--paths wideband,telephone] [--levels] [--barge-trim-s S]
+//!                            [--out FILE]
+//! brisvox-bench denoise realistic --set baseline|pause|fair [--threads 8] [--paths wideband,telephone]
+//!                            [--recognizers oracle,model,model+short-x:1,model+noise-words:0.1] [--seed N] [--fixtures-dir DIR] [--fixtures NAMES]
+//!                            [--noise-dir DIR] [--out FILE]
+//!                            (second voices through a loudspeaker and a room, background noise of many
+//!                            kinds at light to loud levels, many caller x source pairs, per-candidate
+//!                            metrics; `pause` runs pause-then-decide in the real turn machine with the
+//!                            words rule and the never rule)
 //! brisvox-bench denoise safety [--backends none,rnnoise,hush] [--paths wideband,telephone] [--force] [--out FILE]
 //! brisvox-bench denoise transcribe --stt-url ws://HOST:PORT [--backends none,rnnoise]
 //!                            [--paths wideband,telephone] [--snrs 20,10,5,0] [--noise-limit N]
@@ -146,6 +154,7 @@ pub(crate) fn denoise_cmd(
         Some("quality") => quality_cmd(args, command),
         Some("calls") => calls_cmd(args, command),
         Some("safety") => safety_cmd(args, command),
+        Some("realistic") => realistic_cmd(args, command),
         Some("transcribe") => transcribe_cmd(args, command),
         _ => Err(BenchError::Config(format!(
             "denoise: cpu, quality or transcribe\n{USAGE}"
@@ -221,8 +230,10 @@ fn calls_cmd(mut args: impl Iterator<Item = String>, command: &str) -> Result<bo
     let mut common = Common::new();
     let (mut set, mut threads, mut levels) = ("guards".to_owned(), 8usize, false);
     let mut voices_dir = None::<PathBuf>;
+    let mut barge_trim_s = None::<f64>;
     while let Some(flag) = args.next() {
         match flag.as_str() {
+            "--barge-trim-s" => barge_trim_s = Some(parse("--barge-trim-s", args.next())?),
             "--set" => set = parse("--set", args.next())?,
             "--threads" => threads = parse("--threads", args.next())?,
             "--levels" => levels = true,
@@ -242,16 +253,17 @@ fn calls_cmd(mut args: impl Iterator<Item = String>, command: &str) -> Result<bo
         .map_err(|e| BenchError::Config(format!("smart turn model: {e}")))?;
     let silero = SileroTractModel::bundled()
         .map_err(|e| BenchError::Config(format!("silero model: {e}")))?;
+    let configs = catalog(&set)?;
     let suite = Suite {
         speech: load_speech(common.fixtures_dir.as_deref(), &common.fixtures)?,
         voices: load_voices(
             &voices_dir.unwrap_or_else(|| brisvox_sim::fixture::fixtures_dir().join("interferers")),
         )?,
         noise: load_noise(&common.noise_dir())?,
+        barge_trim_s,
     };
     let paths = common.paths()?;
     let scenarios = standard_scenarios(&suite, &paths);
-    let configs = catalog(&set)?;
     eprintln!(
         "denoise calls: {} configurations x {} calls on {threads} threads ...",
         configs.len(),
@@ -295,6 +307,171 @@ fn calls_cmd(mut args: impl Iterator<Item = String>, command: &str) -> Result<bo
             "dB below the caller",
         ));
     }
+    emit(&markdown, common.out, &[])
+}
+
+fn realistic_cmd(
+    mut args: impl Iterator<Item = String>,
+    command: &str,
+) -> Result<bool, BenchError> {
+    use brisvox_bench::denoise_calls::{Config, PauseRuleSpec, PauseSpec, PolicyChoice};
+    use brisvox_bench::realistic::{
+        Recognizer, RecognizerModel, World, load_callers, load_interferers, load_rirs,
+    };
+    use brisvox_bench::realistic_run::{Mode, realistic_markdown, run_realistic};
+    let mut common = Common::new();
+    let (mut set, mut threads, mut seed) = ("pause".to_owned(), 8usize, 151u64);
+    let mut recognizers = vec!["oracle".to_owned(), "model".to_owned()];
+    common.fixtures = [
+        "callers/libri_1993",
+        "callers/libri_5338",
+        "callers/libri_5536",
+        "callers/libri_6295",
+        "callers/libri_6313",
+        "callers/libri_6319",
+        "tr_two_utterances",
+    ]
+    .iter()
+    .map(|s| (*s).to_owned())
+    .collect();
+    while let Some(flag) = args.next() {
+        match flag.as_str() {
+            "--set" => set = parse("--set", args.next())?,
+            "--threads" => threads = parse("--threads", args.next())?,
+            "--seed" => seed = parse("--seed", args.next())?,
+            "--recognizers" => recognizers = parse_list("--recognizers", args.next())?,
+            other => {
+                if !common.flag(other, &mut args)? {
+                    return Err(unknown(other));
+                }
+            }
+        }
+    }
+    let fixtures = common
+        .fixtures_dir
+        .clone()
+        .unwrap_or_else(brisvox_sim::fixture::fixtures_dir);
+    let world = World {
+        callers: load_callers(&fixtures, &common.fixtures)?,
+        interferers: {
+            let mut v = load_interferers(&fixtures.join("interferers"))?;
+            v.extend(load_interferers(&fixtures.join("realistic"))?);
+            v
+        },
+        rirs: load_rirs(&fixtures.join("realistic/rirs"))?,
+        noises: load_noise(&common.noise_dir())?,
+    };
+    let recs = recognizers
+        .iter()
+        .map(|r| match r.as_str() {
+            "oracle" => Ok(Recognizer::Oracle),
+            other => {
+                let bad = || {
+                    BenchError::Config(format!(
+                        "--recognizers: oracle, or model with +short-x:FACTOR and +noise-words:RATE, not {other}"
+                    ))
+                };
+                let mut parts = other.split('+');
+                if parts.next() != Some("model") {
+                    return Err(bad());
+                }
+                let mut model = RecognizerModel::assumed(seed);
+                for part in parts {
+                    let (key, value) = part.split_once(':').ok_or_else(bad)?;
+                    let value: f64 = value.parse().map_err(|_| bad())?;
+                    model = match key {
+                        "short-x" => model.with_short_miss_factor(value),
+                        "noise-words" => model.with_hallucination(value),
+                        _ => return Err(bad()),
+                    };
+                }
+                Ok(Recognizer::Modelled(model))
+            }
+        })
+        .collect::<Result<Vec<_>, _>>()?;
+    // The configurations, and the modes (a configuration, with or without a pause).
+    let paused = |config: &Config, after_ms: u64, decide_s: f64, rule: PauseRuleSpec| {
+        let mut c = config.clone();
+        c.pause = Some(PauseSpec {
+            decide: Duration::from_secs_f64(decide_s),
+            after: Duration::from_millis(after_ms),
+            rule,
+        });
+        c
+    };
+    let base = Config::baseline();
+    let mut one_word = Config::baseline();
+    one_word.policy = PolicyChoice::recommended(1);
+    let mut configs: Vec<Config> = Vec::new();
+    let mut modes: Vec<Mode> = Vec::new();
+    let mut add = |name: &str, config: Config| {
+        configs.push(config);
+        modes.push(Mode {
+            name: name.to_owned(),
+            config: configs.len() - 1,
+        });
+    };
+    // Today's guards with an interruption after 500 ms of speech and no resume: LiveKit without
+    // `resume_false_interruption` (its `min_interruption_duration` is 0.5 s, `min_words` 0).
+    let mut after_500 = Config::baseline();
+    after_500.policy.base.min_speech = Duration::from_millis(500);
+    match set.as_str() {
+        "baseline" => add("baseline", base),
+        "pause" => {
+            add("baseline", base.clone());
+            add("baseline, min_words = 1", one_word);
+            add(
+                "pause(never) 1.5 s",
+                paused(&base, 0, 1.5, PauseRuleSpec::Never),
+            );
+            add(
+                "pause(words) 1.0 s",
+                paused(&base, 0, 1.0, PauseRuleSpec::Words),
+            );
+            add(
+                "pause(words) 1.5 s",
+                paused(&base, 0, 1.5, PauseRuleSpec::Words),
+            );
+        }
+        "fair" => {
+            add("baseline (today)", base.clone());
+            add("Pipecat-like: min_words = 1", one_word);
+            add("LiveKit-like, no resume: interrupt after 500 ms", after_500);
+            add(
+                "LiveKit-like: pause after 500 ms, resume by 2.0 s",
+                paused(&base, 500, 2.0, PauseRuleSpec::Words),
+            );
+            for after in [0, 150, 250, 400] {
+                add(
+                    &format!("pause(words) after {after} ms, 1.5 s"),
+                    paused(&base, after, 1.5, PauseRuleSpec::Words),
+                );
+            }
+            add(
+                "pause(words) after 250 ms, 1.0 s",
+                paused(&base, 250, 1.0, PauseRuleSpec::Words),
+            );
+        }
+        other => {
+            return Err(BenchError::Config(format!(
+                "--set: baseline, pause or fair, not {other}"
+            )));
+        }
+    }
+    let silero = SileroTractModel::bundled()
+        .map_err(|e| BenchError::Config(format!("silero model: {e}")))?;
+    let paths = common.paths()?;
+    eprintln!(
+        "denoise realistic: {} modes, {} recognizers, {} paths on {threads} threads ...",
+        modes.len(),
+        recs.len(),
+        paths.len()
+    );
+    let report = run_realistic(&world, &configs, &modes, &recs, &paths, &silero, threads)?;
+    let setup = format!(
+        "set `{set}`, in process, the real TurnMachine and InterruptionPolicy on the events of the real Silero VAD, seed {seed}"
+    );
+    let markdown = realistic_markdown(&report, &environment(0, command, &setup), &world);
     emit(&markdown, common.out, &[])
 }
 

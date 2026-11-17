@@ -708,10 +708,43 @@ pub fn is_bot_echo(interim: &str, bot_recent: &str, candidate_age: Duration) -> 
 /// Words that mean "stop talking" when short utterances say them. A transcript of at most two
 /// words with one of them is never taken for the bot's echo, even if the bot just said it
 /// ("please wait", "stop"): missing a real "stop" costs more than a false interruption.
+///
+/// The words are kept folded: lower case, the Turkish dotless `ı` written as `i` (see
+/// [`is_command_word`]), so "hayır", "HAYIR" and "Hayir" are the same word.
 const COMMAND_WORDS: &[&str] = &[
     "stop", "wait", "hold", "pause", "cancel", "enough", "quiet", "sorry", "excuse", "no", "hang",
-    "listen",
+    "listen", "dur", "bekle", "yeter", "sus", "pardon", "dinle", "hayir",
 ];
+
+/// Whether `word` is one of the [`COMMAND_WORDS`], without regard to case and with the Turkish
+/// `ı`/`İ`/`I`/`i` folded together (an STT may write "HAYIR" or "hayır"; a plain lower-casing
+/// would turn "HAYIR" into "hayir" and "İ" into "i" plus a combining dot). Allocates nothing.
+fn is_command_word(word: &str) -> bool {
+    fn folded(word: &str) -> impl Iterator<Item = char> + '_ {
+        word.chars()
+            .flat_map(char::to_lowercase)
+            .filter(|c| *c != '\u{307}')
+            .map(|c| if c == 'ı' { 'i' } else { c })
+    }
+    COMMAND_WORDS
+        .iter()
+        .any(|command| folded(word).eq(command.chars()))
+}
+
+/// Whether `text` is a short command that means "stop talking": at most two words, one of them
+/// a command word ("stop", "wait", "dur", "bekle", ...). The pause rule commits on it at once,
+/// and [`echoes_bot`] never calls it the bot's echo.
+pub fn is_command_text(text: &str) -> bool {
+    let (mut total, mut command) = (0usize, false);
+    for word in text
+        .split(|c: char| !c.is_alphanumeric())
+        .filter(|w| !w.is_empty())
+    {
+        total += 1;
+        command |= is_command_word(word);
+    }
+    (1..=2).contains(&total) && command
+}
 
 /// Whether an interim transcript is the bot's own voice coming back: at least `min_words` words
 /// (and two for a short command: see below), and at least three quarters of them are among the
@@ -731,7 +764,7 @@ pub fn echoes_bot(interim: &str, bot_recent: &str, min_words: usize) -> bool {
     for word in words(interim) {
         total += 1;
         shared += usize::from(said.contains(&word));
-        command |= COMMAND_WORDS.contains(&word.as_str());
+        command |= is_command_word(&word);
     }
     if total <= 2 && command {
         return false;

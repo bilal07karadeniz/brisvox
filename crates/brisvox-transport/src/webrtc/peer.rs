@@ -675,7 +675,9 @@ impl Peer {
         self.connected.store(true, Ordering::Release);
         // ICE and DTLS are done: the call no longer counts against the handshake pool.
         self.handshake = None;
-        let (link, ends) = call_pair();
+        let (mut link, ends) = call_pair();
+        // Packets already on the wire play out in the browser: a clear does not flush it.
+        link.set_client_flush(false);
         let CallEnds {
             events,
             outgoing,

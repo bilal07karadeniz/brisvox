@@ -1,0 +1,21 @@
+{
+  "name": "libri_6313",
+  "sample_rate": 16000,
+  "samples": 216640,
+  "segments": [
+    {
+      "start": 8000,
+      "end": 89040,
+      "lang": "en",
+      "text": "AFTER WHAT SEEMED TO THEM HOURS A SHARP CALL FROM THE DEPTHS REACHED THEIR EARS",
+      "source": "librispeech:dev-clean:6313-66125-0017"
+    },
+    {
+      "start": 113040,
+      "end": 192640,
+      "lang": "en",
+      "text": "LODGED IN THE BRANCHES OF A PINYON TREE I THINK IT IS BUT HE DOESN'T ANSWER ME",
+      "source": "librispeech:dev-clean:6313-66125-0021"
+    }
+  ]
+}

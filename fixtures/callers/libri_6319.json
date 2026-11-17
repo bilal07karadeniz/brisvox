@@ -1,0 +1,21 @@
+{
+  "name": "libri_6319",
+  "sample_rate": 16000,
+  "samples": 251680,
+  "segments": [
+    {
+      "start": 8000,
+      "end": 112320,
+      "lang": "en",
+      "text": "THESE MEN HE SAID TO HIS MIGHTY COMPANY ARE NOTHING BUT A SOURCE OF TROUBLE",
+      "source": "librispeech:dev-clean:6319-57405-0002"
+    },
+    {
+      "start": 136320,
+      "end": 227680,
+      "lang": "en",
+      "text": "NO ONE BUT DEUCALION THE SON OF PROMETHEUS WAS READY FOR SUCH A STORM",
+      "source": "librispeech:dev-clean:6319-57405-0004"
+    }
+  ]
+}

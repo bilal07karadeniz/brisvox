@@ -209,6 +209,31 @@ fn interruption(section: &InterruptionSection) -> InterruptionConfig {
     if let Some(echo) = &section.echo_text_match {
         c.echo_text_match = *echo.get_ref();
     }
+    if section
+        .pause_then_decide
+        .as_ref()
+        .is_some_and(|v| *v.get_ref())
+    {
+        c.pause.enabled = true;
+    }
+    if let Some(ms) = section.decide_ms {
+        c.pause.decide = ms.duration();
+    }
+    if let Some(ms) = section.pause_after_ms {
+        c.pause.after = ms.duration();
+    }
+    if let Some(rule) = section.rule {
+        c.pause.rule = match rule {
+            super::schema::PauseRuleKind::Never => brisvox_engine::PauseRuleKind::Never,
+            super::schema::PauseRuleKind::Words => brisvox_engine::PauseRuleKind::Words,
+        };
+    }
+    if let Some(n) = section.tighten_after {
+        c.pause.tighten_after = n.get();
+    }
+    if let Some(ms) = section.tighten_window_ms {
+        c.pause.tighten_window = ms.duration();
+    }
     c
 }
 

@@ -914,7 +914,8 @@ Durations are whole milliseconds (`*_ms`). Ranges are inclusive.
 (0..=5000), `min_words` (0..=20), `confirm` (`"all"`/`"any"`), `echo_guard_ms` (0..=5000),
 `echo_min_words` (1..=20), `backchannels` (array of `"en"`, `"tr"`; `[]` turns them off),
 `backchannel_wait_ms` (0..=5000), `backchannel_max_speech_ms` (0..=10000), `vad_hangover_ms`
-(0..=2000), `echo_text_match` (bool, false). Meanings: `InterruptionConfig` in
+(0..=2000), `echo_text_match` (bool, false), `pause_then_decide` (bool, false), `decide_ms`,
+`rule`, `tighten_after`, `tighten_window_ms` (below). Meanings: `InterruptionConfig` in
 `crates/brisvox-engine/src/config.rs`.
 
 `echo_text_match = true` holds a barge-in candidate whose transcript is made of words the bot has
@@ -928,8 +929,30 @@ The trade-off: the text of an echo and of a caller repeating the bot is the same
 reads the bot's words back (an address, a number) while the bot is still speaking is held like the
 echo until the transcript shows other words. Short commands are never held: an utterance of at most
 two words with "stop", "wait", "hold", "pause", "cancel", "enough", "quiet", "sorry", "excuse", "no",
-"hang" or "listen" in it goes through even if the bot just said that word. A candidate older than 1.5 s
+"hang", "listen" or the Turkish "dur", "bekle", "yeter", "sus", "pardon", "dinle", "hayır" (case-insensitive, the
+Turkish dotted and dotless i folded, so "HAYIR" counts) in it goes through even if the bot just said that word. This list is
+the same with or without `pause_then_decide`; the Turkish words are new in this release and also change what `echo_text_match` holds (a one- or two-word Turkish command is no longer
+taken for the bot's echo). A candidate older than 1.5 s
 is held only with three or more words that are the bot's.
+
+`pause_then_decide = true` pauses the bot's playout on a barge-in candidate once its speech has lasted `pause_after_ms` (below) and decides within `decide_ms`
+(300..=1750, default 1500; a recogniser needs 200 to 400 ms for a first interim, so a shorter window would decide before it could hear a word) whether to interrupt (exactly as without the setting) or to resume the same response from the paused point:
+a cough, a television or a "mm-hmm" no longer cuts the bot off for good. `rule` (`"words"` default, or `"never"`): `words` interrupts
+at once on any recognised word of the caller (the bot's own echo and backchannels do not count) or a command word ("stop", "wait", "dur",
+"bekle", ...) and resumes only when the speech has stopped and no words came: at the end of the window or with an empty final. While the speech goes on the rule waits, and the end of the window interrupts (uncertain: a lagging recogniser must not lose a real barge-in); `never` leaves the commit to the guards above and only
+resumes a candidate they drop. `tighten_after` (0..=20, default 2) resumed pauses within `tighten_window_ms` (1000..=3600000, default 60000) make
+the bot stop pausing on voice activity alone: it keeps talking until one recognised word is heard. Unplayed audio and the speech the TTS keeps
+producing wait in the transport's bounded hold buffer; a full buffer interrupts. The context only ever holds what was played. It turns on the echo
+recognition and works with the guards off (`preset = "off"`). A transport that cannot pause falls back to interrupting, one log line per call.
+A reload applies it to new calls (no restart: it needs no model). Metrics: `brisvox_barge_in_pauses_total`, `brisvox_barge_in_pause_seconds`.
+`pause_after_ms` (0..=2000, default 400) is how long the speech of a candidate has to last before the bot is paused (LiveKit's `min_interruption_duration`): until then the bot keeps talking, a recognised word or a
+command word still interrupts at once, and a candidate whose speech ends first waits for its transcript (an empty one drops it), so a click or a door bang never pauses the bot. 400 ms means the caller hears the bot stop as early as with today's
+guards; `0` pauses at the first moment of speech (the bot is silent after about 100 ms, and short noises pause it five times as often in the test calls).
+It is **off by default**. Measured in the call harness (`bench/results/barge-in-noise.md`, with assumed recognizer miss rates, mostly synthetic noise and no live transport): today's guards cut the bot off for good on 13 % (wideband) and 19 % (telephone) of the candidates that noise without speech makes, driven by
+synthetic voiced coughs (the real recordings made 4 and 8 candidates); the `words` rule on none (about 2 % if the recognizer writes a word for a tenth of the noise). The cost: the `words` rule loses the real barge-ins the recognizer misses, which today's guards do not
+depend on (they decide on duration): weighted 60 / 25 / 15 % over sentences, 0.9 s commands and 0.5 s command words, 1.2 % (wideband) and 5.1 % (telephone) with short utterances missed twice as often as sentences, 0.7 % and 2.7 % at the sentence rate, 0 with a recognizer that hears every word; none of it in sentences. A LiveKit-style
+configuration loses the same, a `min_words = 1` interruption several times more. A good opt-in for noisy places with a recognizer that hears short words; watch `brisvox_barge_in_pauses_total` and the repeat rate of your callers' short commands. A second person who talks still interrupts the bot.
+Design: `docs/ARCHITECTURE.md`, "Pause, then decide".
 
 ### `[vad]` (optional)
 
@@ -2063,6 +2086,8 @@ scrape time.
 | `brisvox_engine_events_total` | counter | `event` | Engine trouble of finished calls: queue and stale drops, pool trouble, finals-gate, settle and mark timeouts, truncations, and the noise suppression of the caller's audio (`denoise_bypassed_narrowband`: calls that ran without the filter because their audio was below its minimum rate, e.g. Hush on an 8 kHz call; `denoise_build_failures`; `denoise_errors`; `denoise_feed_dropped`). |
 | `brisvox_calls_ended_total` | counter | | Calls whose end-of-call statistics were added. |
 | `brisvox_language_switches_total` | counter | | Times a call's agent followed the caller into another language (an agent with `[languages]`; added when the call ends). |
+| `brisvox_barge_in_pauses_total` | counter | `outcome` (`resumed`, `committed`, `overflow`, `deadline`, `ended`) | Pauses of the bot's playout on barge-in candidates (`[interruption] pause_then_decide`), by how they ended: `resumed` the response went on, `committed` the rule interrupted before the window ended, `deadline` the window ended without a resume, `overflow` the transport's hold buffer filled up, `ended` the bot's audio ended while paused (added when the call ends). The resumed share of all outcomes is the share of false candidates the feature rescued. |
+| `brisvox_barge_in_pause_seconds` | histogram | | How long the playout was held for one barge-in candidate, from the pause to the resume or the commit (bounds 0.1 to 2 s; added when the call ends). A long tail is the decision window being spent. |
 | `brisvox_llm_tokens_total` | counter | `provider`, `model`, `kind` (`input`, `cached_input`, `output`) | LLM tokens the provider reported for finished calls, discarded speculative responses included. `cached_input` is part of `input`. |
 | `brisvox_stt_audio_seconds_total` | counter | `provider`, `model` | Seconds of audio sent to the STT provider by finished calls. |
 | `brisvox_tts_characters_total` | counter | `provider`, `model` | Characters sent to the TTS provider by finished calls. |

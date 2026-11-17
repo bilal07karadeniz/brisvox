@@ -101,8 +101,8 @@ pub use agent_input::{
 };
 pub use audio_in::{AudioIn, AudioInStats, AudioInStatsSnapshot, CallerAudioTap};
 pub use config::{
-    EarlyAnalysisConfig, EngineConfig, EngineRates, InterruptionConfig, LlmConfig, QueueConfigs,
-    SpeculationConfig, Timeouts,
+    EarlyAnalysisConfig, EngineConfig, EngineRates, InterruptionConfig, LlmConfig, PauseConfig,
+    PauseRuleKind, QueueConfigs, SpeculationConfig, Timeouts,
 };
 pub use convert::ConvertError;
 pub use denoise::{DenoiseSetup, DenoiseStats, DenoiseStatsSnapshot, DenoiserFactory};
@@ -125,7 +125,7 @@ pub use llm_runner::{FlowProbe, LlmRunner, LlmRunnerBuilder};
 pub use offload::{Offload, WARM_COOLDOWN, WARM_MAX_QUEUE_PER_THREAD, WarmClaim, WarmReport};
 pub use playout::{
     BookStats, DEFAULT_BOOK_CAPACITY, Heard, PlayoutBook, ResolvedMark, RoundKey, RoundSnapshot,
-    clear_hook,
+    clear_hook, pause_hook,
 };
 pub use pump::{Pump, PumpConfig, PumpEnd, PumpHandle, PumpLinks, PumpStats};
 pub use rates::CallRatesCell;
@@ -160,7 +160,8 @@ pub use truncation::{
 pub use tts::{TtsStage, TtsStageConfig, TtsStats, TtsStatsSnapshot, WHITESPACE_LEAD_CAP};
 pub use tts_audio::OutputFramer;
 pub use turn_driver::{
-    ANALYSIS_DEFER_MAX, ClearFuture, ClearHook, MachineSnapshot, TurnDriver, TurnDriverConfig,
-    TurnDriverStats, TurnDriverStatsSnapshot, TurnProbe, smart_turn_warm_jobs,
+    ANALYSIS_DEFER_MAX, ClearFuture, ClearHook, MachineSnapshot, PAUSE_BOUNDS_MS, PauseHook,
+    PlayoutOp, TurnDriver, TurnDriverConfig, TurnDriverStats, TurnDriverStatsSnapshot, TurnProbe,
+    smart_turn_warm_jobs,
 };
 pub use vad::{EnergyModel, VadSetup, VadStats, VadStatsSnapshot, VadWorkerConfig};

@@ -651,6 +651,12 @@ impl<F: ProviderFactory> EngineRunner<F> {
         };
         let session_config = SessionConfig {
             seed: ctx.id.get(),
+            // Pause-then-decide needs the session to keep audio for a resume.
+            replay: if self.agent.engine().interruption.pause.enabled {
+                brisvox_transport::DEFAULT_REPLAY
+            } else {
+                self.config.session.replay
+            },
             ..self.config.session
         };
         let session = TransportSession::open(ctx.clock.clone(), link, session_config, &ctx.cancel)

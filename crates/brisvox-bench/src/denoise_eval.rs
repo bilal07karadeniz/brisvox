@@ -226,7 +226,13 @@ pub fn load_speech(dir: Option<&Path>, names: &[String]) -> Result<Vec<Speech>, 
     names
         .iter()
         .map(|name| {
-            let fixture = Fixture::load(&dir, name).map_err(|e| invalid(format!("{name}: {e}")))?;
+            // `callers/libri_1993`: a fixture in a subdirectory of `dir`.
+            let (sub, stem) = name
+                .rsplit_once('/')
+                .map_or((dir.clone(), name.as_str()), |(sub, stem)| {
+                    (dir.join(sub), stem)
+                });
+            let fixture = Fixture::load(&sub, stem).map_err(|e| invalid(format!("{name}: {e}")))?;
             let pcm = pcm_from_le(&fixture.pcm);
             let segments: Vec<(usize, usize)> = fixture
                 .segments

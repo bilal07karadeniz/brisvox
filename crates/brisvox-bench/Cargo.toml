@@ -41,6 +41,7 @@ brisvox-sim = { workspace = true }
 brisvox-transport = { workspace = true }
 bytes = { workspace = true }
 futures = { workspace = true }
+realfft = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 sysinfo = { workspace = true }

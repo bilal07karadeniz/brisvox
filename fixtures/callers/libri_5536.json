@@ -1,0 +1,21 @@
+{
+  "name": "libri_5536",
+  "sample_rate": 16000,
+  "samples": 233360,
+  "segments": [
+    {
+      "start": 8000,
+      "end": 101200,
+      "lang": "en",
+      "text": "AMONG US ALL MEN WERE CREATED SONS OF GOD AND STOOD ERECT AS CONSCIOUS OF THEIR DIVINITY",
+      "source": "librispeech:dev-clean:5536-43358-0004"
+    },
+    {
+      "start": 125200,
+      "end": 209360,
+      "lang": "en",
+      "text": "THE HISTORIANS OF THE WHITE RACE ADMIT THAT THE INDIAN WAS NEVER THE FIRST TO REPUDIATE HIS OATH",
+      "source": "librispeech:dev-clean:5536-43358-0019"
+    }
+  ]
+}

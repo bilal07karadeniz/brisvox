@@ -1809,6 +1809,12 @@ fn random_inputs_keep_every_invariant_with_guards_on() {
                         TurnAction::StartBotTurn { .. } => {
                             panic!("{name}: no bot line was asked for")
                         }
+                        TurnAction::PausePlayout { .. }
+                        | TurnAction::ResumePlayout { .. }
+                        | TurnAction::PauseReleased { .. }
+                        | TurnAction::PauseCommitted { .. } => {
+                            panic!("{name}: pause-then-decide is off")
+                        }
                     }
                 }
                 // The epoch moves only with a user turn start, and by at most one.

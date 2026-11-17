@@ -1,0 +1,21 @@
+{
+  "name": "libri_6295",
+  "sample_rate": 16000,
+  "samples": 227600,
+  "segments": [
+    {
+      "start": 8000,
+      "end": 96720,
+      "lang": "en",
+      "text": "PEOPLE WERE COOLER HERE AND THEY WERE MORE PRONE TO LOOK AT THE TWO SIDES OF A QUESTION",
+      "source": "librispeech:dev-clean:6295-244435-0030"
+    },
+    {
+      "start": 120720,
+      "end": 203600,
+      "lang": "en",
+      "text": "IF YOU'VE GOT PISTOLS JUST YOU THINK ONCE BEFORE YOU SHOOT SAID COLLINS",
+      "source": "librispeech:dev-clean:6295-244435-0037"
+    }
+  ]
+}

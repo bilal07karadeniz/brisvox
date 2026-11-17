@@ -256,3 +256,59 @@ fn turkish_capital_i_folds_to_dotted_i_and_dotless_stays_distinct() {
     assert!(!policy.is_only_backchannel("HIHI"));
     assert!(policy.is_only_backchannel("hıhı"));
 }
+
+#[test]
+fn command_texts_are_short_and_hold_a_command_word() {
+    use brisvox_agent::is_command_text;
+    for yes in [
+        "stop",
+        "Stop!",
+        "wait",
+        "hold on",
+        "dur",
+        "bekle",
+        "bekle bir",
+        "yeter",
+        "sus",
+        "pardon",
+        "dinle",
+        "hayır",
+        "hayir",
+        "HAYIR",
+        "Hayır.",
+        "STOP",
+    ] {
+        assert!(is_command_text(yes), "{yes}");
+    }
+    for no in [
+        "",
+        "hello",
+        "wait for me please",
+        "bir saniye bekle lütfen",
+        "i said stop to it",
+        "durum",
+        "haya",
+        "...",
+    ] {
+        assert!(!is_command_text(no), "{no}");
+    }
+}
+
+#[test]
+fn turkish_dotted_and_dotless_i_fold_together_in_command_words() {
+    use brisvox_agent::is_command_text;
+    // `İ` lower-cases to `i` plus a combining dot, `I` to `i`, and the word is written with `ı`.
+    assert!(is_command_text("HAYIR"));
+    assert!(is_command_text("hayır"));
+    assert!(is_command_text("HAYİR"));
+    assert!(is_command_text("hayİr"));
+    assert!(is_command_text("YETER"));
+    assert!(is_command_text("DİNLE"));
+}
+
+#[test]
+fn a_command_word_is_never_the_bots_echo() {
+    use brisvox_agent::echoes_bot;
+    assert!(!echoes_bot("hayır", "hayır efendim hayır", 1));
+    assert!(!echoes_bot("HAYIR", "hayır efendim hayır", 1));
+}

@@ -170,6 +170,8 @@ pub async fn open_with(
         link,
         SessionConfig {
             position_interval: 20 * MS,
+            // Kept so that tests can pause the playout.
+            replay: brisvox_transport::DEFAULT_REPLAY,
             ..SessionConfig::default()
         },
         &cancel,

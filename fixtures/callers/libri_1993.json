@@ -1,0 +1,21 @@
+{
+  "name": "libri_1993",
+  "sample_rate": 16000,
+  "samples": 213920,
+  "segments": [
+    {
+      "start": 8000,
+      "end": 77920,
+      "lang": "en",
+      "text": "GRANDFATHER CAME DOWN WEARING A WHITE SHIRT AND HIS SUNDAY COAT",
+      "source": "librispeech:dev-clean:1993-147965-0000"
+    },
+    {
+      "start": 101920,
+      "end": 189920,
+      "lang": "en",
+      "text": "HE MADE THE SIGN OF THE CROSS OVER ME PUT ON HIS CAP AND WENT OFF IN THE DARK",
+      "source": "librispeech:dev-clean:1993-147965-0008"
+    }
+  ]
+}

@@ -2820,6 +2820,12 @@ fn random_inputs_keep_every_invariant() {
                         );
                         assert_eq!(*epoch, m.epoch(), "{case:?}: bot turn epoch");
                     }
+                    TurnAction::PausePlayout { .. }
+                    | TurnAction::ResumePlayout { .. }
+                    | TurnAction::PauseReleased { .. }
+                    | TurnAction::PauseCommitted { .. } => {
+                        panic!("{case:?}: pause-then-decide is off")
+                    }
                 }
             }
             assert_eq!(m.armed_deadline(), model, "{case:?}: timer slot agrees");

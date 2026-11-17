@@ -1,0 +1,44 @@
+Interferers and room impulse responses for the barge-in measurements under realistic listening
+conditions (brisvox-bench denoise realistic ...). A second voice in a caller's line is usually a television or a
+person in the next room: it comes out of a loudspeaker and through a room, not straight from a close microphone.
+
+All audio here is 16 kHz, mono, 16-bit PCM. Nothing is committed mixed: the benchmark mixes the clips into the
+caller fixtures at fixed levels and, for the "room" interferers, convolves the dry clips with the impulse responses
+below at run time. No endorsement by the corpus authors, speakers or publishers is implied.
+
+1. Dry clips (clips.json, kind "dry"): ten more speakers (4 female, 6 male) of the test-clean set of LibriSpeech:
+   Vassil Panayotov, Guoguo Chen, Daniel Povey, Sanjeev Khudanpur, "Librispeech: an ASR corpus based on public
+   domain audio books", ICASSP 2015, https://www.openslr.org/12/ . CC BY 4.0,
+   https://creativecommons.org/licenses/by/4.0/ ; the underlying LibriVox recordings are in the public domain.
+   Modifications: one utterance of 3.5 to 5.5 s per speaker, decoded from FLAC, converted to 16 kHz mono PCM16 and
+   peak-normalized to -6 dBFS. clips.json has the transcript, the speaker's sex (LibriSpeech SPEAKERS.TXT) and the
+   SHA-256 of the original FLAC.
+
+2. Far-field loudspeaker recordings (clips.json, kind "farfield"): six excerpts of the VOiCES corpus (Voices Obscured
+   in Complex Environmental Settings): Colleen Richey et al., Interspeech 2018, https://arxiv.org/abs/1804.05053 ,
+   https://iqtlabs.github.io/voices/ , https://registry.opendata.aws/lab41-sri-voices/ . CC BY 4.0. They are LibriSpeech
+   utterances played through a loudspeaker in a real room (room 1, no distractor noise) and recorded by a microphone
+   at the far end of the room (mic 05, "far"). Modifications: 5 s from 0.3 s before the speech starts, peak-normalized
+   to -6 dBFS; the file name and the SHA-256 of the original WAV are in clips.json. The corpus has no transcripts of
+   the excerpts here: the benchmark only needs how many words there are (clips.json "words", an estimate of 2.5 words
+   a second, not an alignment).
+
+3. Turkish broadcast speech (clips.json, kind "turkish"): three excerpts of MediaSpeech (Turkish part), Rostislav
+   Kolobov et al., "MediaSpeech: Multilanguage ASR Benchmark and Dataset", arXiv:2103.16193, 2021,
+   https://www.openslr.org/108/ . CC BY 4.0. Speech of TV and online news programmes. Modifications: seconds 1.0 to 6.0
+   of a clip of about 14.5 s, decoded from FLAC, converted to 16 kHz mono PCM16, peak-normalized to -6 dBFS. The text
+   in clips.json is the start of the clip's transcript in proportion to the excerpt (not an alignment), with the non-ASCII
+   characters left out: the benchmark only counts its words. The speakers'
+   sex is not known.
+
+4. Room impulse responses (rirs/): eight measured impulse responses of the "Room Impulse Response and Noise Database"
+   (OpenSLR 28), Tom Ko, Vijayaditya Peddinti, Daniel Povey, Michael L. Seltzer, Sanjeev Khudanpur, "A study on data
+   augmentation of reverberant speech for robust speech recognition", ICASSP 2017, https://www.openslr.org/28/ .
+   Apache License 2.0, https://www.apache.org/licenses/LICENSE-2.0 . The database collects, among others, the REVERB
+   challenge 2014 (RVB2014), the Aachen impulse response database (AIR) and the RWCP sound scene database; each entry
+   of rirs/rirs.json names the original file inside the OpenSLR archive and the room's reverberation time (the 60 dB
+   decay time estimated from the -5 to -25 dB range of the energy decay curve of the whole response). Modifications:
+   the first channel, resampled to 16 kHz where needed, starting 2 ms before the direct sound and cut to at most
+   0.6 s with a 100 ms fade-out, peak-normalized to 0.9 (reverberation of the large rooms is therefore cut short).
+
+5. speakers' sex: LibriSpeech SPEAKERS.TXT (same license as the corpus); `../callers/sex.json` holds the callers'.

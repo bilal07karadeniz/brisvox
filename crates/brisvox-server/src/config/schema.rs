@@ -217,6 +217,19 @@ pub enum ConfirmKind {
     Any,
 }
 
+/// `interruption.rule`: how a paused barge-in is decided.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+#[serde(rename_all = "snake_case")]
+pub enum PauseRuleKind {
+    /// The interruption guards decide; the bot never resumes on evidence (a candidate they veto
+    /// at the end of the speech resumes). A neutral baseline.
+    Never,
+    /// Any recognised word of the caller (or a command word) interrupts at once; no word by the
+    /// end of `decide_ms` resumes the bot. The default.
+    Words,
+}
+
 /// `[interruption]`: the preset, then per-field overrides.
 #[derive(Debug, Clone, Default, PartialEq, Deserialize)]
 #[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
@@ -251,6 +264,39 @@ pub struct InterruptionSection {
     /// (without words a candidate is confirmed by its duration before any transcript exists).
     #[cfg_attr(feature = "schema", schemars(with = "Option<bool>"))]
     pub echo_text_match: Option<Spanned<bool>>,
+    /// Pause, then decide. On a barge-in candidate whose speech has lasted `pause_after_ms` the bot's playout pauses
+    /// (the caller hears silence as early as an interruption would give it) and within `decide_ms` the
+    /// engine either interrupts as it does without this setting, or resumes the same response
+    /// from the paused point: a cough, a television or a "mm-hmm" no longer cuts the bot off for
+    /// good. The unplayed audio and the speech the TTS keeps producing wait in a bounded hold
+    /// buffer (a full buffer interrupts); the LLM context holds only what was played. Every
+    /// transport can pause (a transport that cannot falls back to interrupting, with one log
+    /// line per call). Turns the echo recognition on (the bot's own words never count as the
+    /// caller's). Default `false`.
+    #[cfg_attr(feature = "schema", schemars(with = "Option<bool>"))]
+    pub pause_then_decide: Option<Spanned<bool>>,
+    /// The decision window of a pause: at most this long after the pause began the engine
+    /// interrupts, unless the rule resumed the bot before. At least 300 ms (a recogniser needs
+    /// 200 to 400 ms for a first interim; a shorter window decides before it can hear a word)
+    /// and at most 1750 ms (the speech the TTS produces meanwhile waits in the transport, whose
+    /// send timeout is 2 s). Default 1500.
+    pub decide_ms: Option<Millis<300, 1_750>>,
+    /// How long a candidate's speech has to last before the bot is paused for it (LiveKit's
+    /// `min_interruption_duration`). Until then the bot keeps talking; a recognised word or a
+    /// command word still interrupts at once, and a candidate whose speech ends first waits for
+    /// its transcript (an empty one drops it), so a click or a door never pauses the bot. 0 pauses
+    /// at the first moment of speech. Default 400 (the caller hears the bot stop as early as with
+    /// today's guards).
+    pub pause_after_ms: Option<Millis<0, 2_000>>,
+    /// The decision rule of a pause. Default `words`.
+    pub rule: Option<PauseRuleKind>,
+    /// After this many resumed pauses within `tighten_window_ms` the bot is no longer paused by
+    /// the voice activity alone: it keeps talking until one recognised word of the caller is
+    /// heard, so a television that keeps starting the VAD does not make it stutter (0: never
+    /// tighten). Default 2.
+    pub tighten_after: Option<Count<0, 20>>,
+    /// The window `tighten_after` counts resumed pauses in. Default 60000.
+    pub tighten_window_ms: Option<Millis<1_000, 3_600_000>>,
 }
 
 /// `[vad]`.

@@ -30,6 +30,24 @@
 //! command task reaches it. What can still reach the adapter ahead of the clear is the one frame
 //! the output task was writing when the clear arrived.
 //!
+//! # Pause and resume
+//! Pause-then-decide stops the bot's playout without ending the response. [`CommandSender`]
+//! applies [`TransportCommand::Pause`] like a clear, around the command queue: the output task stops
+//! reading the pacer's sink (so the sink fills, the pacer waits, and the pacer, command and engine queues
+//! fill behind it: the hold buffer is those bounded queues, no audio is dropped), the audio and
+//! marks of the wire queue are pulled back, and the adapter gets `WireOut::Clear` of the current
+//! epoch, so its buffers and the client's are flushed and the caller hears silence as early as a
+//! barge-in's clear gives it. The epoch is unchanged; adapters accept audio of the epoch they were
+//! cleared to, so nothing else is needed. The marks sent and not yet echoed go back to waiting.
+//!
+//! [`TransportCommand::Resume`] re-sends the last `rewind` of the released audio (kept in a ring
+//! of the most recent [`SessionConfig::replay`], never counted as released again, so positions, marks and
+//! the engine's heard-position arithmetic stay those of the stream), then the marks, then the
+//! pacer goes on: it finds itself behind its schedule and restarts its grid (an underrun is counted). A
+//! [`TransportCommand::Clear`] during a pause (the commit) drops the held audio like any clear. If more than
+//! [`SessionConfig::hold_max`] of audio waits while paused, [`TransportEvent::HoldFull`] is
+//! reported once (overflow: the engine commits).
+//!
 //! # Marks
 //! A mark waits in the ledger until the audio ahead of it is released, is then sent to the wire
 //! and remembered as sent (at most `MAX_SENT_MARKS`) until the client echoes it. A clear cuts every
@@ -84,6 +102,9 @@ use crate::event::{CallInfo, StopReason, TransportCommand, TransportEvent, Utter
 /// Slots in the system lane of the pacer and sink inboxes (system frames are never dropped).
 const SYSTEM_LANE: usize = 8;
 
+/// The most released audio kept for a resume to send again.
+pub const DEFAULT_REPLAY: Duration = Duration::from_secs(3);
+
 /// How long the final playback report may wait for a consumer that has stopped reading.
 const FINAL_REPORT_TIMEOUT: Duration = Duration::from_secs(1);
 
@@ -130,6 +151,24 @@ pub struct SessionConfig {
     /// Audio released per playback report (per utterance). Smaller means finer progress reports
     /// and more events.
     pub position_interval: Duration,
+    /// While paused ([`TransportCommand::Pause`]): the most audio that may wait, accepted and not
+    /// released, before [`TransportEvent::HoldFull`] is reported. The queues bound it anyway
+    /// (a few seconds); this makes the limit explicit.
+    pub hold_max: Duration,
+    /// How much of the most recently released audio is kept for a resume to send again
+    /// ([`TransportCommand::Resume`]). Zero (the default) keeps none and refuses
+    /// [`TransportCommand::Pause`] (an error; the engine then interrupts as without
+    /// pause-then-decide): hosts that enable the feature set [`DEFAULT_REPLAY`]. The ring holds
+    /// reference-counted frames (no copies), about 50 per second of audio. A rewind that asks
+    /// for more is cut to it and counted ([`CommandSender::hold_stats`]).
+    ///
+    /// What a resume cannot give back: audio the client had buffered when it was cleared beyond
+    /// `rewind` (a lead estimate), and, where a clear does not flush the client
+    /// ([`CallLink::client_flush`]: WebRTC, SIP), nothing but what the session pulled out of its
+    /// own wire queue is sent again, so up to the adapter's own queue of audio can be lost; the
+    /// one frame the output task is writing when the pause lands goes out ahead of the clear and
+    /// may be heard twice (it is in the ring).
+    pub replay: Duration,
 }
 
 impl Default for SessionConfig {
@@ -142,6 +181,8 @@ impl Default for SessionConfig {
             pacer_capacity: 64,
             sink_capacity: 4,
             position_interval: Duration::from_millis(100),
+            hold_max: Duration::from_millis(2500),
+            replay: Duration::ZERO,
         }
     }
 }
@@ -266,6 +307,16 @@ impl Control {
             if epoch > ledger.epoch {
                 ledger.epoch = epoch;
                 ledger.generation = ledger.generation.saturating_add(1);
+                // A clear ends a pause (the commit) and drops what was held for a resume.
+                if ledger.paused {
+                    ledger.paused = false;
+                    ledger.pause_seq = ledger.pause_seq.saturating_add(1);
+                }
+                ledger.pulled = Duration::ZERO;
+                ledger.rewind = Duration::ZERO;
+                ledger.hold_flagged = false;
+                ledger.replay.clear();
+                ledger.replay_dur = Duration::ZERO;
                 // Everything accepted so far is older: it will never be released.
                 ledger.queued.clear();
                 ledger.enqueued = ledger.released;
@@ -312,6 +363,90 @@ impl Control {
     }
 }
 
+impl Control {
+    /// Applies `Pause` now (see "Pause and resume" in the module docs).
+    async fn pause(&self) -> Result<()> {
+        let closed = || Error::Core(CoreError::ChannelClosed("transport session"));
+        let _gate = tokio::select! {
+            biased;
+            () = self.cancel.cancelled() => return Err(closed()),
+            gate = self.gate.lock() => gate,
+        };
+        let wire = self.lock_path().as_ref().map(|path| path.wire.clone());
+        {
+            let mut ledger = self.shared.lock();
+            if ledger.paused {
+                return Ok(());
+            }
+            if ledger.replay_max.is_zero() {
+                return Err(Error::Config(
+                    "pause needs SessionConfig::replay: nothing is kept to send again".to_owned(),
+                ));
+            }
+            ledger.paused = true;
+            ledger.pause_seq = ledger.pause_seq.saturating_add(1);
+            ledger.hold_flagged = false;
+            ledger.rewind = Duration::ZERO;
+            // Marks already sent wait again: the client's buffer is cleared, their echoes are
+            // ignored, and they are sent once more after the audio that is sent again.
+            let target = ledger.released;
+            let sent = std::mem::take(&mut ledger.sent_marks);
+            for id in sent.into_iter().rev() {
+                ledger.marks.push_front((id, target));
+            }
+            // Audio and marks the output task already queued for the adapter come back: the audio
+            // is in the replay ring (it counts as released), the marks wait again.
+            let mut pulled = Duration::ZERO;
+            if let Some(wire) = &wire {
+                wire.purge(|out| match out {
+                    WireOut::Audio(frame) => {
+                        pulled = pulled.saturating_add(frame.duration());
+                        true
+                    }
+                    WireOut::Mark { .. } => true,
+                    WireOut::Clear { .. } | WireOut::Hangup => false,
+                });
+            }
+            ledger.pulled = pulled;
+        }
+        self.shared.wake.notify_one();
+        Ok(())
+    }
+
+    /// Applies `Resume` now.
+    async fn resume(&self, rewind: Duration) -> Result<()> {
+        let closed = || Error::Core(CoreError::ChannelClosed("transport session"));
+        let _gate = tokio::select! {
+            biased;
+            () = self.cancel.cancelled() => return Err(closed()),
+            gate = self.gate.lock() => gate,
+        };
+        {
+            let mut ledger = self.shared.lock();
+            if !ledger.paused {
+                return Ok(());
+            }
+            ledger.paused = false;
+            ledger.pause_seq = ledger.pause_seq.saturating_add(1);
+            let wanted = rewind.max(ledger.pulled);
+            if wanted > ledger.replay_max {
+                ledger.rewind_clamped = ledger.rewind_clamped.saturating_add(1);
+            }
+            ledger.rewind = wanted.min(ledger.replay_max);
+        }
+        self.shared.wake.notify_one();
+        Ok(())
+    }
+}
+
+/// Counters of a session's pauses ([`CommandSender::hold_stats`]).
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct HoldStats {
+    /// Resumes that asked to send again more audio than [`SessionConfig::replay`] keeps: the
+    /// rewind was cut, so part of what the client had buffered was not sent again.
+    pub rewind_clamped: u64,
+}
+
 /// The engine's way to issue commands; cheap to clone, for tasks that act on their own (a barge-in
 /// detector sends `Clear` from its own task).
 ///
@@ -326,13 +461,37 @@ pub struct CommandSender {
 }
 
 impl CommandSender {
+    /// Counters of pause and resume (see [`HoldStats`]).
+    pub fn hold_stats(&self) -> HoldStats {
+        HoldStats {
+            rewind_clamped: self.control.shared.lock().rewind_clamped,
+        }
+    }
+
+    /// The number of the latest pause or resume the session applied (it grows by one with each).
+    /// Read right after a [`TransportCommand::Pause`] was sent, it names that pause in
+    /// [`TransportEvent::HoldFull`].
+    pub fn pause_seq(&self) -> u64 {
+        self.control.shared.lock().pause_seq
+    }
+
+    /// Applies a command that skips the queue (`Clear`, `Pause`, `Resume`); `None` for the rest.
+    async fn out_of_band(&self, command: &TransportCommand) -> Option<Result<()>> {
+        match command {
+            TransportCommand::Clear { epoch } => Some(self.control.clear(*epoch).await),
+            TransportCommand::Pause => Some(self.control.pause().await),
+            TransportCommand::Resume { rewind } => Some(self.control.resume(*rewind).await),
+            _ => None,
+        }
+    }
+
     /// Sends a command (see the type's notes for `Clear`).
     ///
     /// # Errors
     /// [`CoreError::ChannelClosed`] (wrapped) once the session has ended.
     pub async fn send(&self, command: TransportCommand) -> Result<()> {
-        if let TransportCommand::Clear { epoch } = command {
-            return self.control.clear(epoch).await;
+        if let Some(done) = self.out_of_band(&command).await {
+            return done;
         }
         let sent_in = self.control.shared.lock().epoch;
         self.queue.send(Queued { command, sent_in }).await
@@ -351,8 +510,8 @@ impl CommandSender {
     /// # Errors
     /// [`CoreError::ChannelClosed`] (wrapped) once the session has ended.
     pub async fn send_in(&self, epoch: TurnEpoch, command: TransportCommand) -> Result<()> {
-        if let TransportCommand::Clear { epoch } = command {
-            return self.control.clear(epoch).await;
+        if let Some(done) = self.out_of_band(&command).await {
+            return done;
         }
         self.queue
             .send(Queued {
@@ -413,7 +572,13 @@ impl TransportSession {
             ticket: _,
             transport: _,
             call_id: _,
+            client_flush,
         } = link;
+        {
+            let mut ledger = shared.lock();
+            ledger.replay_max = config.replay;
+            ledger.client_flush = client_flush;
+        }
         let control = Arc::new(Control {
             shared: Arc::clone(&shared),
             cancel: cancel.clone(),
@@ -431,6 +596,9 @@ impl TransportSession {
             cancel: cancel.clone(),
             interval: config.position_interval,
             generation: 0,
+            pause_seq: 0,
+            pause_applied: false,
+            hold_reported: false,
             positions: BTreeMap::new(),
             current: None,
         };
@@ -442,6 +610,7 @@ impl TransportSession {
             pacer_input,
             Arc::clone(&shared),
             cancel.clone(),
+            config.hold_max,
         ));
         let started = CallStarted::default();
         tasks.spawn(run_input(
@@ -578,6 +747,24 @@ struct Ledger {
     cleared_marks: Vec<String>,
     /// Why the session stops, first writer wins.
     stop: Option<StopReason>,
+    /// The playout is paused ([`TransportCommand::Pause`]).
+    paused: bool,
+    /// Bumped on every pause, resume and clear of a pause; lets the output task see them.
+    pause_seq: u64,
+    /// The audio pulled back from the wire queue by the pause, and the rewind the resume asked
+    /// for: what the output task sends again.
+    pulled: Duration,
+    rewind: Duration,
+    /// The paused hold passed [`SessionConfig::hold_max`] and was not reported yet.
+    hold_flagged: bool,
+    /// [`SessionConfig::replay`], and whether a clear flushes the client ([`CallLink::client_flush`]).
+    replay_max: Duration,
+    client_flush: bool,
+    /// Resumes whose rewind was cut to `replay_max`.
+    rewind_clamped: u64,
+    /// The most recently released audio, newest last, for a resume to send again.
+    replay: VecDeque<AudioFrame>,
+    replay_dur: Duration,
 }
 
 struct Shared {
@@ -631,6 +818,7 @@ async fn run_commands(
     pacer: FrameSender,
     shared: Arc<Shared>,
     cancel: CancellationToken,
+    hold_max: Duration,
 ) -> Result<()> {
     loop {
         let next = tokio::select! {
@@ -651,18 +839,27 @@ async fn run_commands(
                     continue;
                 }
                 let duration = frame.duration();
-                let accepted = {
+                let (accepted, hold_full) = {
                     let mut ledger = shared.lock();
                     if frame.epoch() == ledger.epoch {
                         ledger.queued.push_back(utterance);
                         ledger.enqueued = ledger.enqueued.saturating_add(duration);
-                        true
+                        let full = ledger.paused
+                            && !ledger.hold_flagged
+                            && ledger.enqueued.saturating_sub(ledger.released) > hold_max;
+                        if full {
+                            ledger.hold_flagged = true;
+                        }
+                        (true, full)
                     } else {
-                        false
+                        (false, false)
                     }
                 };
                 if !accepted {
                     continue;
+                }
+                if hold_full {
+                    shared.wake.notify_one();
                 }
                 let sent = tokio::select! {
                     biased;
@@ -671,7 +868,9 @@ async fn run_commands(
                 };
                 sent?;
             }
-            TransportCommand::Clear { .. } => {
+            TransportCommand::Clear { .. }
+            | TransportCommand::Pause
+            | TransportCommand::Resume { .. } => {
                 // Applied by `CommandSender::send` and never queued.
             }
             TransportCommand::Mark { id } => {
@@ -767,6 +966,16 @@ fn retag(frame: AudioFrame, epoch: TurnEpoch) -> Result<AudioFrame> {
     )?)
 }
 
+/// The next item of the pacer's sink, or never while the playout is paused (the sink then fills
+/// and holds the pacer back).
+async fn next_sink(sink: &mut Inbox, paused: bool) -> Option<(Frame, Direction)> {
+    if paused {
+        std::future::pending().await
+    } else {
+        sink.recv().await
+    }
+}
+
 /// What the output task does next.
 enum Step {
     /// A clear or a mark was registered: apply what is due.
@@ -806,6 +1015,11 @@ struct Output {
     interval: Duration,
     /// The clear generation this task has applied.
     generation: u64,
+    /// The pause sequence this task has applied, whether the client was told to clear for the
+    /// pause, and whether the hold-full event of this pause went out.
+    pause_seq: u64,
+    pause_applied: bool,
+    hold_reported: bool,
     /// One counter per `(epoch, utterance)`, so utterances can interleave. Counters of epochs a
     /// clear has passed are reported and dropped; at most `MAX_TRACKED_UTTERANCES` are kept.
     positions: BTreeMap<PositionKey, Position>,
@@ -822,11 +1036,12 @@ impl Output {
 
     async fn event_loop(&mut self) -> Result<()> {
         loop {
+            let paused = self.shared.lock().paused;
             let step = tokio::select! {
                 biased;
                 () = self.cancel.cancelled() => break,
                 () = self.shared.wake.notified() => Step::Wake,
-                item = self.sink.recv() => match item {
+                item = next_sink(&mut self.sink, paused) => match item {
                     Some((frame, Direction::Downstream)) => Step::Frame(frame),
                     Some(_) => Step::Ignore,
                     None => break,
@@ -835,6 +1050,7 @@ impl Output {
             match step {
                 Step::Wake => {
                     self.sync_generation().await?;
+                    self.sync_pause().await?;
                     self.report_cleared_marks().await?;
                     self.drain_marks().await?;
                 }
@@ -845,6 +1061,68 @@ impl Output {
             }
         }
         Ok(())
+    }
+
+    /// Applies a pause or resume the engine made: on a pause the adapter is told to clear its
+    /// buffers (the epoch stays); on a resume the audio the caller had not heard is sent again
+    /// (not counted as released). Also reports a full hold once.
+    async fn sync_pause(&mut self) -> Result<()> {
+        let (seq, paused, epoch) = {
+            let ledger = self.shared.lock();
+            (ledger.pause_seq, ledger.paused, ledger.epoch)
+        };
+        if seq != self.pause_seq {
+            self.pause_seq = seq;
+            self.hold_reported = false;
+            if paused {
+                self.pause_applied = true;
+                self.wire_send(WireOut::Clear { epoch }).await?;
+            } else {
+                let resend = std::mem::take(&mut self.pause_applied);
+                let frames = self.take_replay(resend);
+                for frame in frames {
+                    self.wire_send(WireOut::Audio(frame)).await?;
+                }
+            }
+        }
+        let (flagged, pause) = {
+            let ledger = self.shared.lock();
+            (ledger.paused && ledger.hold_flagged, ledger.pause_seq)
+        };
+        if flagged && !self.hold_reported {
+            self.hold_reported = true;
+            emit(
+                &self.events,
+                &self.cancel,
+                TransportEvent::HoldFull { pause },
+            )
+            .await?;
+        }
+        Ok(())
+    }
+
+    /// The frames a resume sends again: the newest ones that cover the rewind (when the client was
+    /// told to clear for the pause) or only what the pause pulled back from the wire queue.
+    fn take_replay(&self, client_cleared: bool) -> Vec<AudioFrame> {
+        let mut ledger = self.shared.lock();
+        // Without a client flush the audio the client held plays anyway: only what the session
+        // pulled out of its own queue is sent again.
+        let want = if client_cleared && ledger.client_flush {
+            ledger.rewind
+        } else {
+            ledger.pulled
+        };
+        ledger.rewind = Duration::ZERO;
+        ledger.pulled = Duration::ZERO;
+        let mut covered = Duration::ZERO;
+        let mut start = ledger.replay.len();
+        while start > 0 && covered < want {
+            start -= 1;
+            if let Some(frame) = ledger.replay.get(start) {
+                covered = covered.saturating_add(frame.duration());
+            }
+        }
+        ledger.replay.iter().skip(start).cloned().collect()
     }
 
     /// Applies a clear the engine made: tells the wire first (so the adapter drops what it
@@ -884,11 +1162,23 @@ impl Output {
             }
         };
         let (epoch, duration) = (audio.epoch(), audio.duration());
+        let kept = audio.clone();
         self.wire_send(WireOut::Audio(audio)).await?;
         let counted = {
             let mut ledger = self.shared.lock();
             if ledger.generation == self.generation {
                 ledger.released = ledger.released.saturating_add(duration);
+                if !ledger.replay_max.is_zero() {
+                    ledger.replay.push_back(kept);
+                    ledger.replay_dur = ledger.replay_dur.saturating_add(duration);
+                }
+                while ledger.replay_dur > ledger.replay_max {
+                    let Some(old) = ledger.replay.pop_front() else {
+                        ledger.replay_dur = Duration::ZERO;
+                        break;
+                    };
+                    ledger.replay_dur = ledger.replay_dur.saturating_sub(old.duration());
+                }
                 true
             } else {
                 // A clear raced with the send: this frame went out ahead of the clear, so the
@@ -1004,6 +1294,7 @@ impl Output {
                 let mut ledger = self.shared.lock();
                 let released = ledger.released;
                 let is_due = ledger.generation == self.generation
+                    && !ledger.paused
                     && ledger
                         .marks
                         .front()

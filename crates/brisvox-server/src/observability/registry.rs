@@ -19,6 +19,8 @@
 //! | `brisvox_llm_tokens_total` | counter | `provider`, `model`, `kind` | each call's LLM tokens, at call end |
 //! | `brisvox_stt_audio_seconds_total`, `brisvox_tts_characters_total` | counter | `provider`, `model` | each call's STT audio and TTS characters, at call end |
 //! | `brisvox_call_duration_seconds` | histogram | none | each call's duration, at call end |
+//! | `brisvox_barge_in_pauses_total` | counter | `outcome` (`resumed`, `committed`, `overflow`, `deadline`, `ended`) | how the bot's pauses on barge-in candidates ended (`[interruption] pause_then_decide`), at call end |
+//! | `brisvox_barge_in_pause_seconds` | histogram | none | how long the bot's playout was held for one barge-in candidate, at call end |
 //!
 //! The usage series are labelled with the configured providers and models of the process's agents
 //! (at most two), never with anything a caller sends; the table is capped regardless.
@@ -206,6 +208,16 @@ fn provider_errors(s: &StageCounters) -> [u64; 12] {
         s.tts.normalize_failures,
     ]
 }
+
+/// The `outcome` labels of `brisvox_barge_in_pauses_total`, in the order of
+/// `brisvox_agent::PauseOutcome::ALL`.
+const PAUSE_OUTCOMES: [&str; 5] = ["resumed", "committed", "overflow", "deadline", "ended"];
+
+/// Upper bounds of `brisvox_barge_in_pause_seconds` (the driver counts into
+/// `brisvox_engine::PAUSE_BOUNDS_MS`).
+const PAUSE_BOUNDS_US: [u64; 9] = [
+    100_000, 200_000, 400_000, 600_000, 800_000, 1_000_000, 1_250_000, 1_500_000, 2_000_000,
+];
 
 /// Names of the engine event counters, in the order [`engine_events`] fills them.
 const ENGINE_EVENTS: [&str; 13] = [
@@ -409,6 +421,9 @@ pub struct Metrics {
     resilience: [[Counter; RESILIENCE_EVENTS.len()]; 3],
     usage: Mutex<UsageTable>,
     call_duration: Histogram,
+    /// Pauses on barge-in candidates by outcome ([`PAUSE_OUTCOMES`]) and their durations.
+    barge_in_pauses: [Counter; 5],
+    barge_in_pause: Histogram,
     /// Agent reloads by result ([`RELOAD_RESULTS`]).
     agent_reloads: [Counter; RELOAD_RESULTS.len()],
     /// The agent generation the next call runs (0 until the server sets it).
@@ -441,6 +456,8 @@ impl Metrics {
             resilience: std::array::from_fn(|_| std::array::from_fn(|_| Counter::new())),
             usage: Mutex::new(UsageTable::default()),
             call_duration: Histogram::with_bounds(&CALL_DURATION_BOUNDS_US),
+            barge_in_pauses: std::array::from_fn(|_| Counter::new()),
+            barge_in_pause: Histogram::with_bounds(&PAUSE_BOUNDS_US),
             agent_reloads: std::array::from_fn(|_| Counter::new()),
             agent_generation: AtomicU64::new(0),
             traces: Arc::new(TraceCounters::default()),
@@ -572,6 +589,12 @@ impl Metrics {
             counter.add(n);
         }
         self.language_switches.add(stats.stages.language.switches);
+        let driver = &stats.stages.driver;
+        for (counter, n) in self.barge_in_pauses.iter().zip(driver.pause_outcomes) {
+            counter.add(n);
+        }
+        self.barge_in_pause
+            .add_counts(&driver.pause_buckets, driver.pause_sum_us);
         if let Some(summary) = summary {
             self.call_duration
                 .observe(Duration::from_millis(summary.duration_ms));
@@ -826,6 +849,24 @@ impl Metrics {
             Kind::Histogram,
         );
         p.histogram("brisvox_call_duration_seconds", &[], &self.call_duration);
+        p.family(
+            "brisvox_barge_in_pauses_total",
+            "Pauses of the bot's playout on barge-in candidates, by how they ended (folded in when a call ends).",
+            Kind::Counter,
+        );
+        for (outcome, counter) in PAUSE_OUTCOMES.iter().zip(&self.barge_in_pauses) {
+            p.sample(
+                "brisvox_barge_in_pauses_total",
+                &[("outcome", outcome)],
+                counter.get(),
+            );
+        }
+        p.family(
+            "brisvox_barge_in_pause_seconds",
+            "How long the bot's playout was held for one barge-in candidate (folded in when a call ends).",
+            Kind::Histogram,
+        );
+        p.histogram("brisvox_barge_in_pause_seconds", &[], &self.barge_in_pause);
     }
 
     fn render_resilience(&self, p: &mut Prom, snap: &ResilienceSnapshot) {

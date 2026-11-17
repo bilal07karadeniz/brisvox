@@ -1871,3 +1871,69 @@ fn every_other_tts_provider_still_needs_its_key() {
         "{found:?}"
     );
 }
+
+#[test]
+fn pause_then_decide_is_off_by_default() {
+    let pause = load(BASE).unwrap().engine().interruption.pause;
+    assert_eq!(pause, brisvox_engine::PauseConfig::OFF);
+    assert!(!pause.enabled);
+}
+
+#[test]
+fn pause_then_decide_reaches_the_engine_config_with_its_knobs() {
+    let text = format!(
+        "{BASE}
+[interruption]
+pause_then_decide = true
+decide_ms = 1200
+pause_after_ms = 250
+rule = \"never\"
+tighten_after = 3
+tighten_window_ms = 30000
+"
+    );
+    let engine = load(&text).unwrap().engine();
+    let pause = engine.interruption.pause;
+    assert!(pause.enabled);
+    assert_eq!(pause.decide, std::time::Duration::from_millis(1200));
+    assert_eq!(pause.after, std::time::Duration::from_millis(250));
+    assert_eq!(pause.rule, brisvox_engine::PauseRuleKind::Never);
+    assert_eq!(pause.tighten_after, 3);
+    assert_eq!(pause.tighten_window, std::time::Duration::from_secs(30));
+    engine.validate().unwrap();
+    // The defaults of the rule: words, a 1.5 s window, tightening after two in a minute.
+    let text = format!("{BASE}\n[interruption]\npause_then_decide = true\n");
+    let engine = load(&text).unwrap().engine();
+    let pause = engine.interruption.pause;
+    assert_eq!(pause.rule, brisvox_engine::PauseRuleKind::Words);
+    assert_eq!(pause.decide, std::time::Duration::from_millis(1500));
+    assert_eq!(pause.after, std::time::Duration::from_millis(400));
+    assert_eq!(
+        (pause.tighten_after, pause.tighten_window.as_secs()),
+        (2, 60)
+    );
+    engine.validate().unwrap();
+    // It works with the guards off too.
+    let text = format!("{BASE}\n[interruption]\npreset = \"off\"\npause_then_decide = true\n");
+    let engine = load(&text).unwrap().engine();
+    assert!(engine.interruption.pause.enabled);
+    engine.validate().unwrap();
+}
+
+#[test]
+fn a_decision_window_the_transport_cannot_hold_is_a_positioned_error() {
+    let text = format!("{BASE}\n[interruption]\npause_then_decide = true\ndecide_ms = 1800\n");
+    assert_eq!(only_issue(&text).key, "interruption.decide_ms");
+    let text = format!("{BASE}\n[interruption]\npause_then_decide = true\ndecide_ms = 250\n");
+    assert_eq!(only_issue(&text).key, "interruption.decide_ms");
+    let text = format!("{BASE}\n[interruption]\npause_then_decide = true\nrule = \"loud\"\n");
+    assert_eq!(only_issue(&text).key, "interruption.rule");
+    let text = format!(
+        "{BASE}
+[interruption]
+pause_then_decide = true
+pause_after_ms = 2500
+"
+    );
+    assert_eq!(only_issue(&text).key, "interruption.pause_after_ms");
+}

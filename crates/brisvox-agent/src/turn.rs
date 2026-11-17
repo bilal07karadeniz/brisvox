@@ -14,14 +14,16 @@
 //! The state diagram and the policies are documented in `docs/ARCHITECTURE.md`, section
 //! "Turn-taking".
 
+use std::collections::VecDeque;
 use std::time::Duration;
 
 use brisvox_core::TurnEpoch;
 use tokio::time::Instant;
 
 use crate::interrupt::{
-    Assessment, InterruptionPolicy, Observation, TextKind, VetoReason, count_words,
+    Assessment, InterruptionPolicy, Observation, TextKind, VetoReason, count_words, is_command_text,
 };
+use crate::pause::{PauseEvidence, PauseOutcome, PausePolicy, PauseStats, PauseVerdict};
 
 /// Offset used when a deadline would overflow the clock's range (about 100 years).
 const FAR: Duration = Duration::from_secs(100 * 365 * 24 * 3600);
@@ -530,6 +532,39 @@ pub enum TurnAction {
         /// The epoch of the bot turn.
         epoch: TurnEpoch,
     },
+    /// Pause-then-decide: hold the bot's playout now, in `epoch` (the epoch does not change).
+    /// The transport keeps the unplayed audio and anything more the TTS produces in a bounded
+    /// hold buffer. Always followed, exactly once, by [`TurnAction::ResumePlayout`] or by
+    /// [`TurnAction::PauseCommitted`] and the `Interrupt` of the commit (or by a hang-up).
+    PausePlayout {
+        /// The epoch the bot speaks in.
+        epoch: TurnEpoch,
+    },
+    /// Pause-then-decide: continue the paused response from the paused point. No epoch change,
+    /// no context change.
+    ResumePlayout {
+        /// The epoch the bot speaks in.
+        epoch: TurnEpoch,
+        /// How long the playout was held.
+        paused_for: Duration,
+    },
+    /// Pause-then-decide: the bot's audio ended while the playout was paused (all of it had
+    /// played before the pause took hold): release the hold. Nothing is resumed and nothing is
+    /// cut.
+    PauseReleased {
+        /// The epoch the bot spoke in.
+        epoch: TurnEpoch,
+        /// How long the playout was held.
+        paused_for: Duration,
+    },
+    /// Pause-then-decide: the pause ended in an interruption. Informational (metrics); the
+    /// `Interrupt` and `StartUserTurn` of the commit follow at once, exactly as without a pause.
+    PauseCommitted {
+        /// Why it committed.
+        outcome: PauseOutcome,
+        /// How long the playout was held.
+        paused_for: Duration,
+    },
 }
 
 /// Counters the machine keeps for the caller.
@@ -560,6 +595,7 @@ pub struct InterruptionStats {
     candidates: u64,
     confirmed: u64,
     promoted: u64,
+    resumed: u64,
     vetoed: [u64; 5],
 }
 
@@ -579,6 +615,12 @@ impl InterruptionStats {
     /// there was nothing left to cut). The guards still apply on this path.
     pub fn promoted(&self) -> u64 {
         self.promoted
+    }
+
+    /// Candidates whose pause ended in a resume (no `Interrupt`, no epoch bump; pause-then-decide
+    /// only).
+    pub fn resumed(&self) -> u64 {
+        self.resumed
     }
 
     /// Candidates dropped for `reason` (no `Interrupt`, no epoch bump).
@@ -623,9 +665,35 @@ pub struct BargeInCandidate {
     recheck: Option<Instant>,
     /// The driver found the candidate's words to be the bot's own ([`TurnMachine::set_echo`]).
     echo: bool,
+    /// When the bot's playout was paused for this candidate (pause-then-decide).
+    paused_at: Option<Instant>,
+    /// The VAD stop of the candidate's speech, while it is stopped (paused candidates only: they
+    /// outlive their VAD stop to wait for the recogniser's final).
+    stopped_at: Option<Instant>,
+    /// VAD stops delivered while the candidate was paused, and finals consumed by it.
+    stops: u32,
+    finals: u32,
+    /// A final was seen for the candidate's speech.
+    final_seen: bool,
+    /// The latest text is a short command.
+    command: bool,
+    /// The transport's hold buffer is full ([`TurnMachine::set_hold_full`]).
+    hold_full: bool,
+    /// The tightening skip of this candidate was counted.
+    skip_counted: bool,
 }
 
 impl BargeInCandidate {
+    /// Whether the bot's playout is paused for this candidate.
+    pub fn is_paused(&self) -> bool {
+        self.paused_at.is_some()
+    }
+
+    /// When the playout was paused for this candidate.
+    pub fn paused_at(&self) -> Option<Instant> {
+        self.paused_at
+    }
+
     /// When VAD started.
     pub fn started_at(&self) -> Instant {
         self.started_at
@@ -688,6 +756,11 @@ pub struct TurnMachine {
     /// sender that reports every chunk cannot keep the window open for the whole response.
     bot_audio_seen: Option<Instant>,
     istats: InterruptionStats,
+    /// Pause-then-decide settings; `None`: a candidate waits for the policy with the bot talking.
+    pause: Option<PausePolicy>,
+    /// When recent pauses ended in a resume (at most `tighten_after` kept, oldest first).
+    resumed: VecDeque<Instant>,
+    pstats: PauseStats,
 }
 
 impl TurnMachine {
@@ -713,7 +786,50 @@ impl TurnMachine {
             bot_audio_at: None,
             bot_audio_seen: None,
             istats: InterruptionStats::default(),
+            pause: None,
+            resumed: VecDeque::new(),
+            pstats: PauseStats::default(),
         }
+    }
+
+    /// Turns pause-then-decide on (`Some`) or off (`None`, the default). A candidate that
+    /// already exists keeps the mode it began with.
+    pub fn set_pause(&mut self, pause: Option<PausePolicy>) {
+        self.pause = pause;
+    }
+
+    /// The pause-then-decide settings, when on.
+    pub fn pause_policy(&self) -> Option<&PausePolicy> {
+        self.pause.as_ref()
+    }
+
+    /// The counters of pauses.
+    pub fn pause_stats(&self) -> PauseStats {
+        self.pstats
+    }
+
+    /// Tells the machine that the transport's hold buffer is full: a paused candidate commits at
+    /// the next assessment (overflow = commit). No effect without a candidate. Feed a `Tick`
+    /// afterwards so the candidate is judged at once.
+    pub fn set_hold_full(&mut self) {
+        if let Some(candidate) = self.candidate.as_mut() {
+            candidate.hold_full = true;
+        }
+    }
+
+    /// Whether resumed pauses have tightened the rule at `now`: a candidate is then paused only
+    /// once it has a recognised caller word.
+    pub fn tightened(&self, now: Instant) -> bool {
+        let Some(pause) = &self.pause else {
+            return false;
+        };
+        pause.tighten_after > 0
+            && self
+                .resumed
+                .iter()
+                .filter(|at| now.saturating_duration_since(**at) < pause.tighten_window)
+                .count()
+                >= usize::try_from(pause.tighten_after).unwrap_or(usize::MAX)
     }
 
     /// Tells the machine whether the words heard so far from the pending barge-in candidate are
@@ -833,10 +949,37 @@ impl TurnMachine {
         // A stale input (for example a tick of an earlier timer) can carry a time before the
         // candidate began: judge it as of the start, so the recheck deadline stays correct.
         let now = now.max(candidate.started_at);
+        if candidate.paused_at.is_none() && candidate.stopped_at.is_some() {
+            // A tightened candidate whose speech stopped before any word: it waits for the final.
+            self.resolve_stopped(now, None, out);
+            return;
+        }
+        if self.pause.is_some() {
+            if candidate.paused_at.is_some() {
+                self.evaluate_paused(now, None, out);
+                return;
+            }
+            if matches!(
+                self.state,
+                TurnState::AwaitingResponse | TurnState::BotSpeaking
+            ) && self.try_pause(candidate, now, out)
+            {
+                return;
+            }
+            candidate = self.candidate.unwrap_or(candidate);
+            if self.stay_talking(&candidate, now) {
+                // Tightened: the bot keeps talking until a caller word is heard (or the window
+                // of the pause has passed with the speech still on).
+                candidate.recheck = self.stay_talking_until(&candidate, now);
+                self.candidate = Some(candidate);
+                self.sync_timer(out);
+                return;
+            }
+        }
         let observation = self.observe(&candidate, now);
         match self.interruption.assess(&observation) {
             Assessment::Confirmed => {
-                self.confirm_candidate(out);
+                self.confirm_candidate(now, PauseOutcome::Committed, out);
                 self.sync_timer(out);
             }
             Assessment::Blocked(_) => {
@@ -855,7 +998,29 @@ impl TurnMachine {
     /// detached candidate (state `Idle`, the bot's audio already ended) it is an ordinary turn
     /// (`StartUserTurn` only, counted as promoted). The epoch moves on either way. The caller
     /// syncs the timer.
-    fn confirm_candidate(&mut self, out: &mut Vec<TurnAction>) {
+    fn confirm_candidate(
+        &mut self,
+        now: Instant,
+        outcome: PauseOutcome,
+        out: &mut Vec<TurnAction>,
+    ) {
+        if let Some(paused_at) = self.candidate.and_then(|c| c.paused_at) {
+            // A pause ends in this commit: tell the caller why, before the interruption.
+            self.note_outcome(outcome);
+            out.push(TurnAction::PauseCommitted {
+                outcome,
+                paused_for: now.saturating_duration_since(paused_at),
+            });
+        }
+        if let Some(candidate) = self.candidate {
+            // The stops the candidate saw and closed whose finals have not arrived are still
+            // owed (the one that is still open becomes the new turn's own stop).
+            let earlier = candidate
+                .stops
+                .saturating_sub(candidate.finals)
+                .saturating_sub(u32::from(candidate.stopped_at.is_some()));
+            self.finals_owed = self.finals_owed.saturating_add(earlier);
+        }
         self.candidate = None;
         self.clear_bot_audio();
         let detached = self.state == TurnState::Idle;
@@ -868,6 +1033,336 @@ impl TurnMachine {
             out_barge_in(epoch, out);
         }
         self.state = TurnState::UserSpeaking;
+    }
+
+    /// What the pause rule sees of `candidate` at `now`. `paused_at` is when the pause began (or
+    /// would begin).
+    fn pause_evidence(
+        &self,
+        candidate: &BargeInCandidate,
+        now: Instant,
+        paused_at: Instant,
+        deadline: bool,
+    ) -> PauseEvidence {
+        let end = candidate
+            .stopped_at
+            .unwrap_or(now)
+            .max(candidate.started_at);
+        let observation = self.observe(candidate, end);
+        let vad_active = candidate.stopped_at.is_none();
+        let backchannel = candidate.text == TextKind::Backchannel;
+        let policy_confirms = if vad_active {
+            self.interruption.assess(&observation)
+        } else {
+            self.interruption.assess_at_stop(&observation)
+        } == Assessment::Confirmed;
+        PauseEvidence {
+            elapsed: now.saturating_duration_since(paused_at),
+            deadline,
+            vad_active,
+            speech: observation.speech,
+            words: if candidate.echo || backchannel {
+                0
+            } else {
+                candidate.words
+            },
+            command: candidate.command && !candidate.echo,
+            echo: candidate.echo,
+            backchannel,
+            policy_confirms,
+            final_seen: candidate.final_seen,
+            text: candidate.text,
+        }
+    }
+
+    /// Pause-then-decide, at a candidate that is not paused yet: commits at once when the rule
+    /// already says so (no pause: the interruption path of a machine without pause-then-decide),
+    /// otherwise pauses the playout (unless the rule is tightened and no caller word is heard
+    /// yet) and judges the candidate as a paused one. Returns whether it handled the candidate.
+    fn try_pause(
+        &mut self,
+        mut candidate: BargeInCandidate,
+        now: Instant,
+        out: &mut Vec<TurnAction>,
+    ) -> bool {
+        let evidence = self.pause_evidence(&candidate, now, now, false);
+        let Some(first) = self.pause.as_ref().map(|p| p.rule.decide(&evidence)) else {
+            return false;
+        };
+        if first == PauseVerdict::Commit {
+            self.confirm_candidate(now, PauseOutcome::Committed, out);
+            self.sync_timer(out);
+            return true;
+        }
+        if !self.tightened(now) && self.stay_talking(&candidate, now) {
+            // The speech has not lasted `after` yet: the bot keeps talking, the candidate is
+            // looked at again when it has (or at once, with a word).
+            self.candidate = Some(candidate);
+            return false;
+        }
+        if self.tightened(now) && evidence.words == 0 {
+            if !candidate.skip_counted {
+                candidate.skip_counted = true;
+                self.pstats.tightened_skips = self.pstats.tightened_skips.saturating_add(1);
+                self.candidate = Some(candidate);
+            }
+            return false;
+        }
+        candidate.paused_at = Some(now);
+        self.candidate = Some(candidate);
+        self.pstats.pauses = self.pstats.pauses.saturating_add(1);
+        out.push(TurnAction::PausePlayout { epoch: self.epoch });
+        self.evaluate_paused(now, None, out);
+        true
+    }
+
+    /// Judges a paused candidate: the rule decides, the window and a full hold buffer commit.
+    /// `trigger` is the final transcript that caused this assessment, if any.
+    fn evaluate_paused(
+        &mut self,
+        now: Instant,
+        trigger: Option<(&str, Instant)>,
+        out: &mut Vec<TurnAction>,
+    ) {
+        let (Some(mut candidate), Some(decide)) =
+            (self.candidate, self.pause.as_ref().map(|p| p.decide))
+        else {
+            return;
+        };
+        let Some(paused_at) = candidate.paused_at else {
+            return;
+        };
+        let deadline_at = after(paused_at, decide);
+        let deadline = now >= deadline_at;
+        if candidate.hold_full {
+            self.commit_paused(now, PauseOutcome::Overflow, trigger, out);
+            return;
+        }
+        let evidence = self.pause_evidence(&candidate, now, paused_at, deadline);
+        let Some(verdict) = self.pause.as_ref().map(|p| p.rule.decide(&evidence)) else {
+            return;
+        };
+        match verdict {
+            PauseVerdict::Commit => {
+                self.commit_paused(now, PauseOutcome::Committed, trigger, out);
+            }
+            PauseVerdict::Resume => self.resume_paused(now, trigger.is_some(), out),
+            PauseVerdict::Wait if deadline => {
+                self.commit_paused(now, PauseOutcome::Deadline, trigger, out);
+            }
+            PauseVerdict::Wait => {
+                if trigger.is_some() {
+                    candidate.finals = candidate.finals.saturating_add(1);
+                }
+                let observation = self.observe(&candidate, now);
+                let policy_recheck = self
+                    .interruption
+                    .recheck_in(&observation)
+                    .map(|d| after(now, d));
+                candidate.recheck =
+                    Some(policy_recheck.map_or(deadline_at, |t| t.min(deadline_at)));
+                self.candidate = Some(candidate);
+                self.sync_timer(out);
+            }
+        }
+    }
+
+    /// A candidate that stopped without being paused (tightened: the bot kept talking) waits for
+    /// the recogniser's final, or the end of the decision window counted from the stop. A caller
+    /// word or command commits; a final without words drops it; the window's end falls to the
+    /// plain interruption policy judged at the stop (fail open). It is never dropped before the
+    /// final has had its say.
+    fn resolve_stopped(
+        &mut self,
+        now: Instant,
+        trigger: Option<(&str, Instant)>,
+        out: &mut Vec<TurnAction>,
+    ) {
+        let Some(mut candidate) = self.candidate else {
+            return;
+        };
+        let Some(stop_at) = candidate.stopped_at else {
+            return;
+        };
+        let decide = self.pause.as_ref().map_or(Duration::ZERO, |p| p.decide);
+        let deadline_at = after(stop_at, decide);
+        let words = if candidate.echo || candidate.text == TextKind::Backchannel {
+            0
+        } else {
+            candidate.words
+        };
+        if (candidate.command && !candidate.echo) || words >= 1 {
+            self.commit_paused(now, PauseOutcome::Committed, trigger, out);
+            return;
+        }
+        if trigger.is_some() {
+            self.drop_stopped(true, VetoReason::MinWords, out);
+            return;
+        }
+        if now >= deadline_at {
+            let observation = self.observe(&candidate, stop_at);
+            match self.interruption.assess_at_stop(&observation) {
+                Assessment::Confirmed => {
+                    self.commit_paused(now, PauseOutcome::Committed, None, out)
+                }
+                Assessment::Blocked(reason) => self.drop_stopped(false, reason, out),
+            }
+            return;
+        }
+        candidate.recheck = Some(deadline_at);
+        self.candidate = Some(candidate);
+        self.sync_timer(out);
+    }
+
+    /// Drops a stopped candidate; the stops whose finals have not arrived are still owed.
+    fn drop_stopped(
+        &mut self,
+        final_consumed: bool,
+        reason: VetoReason,
+        out: &mut Vec<TurnAction>,
+    ) {
+        if let Some(candidate) = self.candidate {
+            let finals = candidate.finals.saturating_add(u32::from(final_consumed));
+            self.finals_owed = self
+                .finals_owed
+                .saturating_add(candidate.stops.saturating_sub(finals));
+        }
+        self.veto_candidate(reason, out);
+    }
+
+    /// The transport could not apply the pause the machine asked for
+    /// ([`TurnAction::PausePlayout`]): the feature is off from now on, and the pending
+    /// candidate goes on as if it had never been paused, judged by the interruption policy (the
+    /// old behaviour). No `ResumePlayout` or `PauseCommitted` follows this pause. Feed a `Tick`
+    /// afterwards so the candidate is judged again at once.
+    pub fn pause_failed(&mut self) {
+        self.pause = None;
+        // The pause never took hold: it has no outcome, so it is not counted as one.
+        self.pstats.pauses = self.pstats.pauses.saturating_sub(1);
+        if let Some(candidate) = self.candidate.as_mut() {
+            candidate.paused_at = None;
+        }
+    }
+
+    /// Interrupts the response in progress with no user turn behind it (the escalation of a
+    /// resume the transport could not apply: the bot may be silent, and nothing says it will
+    /// speak again). The epoch moves on, `Interrupt` is emitted (the one case with no
+    /// `StartUserTurn` after it) and the machine is `Idle`. Does nothing, returning `false`,
+    /// while a candidate is pending or when the bot is not busy.
+    pub fn abort_response(&mut self, out: &mut Vec<TurnAction>) -> bool {
+        if self.candidate.is_some()
+            || !matches!(
+                self.state,
+                TurnState::AwaitingResponse | TurnState::BotSpeaking
+            )
+        {
+            return false;
+        }
+        let epoch = self.advance_epoch();
+        self.clear_bot_audio();
+        self.state = TurnState::Idle;
+        out.push(TurnAction::Interrupt { new_epoch: epoch });
+        true
+    }
+
+    /// Commits a paused candidate: the interruption of a machine without pause-then-decide. The
+    /// stops the candidate saw are settled: the one still open is closed as the new turn's own
+    /// stop, and the `trigger` final (if the commit came with one) answers it.
+    fn commit_paused(
+        &mut self,
+        now: Instant,
+        outcome: PauseOutcome,
+        trigger: Option<(&str, Instant)>,
+        out: &mut Vec<TurnAction>,
+    ) {
+        let Some(candidate) = self.candidate else {
+            return;
+        };
+        let stopped = candidate.stopped_at;
+        self.confirm_candidate(now, outcome, out);
+        if let Some(stop_at) = stopped {
+            self.close_speech(stop_at, out);
+        } else {
+            self.sync_timer(out);
+        }
+        if let Some((text, at)) = trigger {
+            self.stt_final(text, at, out);
+        }
+    }
+
+    /// Resumes the bot: the candidate is dropped, the epoch and the context stay as they are.
+    /// `final_consumed` says the final that caused this answered the candidate's last stop.
+    fn resume_paused(&mut self, now: Instant, final_consumed: bool, out: &mut Vec<TurnAction>) {
+        let Some(candidate) = self.candidate.take() else {
+            return;
+        };
+        let paused_for = candidate
+            .paused_at
+            .map_or(Duration::ZERO, |at| now.saturating_duration_since(at));
+        let finals = candidate.finals.saturating_add(u32::from(final_consumed));
+        self.finals_owed = self
+            .finals_owed
+            .saturating_add(candidate.stops.saturating_sub(finals));
+        self.istats.resumed = self.istats.resumed.saturating_add(1);
+        self.note_outcome(PauseOutcome::Resumed);
+        if let Some(pause) = &self.pause {
+            // Keep at most `tighten_after` entries: only that many are ever counted.
+            let keep = usize::try_from(pause.tighten_after)
+                .unwrap_or(usize::MAX)
+                .max(1);
+            self.resumed.push_back(now);
+            while self.resumed.len() > keep {
+                self.resumed.pop_front();
+            }
+        }
+        out.push(TurnAction::ResumePlayout {
+            epoch: self.epoch,
+            paused_for,
+        });
+        self.sync_timer(out);
+    }
+
+    fn note_outcome(&mut self, outcome: PauseOutcome) {
+        if let Some(slot) = self.pstats.outcomes.get_mut(outcome.index()) {
+            *slot = slot.saturating_add(1);
+        }
+    }
+
+    /// Tightening: the rule is tightened (after repeated resumed pauses) and the unpaused
+    /// candidate has no caller word yet, and its speech is younger than the decision window. The
+    /// bot then keeps talking and the candidate waits for a word. Past the window the plain
+    /// interruption policy decides (fail open: a caller with a silent recogniser can still cut in).
+    ///
+    /// The same holds for `after` (the pause onset delay): until the speech is that old the bot
+    /// keeps talking. The age counts from the candidate's first VAD start, not from the speech
+    /// heard so far: a candidate that stopped and started again is older than its speech.
+    fn stay_talking(&self, candidate: &BargeInCandidate, now: Instant) -> bool {
+        let Some(pause) = &self.pause else {
+            return false;
+        };
+        let age = now.saturating_duration_since(candidate.started_at);
+        candidate.paused_at.is_none()
+            && matches!(
+                self.state,
+                TurnState::AwaitingResponse | TurnState::BotSpeaking
+            )
+            && (candidate.echo || candidate.text == TextKind::Backchannel || candidate.words == 0)
+            && ((self.tightened(now) && age < pause.decide) || age < pause.after)
+    }
+
+    /// When a candidate that stays talking is looked at again: when its speech has lasted
+    /// `after` (the pause may begin), or, tightened, at the end of the window.
+    fn stay_talking_until(&self, candidate: &BargeInCandidate, now: Instant) -> Option<Instant> {
+        let pause = self.pause.as_ref()?;
+        let age = now.saturating_duration_since(candidate.started_at);
+        let by_after = (age < pause.after).then(|| after(candidate.started_at, pause.after));
+        let by_window = self
+            .tightened(now)
+            .then(|| after(candidate.started_at, pause.decide));
+        match (by_after, by_window) {
+            (Some(a), Some(w)) => Some(a.min(w)),
+            (a, w) => a.or(w),
+        }
     }
 
     /// Drops the pending candidate: no `Interrupt`, no epoch bump.
@@ -891,6 +1386,7 @@ impl TurnMachine {
                 if words > 0 {
                     candidate.words = candidate.words.max(words);
                     candidate.text = self.interruption.classify(text);
+                    candidate.command = is_command_text(text);
                     self.candidate = Some(candidate);
                 }
                 self.evaluate_candidate(at, out);
@@ -922,7 +1418,15 @@ impl TurnMachine {
     fn vad_start(&mut self, at: Instant, out: &mut Vec<TurnAction>) -> bool {
         match self.state {
             TurnState::Idle => {
-                if self.candidate.is_some() {
+                if let Some(mut candidate) = self.candidate {
+                    if candidate.stopped_at.is_some() {
+                        // A detached candidate whose speech stopped (the bot's audio ended
+                        // during its pause) starts again: the same candidate goes on.
+                        candidate.stopped_at = None;
+                        self.candidate = Some(candidate);
+                        self.evaluate_candidate(at, out);
+                        return true;
+                    }
                     // A detached candidate: VAD is already active, this is a duplicate.
                     return false;
                 }
@@ -943,7 +1447,15 @@ impl TurnMachine {
                 true
             }
             TurnState::AwaitingResponse | TurnState::BotSpeaking => {
-                if self.candidate.is_some() {
+                if let Some(mut candidate) = self.candidate {
+                    if candidate.stopped_at.is_some() {
+                        // A candidate whose speech stopped starts again: the same candidate
+                        // goes on.
+                        candidate.stopped_at = None;
+                        self.candidate = Some(candidate);
+                        self.evaluate_candidate(at, out);
+                        return true;
+                    }
                     // VAD is already active: a duplicate.
                     return false;
                 }
@@ -953,6 +1465,14 @@ impl TurnMachine {
                     text: TextKind::None,
                     recheck: None,
                     echo: false,
+                    paused_at: None,
+                    stopped_at: None,
+                    stops: 0,
+                    finals: 0,
+                    final_seen: false,
+                    command: false,
+                    hold_full: false,
+                    skip_counted: false,
                 });
                 self.istats.candidates = self.istats.candidates.saturating_add(1);
                 self.evaluate_candidate(at, out);
@@ -963,24 +1483,64 @@ impl TurnMachine {
     }
 
     fn vad_stop(&mut self, at: Instant, out: &mut Vec<TurnAction>) -> bool {
+        if let Some(mut candidate) = self.candidate
+            && candidate.paused_at.is_some()
+            && self.pause.is_some()
+        {
+            // A paused candidate outlives its stop: the recogniser's final may still bring the
+            // words. The rule decides with the stop in the evidence; the window bounds the wait.
+            if candidate.stopped_at.is_some() {
+                return false;
+            }
+            candidate.stopped_at = Some(at);
+            candidate.stops = candidate.stops.saturating_add(1);
+            // A final that arrived before this stop answers an earlier segment: the rule waits
+            // for the final of this speech.
+            candidate.final_seen = false;
+            self.candidate = Some(candidate);
+            self.evaluate_paused(at, None, out);
+            return true;
+        }
         if let Some(candidate) = self.candidate {
             // The user stopped while a barge-in was still pending: decide with what is known
             // at the stop. The stop is owed a final in either case.
+            if self.stay_talking(&candidate, at) {
+                // Tightened and no word yet: the bot keeps talking, and the candidate waits for
+                // the final (a "stop" can still be in it) before it is dropped.
+                let mut candidate = candidate;
+                candidate.stopped_at = Some(at);
+                candidate.stops = candidate.stops.saturating_add(1);
+                candidate.final_seen = false;
+                self.candidate = Some(candidate);
+                self.resolve_stopped(at, None, out);
+                return true;
+            }
             let observation = self.observe(&candidate, at);
             match self.interruption.assess_at_stop(&observation) {
                 Assessment::Confirmed => {
                     // Confirmed by the clock (a Tick not yet delivered) or by a short but
                     // substantive word: start the turn (a barge-in unless the candidate is
                     // detached), then the stop is an ordinary one of the new turn.
-                    self.confirm_candidate(out);
+                    self.confirm_candidate(at, PauseOutcome::Committed, out);
                 }
                 Assessment::Blocked(reason) => {
-                    self.finals_owed = self.finals_owed.saturating_add(1);
+                    // This stop, and the stops the candidate saw earlier (a paused candidate
+                    // that stopped, lost its bot's audio and began again) whose finals have not
+                    // arrived: all still owed.
+                    self.finals_owed = self
+                        .finals_owed
+                        .saturating_add(1 + candidate.stops.saturating_sub(candidate.finals));
                     self.veto_candidate(reason, out);
                     return true;
                 }
             }
         }
+        self.close_speech(at, out)
+    }
+
+    /// The VAD stop of the open user turn: the stop is owed a final and the pause that decides
+    /// the end of the turn begins.
+    fn close_speech(&mut self, at: Instant, out: &mut Vec<TurnAction>) -> bool {
         if self.state != TurnState::UserSpeaking {
             return false;
         }
@@ -1003,6 +1563,42 @@ impl TurnMachine {
     }
 
     fn stt_final(&mut self, text: &str, at: Instant, out: &mut Vec<TurnAction>) -> bool {
+        if self.finals_owed == 0
+            && let Some(mut candidate) = self.candidate
+            && self.state != TurnState::Closed
+            && (candidate.paused_at.is_some() && self.pause.is_some()
+                || candidate.paused_at.is_none() && candidate.stops > candidate.finals)
+        {
+            // Finals arrive in the order of their stops, and a final owed by an earlier stop
+            // (the previous turn, an earlier resumed candidate) is taken first: only with none
+            // owed is a final the candidate's, and only when a stop of its own is unanswered.
+            // Otherwise it is words said mid-speech: evidence, not an answer to a stop.
+            let words = count_words(text);
+            if words > 0 {
+                candidate.words = candidate.words.max(words);
+                candidate.text = self.interruption.classify(text);
+                candidate.command = is_command_text(text);
+            }
+            let own = candidate.stops > candidate.finals;
+            if own {
+                candidate.final_seen = true;
+            }
+            let trigger = own.then_some((text, at));
+            self.candidate = Some(candidate);
+            if candidate.paused_at.is_some() {
+                self.evaluate_paused(at, trigger, out);
+            } else if candidate.stopped_at.is_some() {
+                self.resolve_stopped(at, trigger, out);
+            } else {
+                // The speech began again before the final of its first part arrived (a
+                // tightened candidate): the final answers that stop and is evidence for the
+                // candidate, which the plain policy judges as it goes on.
+                candidate.finals = candidate.finals.saturating_add(1);
+                self.candidate = Some(candidate);
+                self.evaluate_candidate(at, out);
+            }
+            return true;
+        }
         if self.state == TurnState::Closed || self.finals_owed == 0 {
             // Nothing is waiting for a final: a duplicate or a stray one.
             return false;
@@ -1142,6 +1738,19 @@ impl TurnMachine {
             TurnState::BotSpeaking | TurnState::AwaitingResponse if epoch == self.epoch => {
                 self.state = TurnState::Idle;
                 self.clear_bot_audio();
+                if let Some(mut candidate) = self.candidate
+                    && let Some(paused_at) = candidate.paused_at.take()
+                {
+                    // The audio had all played before the pause took hold: nothing is held any
+                    // more. The playout resumes (a no-op there) and the candidate goes on as a
+                    // detached one under the plain policy.
+                    self.candidate = Some(candidate);
+                    self.note_outcome(PauseOutcome::Ended);
+                    out.push(TurnAction::PauseReleased {
+                        epoch: self.epoch,
+                        paused_for: at.saturating_duration_since(paused_at),
+                    });
+                }
                 if self.candidate.is_some() {
                     // The user is speaking over the end of the bot's audio. The candidate is
                     // judged again with the bot silent (no echo window): the backchannel,
@@ -1166,6 +1775,9 @@ impl TurnMachine {
             self.state,
             TurnState::UserSpeaking | TurnState::UserPaused(_)
         );
+        if self.candidate.is_some_and(|c| c.paused_at.is_some()) {
+            self.pstats.abandoned = self.pstats.abandoned.saturating_add(1);
+        }
         self.candidate = None;
         self.clear_bot_audio();
         self.state = TurnState::Closed;
@@ -1186,7 +1798,7 @@ impl TurnMachine {
                 if self.candidate.is_some() {
                     // The user is talking already: the typed text joins the turn the candidate
                     // becomes, which ends as a spoken turn does.
-                    self.confirm_candidate(out);
+                    self.confirm_candidate(at, PauseOutcome::Committed, out);
                     self.sync_timer(out);
                     return true;
                 }

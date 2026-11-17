@@ -27,8 +27,8 @@ use brisvox_core::{
 };
 use brisvox_engine::{
     ClearHook, EngineConfig, EngineEvent, EngineEvents, EventStream, InterruptionConfig, Offload,
-    PlayoutBook, RoundKey, TextTurn, TextTurnReceiver, TextTurnSender, TurnDriver,
-    TurnDriverConfig, TurnDriverStats, TurnProbe, text_turns,
+    PauseConfig, PauseHook, PlayoutBook, PlayoutOp, RoundKey, TextTurn, TextTurnReceiver,
+    TextTurnSender, TurnDriver, TurnDriverConfig, TurnDriverStats, TurnProbe, text_turns,
 };
 use brisvox_inference::smart_turn::{SmartTurn, TurnModel};
 use brisvox_inference::{InferencePool, PoolConfig};
@@ -238,6 +238,7 @@ fn adaptive(require_final: bool) -> TurnPolicy {
 struct Judging {
     policy: Option<InterruptionPolicy>,
     book: Option<Arc<PlayoutBook>>,
+    pause: Option<(PauseHook, Arc<PlayoutBook>)>,
 }
 
 impl Rig {
@@ -258,6 +259,7 @@ impl Rig {
         let judging = Judging {
             policy: Some(policy),
             book: None,
+            pause: None,
         };
         Self::build_with(config, None, None, None, None, judging, None).await
     }
@@ -268,6 +270,7 @@ impl Rig {
         let judging = Judging {
             policy: None,
             book: Some(book),
+            pause: None,
         };
         Self::build_with(config, None, None, None, None, judging, None).await
     }
@@ -320,6 +323,9 @@ impl Rig {
         }
         if let Some(book) = judging.book {
             driver = driver.with_bot_text(book);
+        }
+        if let Some((hook, book)) = judging.pause {
+            driver = driver.with_pause_hook(hook, book);
         }
         if let Some(commands) = commands {
             driver = driver.with_commands(commands);
@@ -2653,4 +2659,260 @@ async fn a_typed_message_that_takes_over_a_held_spoken_turn_stops_it() {
         )),
         "{got:?}"
     );
+}
+
+// ---- pause, then decide ---------------------------------------------------------------------
+
+/// A pause hook that records what the driver asked of the transport; `fail` makes every op fail.
+fn recording_pause(fail: bool) -> (PauseHook, Arc<Mutex<Vec<PlayoutOp>>>) {
+    let ops = Arc::new(Mutex::new(Vec::new()));
+    let seen = Arc::clone(&ops);
+    let hook: PauseHook = Arc::new(move |op| {
+        seen.lock().unwrap().push(op);
+        Box::pin(async move {
+            if fail {
+                Err("no pause here".to_owned())
+            } else {
+                Ok(())
+            }
+        })
+    });
+    (hook, ops)
+}
+
+fn pausing() -> TurnDriverConfig {
+    let mut guards = InterruptionConfig::OFF;
+    guards.pause = PauseConfig {
+        enabled: true,
+        after: Duration::ZERO,
+        ..PauseConfig::OFF
+    };
+    config(FIXED, guards)
+}
+
+async fn pause_rig(config: TurnDriverConfig, hook: Option<PauseHook>) -> (Rig, Arc<PlayoutBook>) {
+    let book = PlayoutBook::shared(8);
+    let judging = Judging {
+        pause: hook.map(|hook| (hook, Arc::clone(&book))),
+        ..Judging::default()
+    };
+    let rig = Rig::build_with(config, None, None, None, None, judging, None).await;
+    (rig, book)
+}
+
+#[tokio::test(start_paused = true)]
+async fn a_candidate_pauses_the_transport_and_no_words_resume_it() {
+    let (hook, ops) = recording_pause(false);
+    let (rig, _book) = pause_rig(pausing(), Some(hook)).await;
+    bot_speaking(&rig).await;
+    rig.vad_start(3000).await;
+    assert_eq!(*ops.lock().unwrap(), [PlayoutOp::Pause]);
+    assert_eq!(rig.count("interrupt"), 0);
+    rig.vad_stop(3300).await;
+    rig.at(3400).await;
+    // The recogniser's empty final: nothing was said.
+    rig.final_of(&[]).await;
+    assert_eq!(*ops.lock().unwrap(), [PlayoutOp::Pause, PlayoutOp::Resume]);
+    assert_eq!(rig.count("interrupt"), 0);
+    assert_eq!(rig.machine().state, StateKind::BotSpeaking);
+    let stats = rig.stats.snapshot();
+    assert_eq!(
+        (stats.pauses, stats.pause_outcomes),
+        (1, [1, 0, 0, 0, 0]),
+        "{stats:?}"
+    );
+    assert_eq!(stats.pause_buckets.iter().sum::<u64>(), 1);
+    assert_eq!(stats.clears_sent, 0);
+}
+
+#[tokio::test(start_paused = true)]
+async fn words_during_a_pause_commit_the_old_interruption() {
+    let (hook, ops) = recording_pause(false);
+    let (rig, _book) = pause_rig(pausing(), Some(hook)).await;
+    bot_speaking(&rig).await;
+    rig.vad_start(3000).await;
+    rig.at(3200).await;
+    rig.interim("wait a second").await;
+    assert_eq!(rig.count("interrupt:1"), 1);
+    // No resume: the interruption's own clear ends the pause.
+    assert_eq!(*ops.lock().unwrap(), [PlayoutOp::Pause]);
+    let stats = rig.stats.snapshot();
+    assert_eq!(
+        (stats.pauses, stats.pause_outcomes),
+        (1, [0, 1, 0, 0, 0]),
+        "{stats:?}"
+    );
+    assert_eq!(rig.machine().epoch, ep(1));
+}
+
+#[tokio::test(start_paused = true)]
+async fn the_window_without_words_resumes_and_the_pause_is_bounded() {
+    let (hook, ops) = recording_pause(false);
+    let (rig, _book) = pause_rig(pausing(), Some(hook)).await;
+    bot_speaking(&rig).await;
+    rig.vad_start(3000).await;
+    rig.vad_stop(3200).await;
+    rig.at(4400).await;
+    assert_eq!(*ops.lock().unwrap(), [PlayoutOp::Pause]);
+    rig.at(4500).await;
+    assert_eq!(*ops.lock().unwrap(), [PlayoutOp::Pause, PlayoutOp::Resume]);
+    assert_eq!(rig.count("interrupt"), 0);
+}
+
+#[tokio::test(start_paused = true)]
+async fn a_full_hold_buffer_commits() {
+    let (hook, ops) = recording_pause(false);
+    let (rig, book) = pause_rig(pausing(), Some(hook)).await;
+    bot_speaking(&rig).await;
+    rig.vad_start(3000).await;
+    rig.at(3100).await;
+    book.note_hold_full(1);
+    // The driver reads the signal with the next frame it handles.
+    rig.interim("").await;
+    assert_eq!(rig.count("interrupt:1"), 1);
+    let stats = rig.stats.snapshot();
+    assert_eq!(stats.pause_outcomes, [0, 0, 1, 0, 0], "{stats:?}");
+    assert_eq!(*ops.lock().unwrap(), [PlayoutOp::Pause]);
+}
+
+#[tokio::test(start_paused = true)]
+async fn a_transport_that_cannot_pause_falls_back_to_the_old_interruption_once() {
+    let (hook, ops) = recording_pause(true);
+    let (rig, _book) = pause_rig(pausing(), Some(hook)).await;
+    bot_speaking(&rig).await;
+    rig.vad_start(3000).await;
+    rig.at(3100).await;
+    assert_eq!(rig.count("interrupt:1"), 1);
+    let stats = rig.stats.snapshot();
+    assert_eq!(stats.pause_failures, 1, "{stats:?}");
+    // The feature is off for the rest of the call: no second attempt.
+    assert_eq!(ops.lock().unwrap().len(), 1);
+}
+
+#[tokio::test(start_paused = true)]
+async fn without_a_pause_hook_the_setting_changes_nothing() {
+    let (rig, _book) = pause_rig(pausing(), None).await;
+    bot_speaking(&rig).await;
+    rig.vad_start(3000).await;
+    rig.at(3100).await;
+    assert_eq!(rig.count("interrupt:1"), 1);
+    assert_eq!(rig.stats.snapshot().pauses, 0);
+}
+
+#[tokio::test(start_paused = true)]
+async fn the_pause_hook_pauses_and_resumes_the_real_transport_and_keeps_the_book_in_step() {
+    let config_engine = EngineConfig::DEFAULT;
+    let shared: SharedClock = Arc::new(SimClock::new());
+    let (input, commands) = common::loopback::open(&shared, &config_engine)
+        .await
+        .unwrap();
+    let book = PlayoutBook::shared(8);
+    book.set_client_lead(Duration::from_millis(200));
+    let hook = brisvox_engine::playout::pause_hook(commands, Arc::clone(&book), 160 * MS);
+    hook(PlayoutOp::Pause).await.unwrap();
+    // The client is told to clear in the epoch it is in, and the lead in force is kept.
+    match input.recv_client(Duration::from_secs(1)).await {
+        Some(brisvox_transport::ClientEvent::Clear { epoch, .. }) => assert_eq!(epoch, ep(0)),
+        other => panic!("expected the clear of the pause, got {other:?}"),
+    }
+    book.set_client_lead(Duration::ZERO);
+    assert_eq!(book.client_lead(), Some(Duration::from_millis(200)));
+    hook(PlayoutOp::Resume).await.unwrap();
+    book.set_client_lead(Duration::from_millis(50));
+    assert_eq!(book.client_lead(), Some(Duration::from_millis(50)));
+}
+
+#[tokio::test(start_paused = true)]
+async fn a_resume_the_transport_cannot_apply_interrupts_the_response() {
+    // The pause works, the resume fails: the bot may be silent for good, so it is interrupted.
+    let ops = Arc::new(Mutex::new(Vec::new()));
+    let seen = Arc::clone(&ops);
+    let hook: PauseHook = Arc::new(move |op| {
+        seen.lock().unwrap().push(op);
+        Box::pin(async move {
+            if op == PlayoutOp::Resume {
+                Err("gone".to_owned())
+            } else {
+                Ok(())
+            }
+        })
+    });
+    let (rig, _book) = pause_rig(pausing(), Some(hook)).await;
+    bot_speaking(&rig).await;
+    rig.vad_start(3000).await;
+    rig.vad_stop(3300).await;
+    rig.at(3400).await;
+    rig.final_of(&[]).await;
+    assert_eq!(*ops.lock().unwrap(), [PlayoutOp::Pause, PlayoutOp::Resume]);
+    assert_eq!(rig.count("interrupt:1"), 1, "{:?}", rig.labels());
+    assert_eq!(rig.machine().state, StateKind::Idle);
+    let stats = rig.stats.snapshot();
+    assert_eq!(stats.resume_failures, 1, "{stats:?}");
+    // The caller's own turn is not lost: the next speech starts a turn normally.
+    rig.vad_start(5000).await;
+    assert_eq!(rig.count("user_turn_started"), 2);
+}
+
+/// A hook that notes the pause in the book at once, as `playout::pause_hook` does, and whose
+/// command future never completes (a transport that does not answer).
+fn silent_transport(book: &Arc<PlayoutBook>) -> PauseHook {
+    let book = Arc::clone(book);
+    Arc::new(move |op| {
+        if op == PlayoutOp::Pause {
+            book.note_pause();
+        }
+        Box::pin(std::future::pending())
+    })
+}
+
+#[tokio::test(start_paused = true)]
+async fn a_pause_the_transport_never_answers_does_not_leave_the_book_paused() {
+    let book = PlayoutBook::shared(8);
+    let judging = Judging {
+        pause: Some((silent_transport(&book), Arc::clone(&book))),
+        ..Judging::default()
+    };
+    let rig = Rig::build_with(pausing(), None, None, None, None, judging, None).await;
+    bot_speaking(&rig).await;
+    rig.vad_start(3000).await;
+    // The send timeout (2 s) passes without an answer.
+    rig.at(5200).await;
+    let stats = rig.stats.snapshot();
+    assert_eq!(stats.pause_failures, 1, "{stats:?}");
+    // The book accepts the client's lead reports again (a paused book ignores them).
+    book.set_client_lead(Duration::from_millis(120));
+    assert_eq!(book.client_lead(), Some(Duration::from_millis(120)));
+}
+
+#[tokio::test(start_paused = true)]
+async fn a_resume_the_transport_never_answers_does_not_leave_the_book_paused() {
+    let book = PlayoutBook::shared(8);
+    // The pause is applied (and noted in the book, as `playout::pause_hook` does); the resume
+    // command's future never completes.
+    let hook_book = Arc::clone(&book);
+    let hook: PauseHook = Arc::new(move |op| {
+        if op == PlayoutOp::Pause {
+            hook_book.note_pause();
+            Box::pin(async { Ok(()) })
+        } else {
+            Box::pin(std::future::pending())
+        }
+    });
+    let judging = Judging {
+        pause: Some((hook, Arc::clone(&book))),
+        ..Judging::default()
+    };
+    let rig = Rig::build_with(pausing(), None, None, None, None, judging, None).await;
+    bot_speaking(&rig).await;
+    rig.vad_start(3000).await;
+    rig.vad_stop(3300).await;
+    rig.at(3400).await;
+    // The recogniser's empty final: the rule resumes, the transport does not answer.
+    rig.final_of(&[]).await;
+    rig.at(5600).await;
+    let stats = rig.stats.snapshot();
+    assert_eq!(stats.resume_failures, 1, "{stats:?}");
+    // The book accepts the client's lead reports again.
+    book.set_client_lead(Duration::from_millis(80));
+    assert_eq!(book.client_lead(), Some(Duration::from_millis(80)));
 }

@@ -203,6 +203,87 @@ impl Default for Timeouts {
     }
 }
 
+/// The decision rule of pause-then-decide (`[interruption] rule`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum PauseRuleKind {
+    /// The interruption policy decides (the old interruption), a candidate it vetoes at the end of
+    /// the speech resumes, the window ends in a commit. For tests and a neutral baseline.
+    Never,
+    /// Any recognised word of the caller commits at once, no word by the end of the window
+    /// resumes: LiveKit's `resume_false_interruption`. The default.
+    #[default]
+    Words,
+}
+
+/// Pause, then decide (`[interruption] pause_then_decide`): on a barge-in candidate the bot's
+/// playout pauses at once, and within `decide` the engine either commits the interruption (as
+/// without this feature) or resumes the same response from the paused point.
+///
+/// While the playout is paused the unplayed audio and the TTS output that keeps coming wait in
+/// the transport's bounded hold buffer; a full buffer, the end of the window without a resume,
+/// the rule's word or command word, or a final transcript with words commits. After
+/// `tighten_after` resumed pauses within `tighten_window` the bot is no longer paused by the
+/// voice activity alone: it keeps talking until one recognised caller word is heard, so a
+/// television that keeps triggering the VAD does not make it stutter.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct PauseConfig {
+    /// Pause on a barge-in candidate. Default: off.
+    pub enabled: bool,
+    /// The decision window. At least 300 ms (a recogniser needs 200 to 400 ms for a first
+    /// interim, so a shorter window decides before it can hear a word) and at most
+    /// `timeouts.send` less 250 ms (the TTS output waits in the hold buffer for this long).
+    /// Default 1.5 s.
+    pub decide: Duration,
+    /// How long a candidate's speech has to last before the bot is paused for it (a recognised
+    /// word or a command word still commits at once). Zero: at the first moment of speech.
+    /// Default 400 ms: the caller hears the bot stop as early as with today's guards
+    /// (`min_speech` 300 ms plus the VAD's delay), and clicks and door bangs shorter than that
+    /// never pause it.
+    pub after: Duration,
+    /// The decision rule. Default: words.
+    pub rule: PauseRuleKind,
+    /// Resumed pauses within `tighten_window` that tighten the rule. Zero: never. Default 2.
+    pub tighten_after: u32,
+    /// The window of the tightening count. Default 60 s.
+    pub tighten_window: Duration,
+}
+
+impl PauseConfig {
+    /// Off, with the default numbers.
+    pub const OFF: Self = Self {
+        enabled: false,
+        decide: Duration::from_millis(1500),
+        after: Duration::from_millis(400),
+        rule: PauseRuleKind::Words,
+        tighten_after: 2,
+        tighten_window: Duration::from_secs(60),
+    };
+
+    /// The machine's policy, when on.
+    pub fn policy(&self) -> Option<brisvox_agent::PausePolicy> {
+        if !self.enabled {
+            return None;
+        }
+        let rule: std::sync::Arc<dyn brisvox_agent::PauseRule> = match self.rule {
+            PauseRuleKind::Never => std::sync::Arc::new(brisvox_agent::NeverRule),
+            PauseRuleKind::Words => std::sync::Arc::new(brisvox_agent::WordsRule),
+        };
+        Some(brisvox_agent::PausePolicy {
+            decide: self.decide,
+            after: self.after,
+            rule,
+            tighten_after: self.tighten_after,
+            tighten_window: self.tighten_window,
+        })
+    }
+}
+
+impl Default for PauseConfig {
+    fn default() -> Self {
+        Self::OFF
+    }
+}
+
 /// The barge-in guards of a session: a `Copy` description of an
 /// [`InterruptionPolicy`], so that [`EngineConfig`] stays `Copy`.
 /// [`InterruptionConfig::policy`] builds the policy the [`TurnDriver`](crate::TurnDriver) hands
@@ -241,6 +322,8 @@ pub struct InterruptionConfig {
     /// matching word, an older one from three). Needs `min_words >= 1` to have an effect: without
     /// words the candidate is confirmed by its duration before any transcript arrives.
     pub echo_text_match: bool,
+    /// Pause, then decide. Default: off.
+    pub pause: PauseConfig,
 }
 
 impl InterruptionConfig {
@@ -257,6 +340,7 @@ impl InterruptionConfig {
         backchannel_max_speech: Duration::ZERO,
         vad_hangover: Duration::ZERO,
         echo_text_match: false,
+        pause: PauseConfig::OFF,
     };
 
     /// The same guards as [`InterruptionPolicy::recommended`]: 300 ms minimum speech, a 400 ms
@@ -274,6 +358,7 @@ impl InterruptionConfig {
         backchannel_max_speech: DEFAULT_BACKCHANNEL_MAX_SPEECH,
         vad_hangover: DEFAULT_VAD_HANGOVER,
         echo_text_match: false,
+        pause: PauseConfig::OFF,
     };
 
     /// The policy this configuration describes.
@@ -662,6 +747,29 @@ impl EngineConfig {
             return Err(Error::Config(
                 "speculation.max_buffered_events is above SpeculationConfig::MAX_BUFFERED_EVENTS_LIMIT (4096)",
             ));
+        }
+        let pause = &self.interruption.pause;
+        if pause.enabled {
+            if pause.decide < Duration::from_millis(300) {
+                return Err(Error::Config(
+                    "interruption.decide_ms must be at least 300 ms: a recogniser needs 200 to 400 ms for a first interim, below that the rule decides before it can hear a word",
+                ));
+            }
+            if pause.decide.saturating_add(Duration::from_millis(250)) > self.timeouts.send {
+                return Err(Error::Config(
+                    "interruption.decide_ms must be at most timeouts.send less 250 ms: the TTS output waits in the hold buffer for that long",
+                ));
+            }
+            if pause.after > Duration::from_secs(2) {
+                return Err(Error::Config(
+                    "interruption.pause_after_ms must be at most 2000",
+                ));
+            }
+            if pause.tighten_after > 0 && pause.tighten_window.is_zero() {
+                return Err(Error::Config(
+                    "interruption.tighten_window_ms must be greater than zero",
+                ));
+            }
         }
         let early = &self.early_analysis;
         if early.enabled && (early.max_tail.is_zero() || early.max_per_turn == 0) {

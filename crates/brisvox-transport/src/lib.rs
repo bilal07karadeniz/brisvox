@@ -71,5 +71,7 @@ pub use loopback::{
     ClientEvent, LoopbackCaller, LoopbackClient, LoopbackConfig, LoopbackListener,
     LoopbackTransport, MarkAcks,
 };
-pub use session::{CallStarted, CommandSender, SessionConfig, TransportSession};
+pub use session::{
+    CallStarted, CommandSender, DEFAULT_REPLAY, HoldStats, SessionConfig, TransportSession,
+};
 pub use transport::Transport;

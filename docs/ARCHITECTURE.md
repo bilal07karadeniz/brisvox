@@ -1033,6 +1033,80 @@ timer or candidate). The reference pipeline's `TurnManager` (scenarios s01..s11)
 `TurnMachine` yet; running s02/s10 with an `InterruptionPolicy` through the real pipeline is part
 of wiring the machine in, not of the interruption policy.
 
+### Pause, then decide
+
+Code: `brisvox_agent::pause` (`PausePolicy`, `PauseRule`, `WordsRule`, `NeverRule`, `PauseEvidence`),
+`TurnMachine::set_pause`; the driver side in `brisvox_engine::turn_driver` and `playout::pause_hook`; the
+transport side in `brisvox_transport::session` (`TransportCommand::Pause` / `Resume`). Opt in with
+`[interruption] pause_then_decide = true` (default off; with it off nothing below happens and the machine is the one above).
+
+A candidate that the policy would still be judging does not wait with the bot talking. Once its speech has lasted `pause_after_ms` (see "Pause onset" below; at its `VadStart` with 0) the machine
+emits `TurnAction::PausePlayout` (same epoch) and the transport holds the playout: the caller hears silence as early as
+an interruption's clear would give it, because a pause is applied like a clear, around the command queue. The candidate then
+has a decision window, `decide_ms` (default 1500 ms), and ends exactly once:
+
+| Outcome | What happens | Epoch, context |
+|---|---|---|
+| commit (`committed`) | the rule says so before the window ends (a recognised caller word, a command word, the interruption policy confirming under the `never` rule): `PauseCommitted`, then exactly the `Interrupt` + `StartUserTurn` of an interruption without a pause | epoch + 1, the response is cut to what was played |
+| commit at the end of the window (`deadline`) | the rule did not resume the bot | as above |
+| commit on overflow (`overflow`) | the transport's hold buffer filled up (`TransportEvent::HoldFull`, read by the driver through the playout book) | as above |
+| resume (`resumed`) | the rule says so: the speech has stopped and no recognised words came, at the end of the window or in its final transcript (`TurnAction::ResumePlayout`) | the epoch does not change, nothing is cut: the same response goes on |
+| released (`ended`) | the bot's audio ended while paused: everything had played before the pause took hold (`TurnAction::PauseReleased`) | nothing held, nothing cut; the candidate goes on as a detached one |
+
+The pause is an overlay on the candidate, not a `TurnState`: while it is on, `state()` is still `AwaitingResponse`/`BotSpeaking`, no user
+turn is open and the epoch is unchanged, so the stale-epoch rules for bot audio are untouched. A paused candidate outlives its VAD stop
+(the recogniser's final can still bring words); a stop with no final yet decides nothing, the window bounds the wait; a VAD start inside
+the window continues the same candidate. Finals arrive in the order of their stops: a final owed by an earlier stop (the previous turn, an
+earlier resumed candidate) is taken first, and only with none owed is a final the candidate's, and only while a stop of its own is
+unanswered (a final before any stop is words said mid-speech: evidence). The finals the candidate's stops owe are settled whichever way it ends (commit: the open stop
+becomes the new turn's own and the final answers it; resume: owed finals are swallowed as for a vetoed candidate). The end of the bot's audio
+while paused (everything had played before the pause took hold) releases the hold and leaves the candidate to the policy as a detached one. A
+hang-up drops the candidate and the timer; the machine emits nothing more.
+
+**The decision hook** is `PauseRule::decide(&PauseEvidence) -> Wait | Commit | Resume`, pure and deterministic. The evidence: time in the pause,
+whether the window ended, whether the VAD is still active, the caller's words (the longest interim or final; zero when they are the bot's own echo,
+`brisvox_agent::is_bot_echo` through `set_echo`, or only a backchannel), a short command ("stop", "wait", "dur", "bekle", ... `is_command_text`),
+whether the interruption policy would confirm, whether the final arrived. At the end of the window anything but `Resume` commits. Rules that
+ship: `words` (the default: any recognised word or command commits at once; resume needs the speech to have stopped and no words, at the end of the window or in an empty final;
+while the VAD is still active the rule waits and the window's end commits, so a lagging recogniser cannot lose a real barge-in; otherwise LiveKit's
+`resume_false_interruption`) and `never` (the policy commits, a candidate it vetoes at the stop resumes; for tests and as the neutral rule). Another rule plugs in through the same trait.
+
+**Pause onset.** With `pause_after_ms` (`PausePolicy::after`, LiveKit's `min_interruption_duration`) above zero the pause does not begin at the first moment of speech but when the candidate's
+speech has lasted that long: until then the bot keeps talking and the candidate is looked at again at that time (a recognised word or a command word still commits at once). A candidate whose speech ends
+first never pauses the bot: it waits for its final like a tightened one (an empty final drops it, a word or a command commits, no final falls to the plain policy at the end of the window), so a click or a door
+bang that the VAD turns into a short start costs nothing. The price is that the caller who really interrupts hears the bot stop `after` later.
+
+**Tightening.** After `tighten_after` resumed pauses (default 2) within `tighten_window_ms` (default 60 s) a candidate does not pause the bot on voice
+activity alone: the bot keeps talking until one recognised caller word is heard (then the rule decides, `words` commits at once). A candidate whose speech
+stops without a word is held until its final (a "stop" can be in it) or the end of the window counted from the stop: a final without words drops it, a word commits, no final
+falls to the plain interruption policy judged at the stop; one still speaking at the end of the window falls to the plain interruption policy too (fail open), so a caller with a silent
+recogniser can still cut in. A television that keeps starting the VAD therefore costs two stutters, then none.
+
+**Transport.** `TransportCommand::Pause` is applied like `Clear`, out of band, on every transport (loopback, WebSocket, WebRTC, SIP, Twilio, Telnyx): the output task stops
+reading the pacer's sink, so the sink fills and holds the pacer, the command queue and the engine back (**the hold buffer is those bounded queues**, no audio is
+dropped; `SessionConfig::hold_max`, 2.5 s, reports `HoldFull` when more waits than that; `decide_ms` is limited to 1750 ms so the TTS output waiting in
+the hold never reaches the 2 s send timeout); the audio and marks still in the wire queue are pulled back; and the adapter gets `WireOut::Clear` of the
+**current** epoch, which every adapter already treats as "drop what you buffer and tell the client to clear" (Twilio and Telnyx send their `clear`
+message, the WebSocket protocol its `clear`, WebRTC drops the buffered media, SIP the queued RTP). `Resume { rewind }` sends again the last `rewind` of the audio that was
+already released (a ring of the last 3 s), unplayed marks again after it, and the pacer goes on: it finds itself behind its schedule and restarts its grid (one underrun is
+counted per resume). `rewind` is the part the caller had not heard when the client's buffer was flushed: the client's reported lead where the protocol has one
+(Twilio, Telnyx and RTVI; the generic WebSocket and the loopback report none), else `lead_margin` (160 ms), the same estimate the played-text truncation uses. The replayed audio is never counted as released again, so positions, marks and
+the heard-position arithmetic stay those of the stream. The ring (`SessionConfig::replay`, 3 s) exists only for sessions of agents with the feature on; without it a pause is refused
+(an error: the engine interrupts as without the feature). Limits: a rewind longer than the ring is cut and counted (`CommandSender::hold_stats`); where a clear does not flush the client
+(`CallLink::client_flush` is false for WebRTC and SIP: packets already on the wire play out) only what the session pulled out of its own wire queue is sent again, so up to the adapter's queue
+of audio can be lost, and nothing is heard twice; the one frame the output task is writing when the pause lands goes out ahead of the clear and may be heard twice. A resume the transport cannot apply interrupts the
+response (`TurnMachine::abort_response`, the plain interrupt path, counted as `resume_failures`). A `Clear` during a pause (the commit) drops the held audio and the ring. A transport that cannot pause (no
+pause hook, or a pause the transport refuses) turns the feature off for that call, logs once, and the candidate is interrupted as without the feature. Limits that come from
+the protocols: WebRTC packets already on the wire play out in the browser (as they do for an interruption), and an RTVI client sees `BotInterrupted` / `BotStoppedSpeaking` at a pause.
+
+**Played-only context.** The book freezes the client's lead in force at the pause (the flush resets what the client reports) and the time of the pause (for the fade of the
+margin): a commit after a pause cuts the response at the same heard position as an interruption at the pause instant would. A resume releases both.
+Nothing is cut on a resume: no audio was dropped, only delayed.
+
+Metrics: `brisvox_barge_in_pauses_total{outcome}` and `brisvox_barge_in_pause_seconds` (`docs/OPERATIONS.md`). Tests: `crates/brisvox-agent/tests/pause.rs`
+(machine, injected times), `crates/brisvox-transport/tests/transport_pause.rs` (loopback: silence, resume from the paused point with nothing lost, no double
+counting, marks, clear, full hold), `crates/brisvox-engine/tests/turn_driver.rs` (driver and hook).
+
 ### Caller contract
 
 - VAD: `VadStart` at speech start, `VadStop` at the backdated stop (the start of the silence).
