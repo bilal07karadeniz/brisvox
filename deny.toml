@@ -18,6 +18,12 @@ ignore = [
     # 2026-10-25). Exploiting it needs fine timing of secret-dependent arithmetic on the server. Remove this
     # entry when str0m and age release on the 0.14 curves, and update them.
     { id = "RUSTSEC-2026-0387", reason = "no fixed version reachable: str0m and age still pin elliptic-curve 0.13; revisit on their next releases" },
+    # chrono is marked unmaintained (no fix, no successor release). It comes in only through rmcp, the
+    # MCP client behind the `mcp` feature, for timestamps in protocol types. Remove when rmcp drops it.
+    { id = "RUSTSEC-2026-0543", reason = "unmaintained, no safe upgrade; only via rmcp (mcp feature); revisit on rmcp releases" },
+    # pin-utils is archived upstream. It reaches the tree only through nix 0.26 under webrtc-util, a
+    # dev-dependency of brisvox-transport's tests (webrtc-srtp); nothing that ships links it.
+    { id = "RUSTSEC-2026-0441", reason = "unmaintained, no safe upgrade; test-only via webrtc-srtp dev-dependency" },
 ]
 
 [licenses]
