@@ -92,7 +92,10 @@ fn a_complete_definition_loads_with_the_engine_defaults() {
     assert_eq!(&*agent.system_prompt(), "You are a helpful agent.");
     assert_eq!(&*agent.voice(), "voice-123");
     assert_eq!(agent.tool_names().collect::<Vec<_>>(), ["lookup_order"]);
-    assert_eq!(agent.engine(), EngineConfig::DEFAULT);
+    // The engine's defaults, except the pause that agent files turn on.
+    let mut expected = EngineConfig::DEFAULT;
+    expected.interruption.pause.enabled = true;
+    assert_eq!(agent.engine(), expected);
 }
 
 #[test]
@@ -1873,10 +1876,20 @@ fn every_other_tts_provider_still_needs_its_key() {
 }
 
 #[test]
-fn pause_then_decide_is_off_by_default() {
+fn pause_then_decide_is_on_by_default_and_off_on_request() {
     let pause = load(BASE).unwrap().engine().interruption.pause;
-    assert_eq!(pause, brisvox_engine::PauseConfig::OFF);
-    assert!(!pause.enabled);
+    assert_eq!(
+        pause,
+        brisvox_engine::PauseConfig {
+            enabled: true,
+            ..brisvox_engine::PauseConfig::OFF
+        }
+    );
+    let text = format!("{BASE}\n[interruption]\npause_then_decide = false\n");
+    assert!(!load(&text).unwrap().engine().interruption.pause.enabled);
+    // The guards' preset "off" is the plain always-interrupt behaviour: no pause either.
+    let text = format!("{BASE}\n[interruption]\npreset = \"off\"\n");
+    assert!(!load(&text).unwrap().engine().interruption.pause.enabled);
 }
 
 #[test]

@@ -487,7 +487,7 @@ dependencies = [
 
 [[package]]
 name = "brisvox"
-version = "0.1.3"
+version = "0.1.4"
 dependencies = [
  "brisvox-agent",
  "brisvox-core",
@@ -497,7 +497,7 @@ dependencies = [
 
 [[package]]
 name = "brisvox-agent"
-version = "0.1.3"
+version = "0.1.4"
 dependencies = [
  "brisvox-core",
  "brisvox-sim",
@@ -515,7 +515,7 @@ dependencies = [
 
 [[package]]
 name = "brisvox-agent-link"
-version = "0.1.3"
+version = "0.1.4"
 dependencies = [
  "brisvox-agent",
  "brisvox-core",
@@ -536,7 +536,7 @@ dependencies = [
 
 [[package]]
 name = "brisvox-audio"
-version = "0.1.3"
+version = "0.1.4"
 dependencies = [
  "audioadapter-buffers",
  "brisvox-core",
@@ -549,7 +549,7 @@ dependencies = [
 
 [[package]]
 name = "brisvox-bench"
-version = "0.1.3"
+version = "0.1.4"
 dependencies = [
  "brisvox-agent",
  "brisvox-audio",
@@ -573,7 +573,7 @@ dependencies = [
 
 [[package]]
 name = "brisvox-core"
-version = "0.1.3"
+version = "0.1.4"
 dependencies = [
  "bytes",
  "proptest",
@@ -586,7 +586,7 @@ dependencies = [
 
 [[package]]
 name = "brisvox-engine"
-version = "0.1.3"
+version = "0.1.4"
 dependencies = [
  "brisvox-agent",
  "brisvox-audio",
@@ -609,7 +609,7 @@ dependencies = [
 
 [[package]]
 name = "brisvox-example-rust-tools"
-version = "0.1.3"
+version = "0.1.4"
 dependencies = [
  "brisvox",
  "serde_json",
@@ -619,7 +619,7 @@ dependencies = [
 
 [[package]]
 name = "brisvox-fake-providers"
-version = "0.1.3"
+version = "0.1.4"
 dependencies = [
  "bytes",
  "futures",
@@ -639,7 +639,7 @@ dependencies = [
 
 [[package]]
 name = "brisvox-inference"
-version = "0.1.3"
+version = "0.1.4"
 dependencies = [
  "brisvox-audio",
  "brisvox-core",
@@ -657,7 +657,7 @@ dependencies = [
 
 [[package]]
 name = "brisvox-providers"
-version = "0.1.3"
+version = "0.1.4"
 dependencies = [
  "base64 0.23.1",
  "brisvox-agent",
@@ -683,7 +683,7 @@ dependencies = [
 
 [[package]]
 name = "brisvox-server"
-version = "0.1.3"
+version = "0.1.4"
 dependencies = [
  "age",
  "axum",
@@ -718,7 +718,7 @@ dependencies = [
 
 [[package]]
 name = "brisvox-sim"
-version = "0.1.3"
+version = "0.1.4"
 dependencies = [
  "brisvox-agent",
  "brisvox-core",
@@ -734,7 +734,7 @@ dependencies = [
 
 [[package]]
 name = "brisvox-transport"
-version = "0.1.3"
+version = "0.1.4"
 dependencies = [
  "aes 0.9.3",
  "base64 0.23.1",

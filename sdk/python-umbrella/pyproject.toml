@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "brisvox"
-version = "0.1.3"
+version = "0.1.4"
 description = "Brisvox for Python: pip install brisvox. The agent SDK of the brisvox real-time voice engine (the brisvox-agent package), under the short name."
 readme = "README.md"
 requires-python = ">=3.11"
@@ -26,11 +26,11 @@ classifiers = [
 ]
 # Exactly the agent SDK of the same release: the two are published together from one tag.
 dependencies = [
-    "brisvox-agent==0.1.3",
+    "brisvox-agent==0.1.4",
 ]
 
 [project.urls]
-Homepage = "https://bilal07karadeniz.github.io/brisvox/"
+Homepage = "https://brisvox.com"
 Documentation = "https://bilal07karadeniz.github.io/brisvox/"
 Repository = "https://github.com/bilal07karadeniz/brisvox"
 Issues = "https://github.com/bilal07karadeniz/brisvox/issues"

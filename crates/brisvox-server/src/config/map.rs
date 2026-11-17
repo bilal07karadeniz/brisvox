@@ -209,13 +209,12 @@ fn interruption(section: &InterruptionSection) -> InterruptionConfig {
     if let Some(echo) = &section.echo_text_match {
         c.echo_text_match = *echo.get_ref();
     }
-    if section
-        .pause_then_decide
-        .as_ref()
-        .is_some_and(|v| *v.get_ref())
-    {
-        c.pause.enabled = true;
-    }
+    // On by default in agent files (the guards' preset "off" keeps the plain always-interrupt
+    // behaviour); the engine library's own default stays off.
+    c.pause.enabled = match &section.pause_then_decide {
+        Some(v) => *v.get_ref(),
+        None => !matches!(section.preset, Some(InterruptionPreset::Off)),
+    };
     if let Some(ms) = section.decide_ms {
         c.pause.decide = ms.duration();
     }

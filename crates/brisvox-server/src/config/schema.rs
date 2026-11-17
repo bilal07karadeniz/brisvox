@@ -272,7 +272,8 @@ pub struct InterruptionSection {
     /// buffer (a full buffer interrupts); the LLM context holds only what was played. Every
     /// transport can pause (a transport that cannot falls back to interrupting, with one log
     /// line per call). Turns the echo recognition on (the bot's own words never count as the
-    /// caller's). Default `false`.
+    /// caller's). Default `true` (`false` with `preset = "off"`, the plain always-interrupt
+    /// behaviour).
     #[cfg_attr(feature = "schema", schemars(with = "Option<bool>"))]
     pub pause_then_decide: Option<Spanned<bool>>,
     /// The decision window of a pause: at most this long after the pause began the engine

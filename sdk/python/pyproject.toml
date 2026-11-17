@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "brisvox-agent"
-version = "0.1.3"
+version = "0.1.4"
 description = "Python SDK for the brisvox agent protocol: the application logic of a real-time voice call (tools, events, commands) in async Python."
 readme = "README.md"
 requires-python = ">=3.11"
@@ -32,7 +32,7 @@ dependencies = [
 ]
 
 [project.urls]
-Homepage = "https://bilal07karadeniz.github.io/brisvox/"
+Homepage = "https://brisvox.com"
 Documentation = "https://bilal07karadeniz.github.io/brisvox/"
 Repository = "https://github.com/bilal07karadeniz/brisvox"
 Issues = "https://github.com/bilal07karadeniz/brisvox/issues"

@@ -6,6 +6,7 @@
 [![npm](https://img.shields.io/npm/v/@brisvox/agent.svg?label=npm%20%40brisvox%2Fagent)](https://www.npmjs.com/package/@brisvox/agent)
 [![npm](https://img.shields.io/npm/v/@brisvox/web.svg?label=npm%20%40brisvox%2Fweb)](https://www.npmjs.com/package/@brisvox/web)
 [![license](https://img.shields.io/badge/license-MIT%20OR%20Apache--2.0-blue.svg)](#license)
+[![website](https://img.shields.io/badge/website-brisvox.com-f2a20c.svg)](https://brisvox.com)
 [![docs](https://img.shields.io/badge/docs-the%20book-informational.svg)](https://bilal07karadeniz.github.io/brisvox/)
 
 **A Rust engine for real-time voice agents: phone calls and browser sessions where a caller talks,
@@ -14,7 +15,7 @@ moment. Open source, one process, hundreds of isolated calls per container.**
 
 <p align="center"><img src="assets/architecture.svg" alt="brisvox architecture: callers reach one brisvox-server process through Twilio, Telnyx, SIP, WebRTC or WebSocket transports; each call is an isolated session running VAD and turn detection, STT, the LLM with tools and TTS, with an inference pool for the models; providers are cloud or local; your agent in Python or TypeScript holds the tools" width="960"></p>
 
-[Install](#install) · [Try it without keys](#try-it-without-keys) · [Quickstart](#quickstart) · [Comparison](#brisvox-vs-livekit-agents-vs-pipecat) ·
+[Website: brisvox.com](https://brisvox.com) · [Install](#install) · [Try it without keys](#try-it-without-keys) · [Quickstart](#quickstart) · [Comparison](#brisvox-vs-livekit-agents-vs-pipecat) ·
 [Features](#features) · [For AI coding agents](#for-ai-coding-agents) ·
 [Docs: the book](book/src/introduction.md) · [License](#license)
 
@@ -181,7 +182,7 @@ None of this is an independent benchmark: no third-party density comparison of t
 2.39 or newer.
 
 ```sh
-v=v0.1.3; t=x86_64-unknown-linux-gnu        # pick the release and your platform
+v=v0.1.4; t=x86_64-unknown-linux-gnu        # pick the release and your platform
 curl -fLO https://github.com/bilal07karadeniz/brisvox/releases/download/$v/brisvox-server-$v-$t.tar.gz
 curl -fLO https://github.com/bilal07karadeniz/brisvox/releases/download/$v/SHA256SUMS
 sha256sum --ignore-missing -c SHA256SUMS && tar xzf brisvox-server-$v-$t.tar.gz

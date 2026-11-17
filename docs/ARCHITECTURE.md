@@ -1038,7 +1038,7 @@ of wiring the machine in, not of the interruption policy.
 Code: `brisvox_agent::pause` (`PausePolicy`, `PauseRule`, `WordsRule`, `NeverRule`, `PauseEvidence`),
 `TurnMachine::set_pause`; the driver side in `brisvox_engine::turn_driver` and `playout::pause_hook`; the
 transport side in `brisvox_transport::session` (`TransportCommand::Pause` / `Resume`). Opt in with
-`[interruption] pause_then_decide = true` (default off; with it off nothing below happens and the machine is the one above).
+`[interruption] pause_then_decide` (on by default in agent files, off in the engine library's `InterruptionConfig` defaults and with the guards' preset `off`; with it off nothing below happens and the machine is the one above).
 
 A candidate that the policy would still be judging does not wait with the bot talking. Once its speech has lasted `pause_after_ms` (see "Pause onset" below; at its `VadStart` with 0) the machine
 emits `TurnAction::PausePlayout` (same epoch) and the transport holds the playout: the caller hears silence as early as

@@ -914,7 +914,7 @@ Durations are whole milliseconds (`*_ms`). Ranges are inclusive.
 (0..=5000), `min_words` (0..=20), `confirm` (`"all"`/`"any"`), `echo_guard_ms` (0..=5000),
 `echo_min_words` (1..=20), `backchannels` (array of `"en"`, `"tr"`; `[]` turns them off),
 `backchannel_wait_ms` (0..=5000), `backchannel_max_speech_ms` (0..=10000), `vad_hangover_ms`
-(0..=2000), `echo_text_match` (bool, false), `pause_then_decide` (bool, false), `decide_ms`,
+(0..=2000), `echo_text_match` (bool, false), `pause_then_decide` (bool, true; false with `preset = "off"`), `decide_ms`,
 `rule`, `tighten_after`, `tighten_window_ms` (below). Meanings: `InterruptionConfig` in
 `crates/brisvox-engine/src/config.rs`.
 
@@ -935,7 +935,7 @@ the same with or without `pause_then_decide`; the Turkish words are new in this 
 taken for the bot's echo). A candidate older than 1.5 s
 is held only with three or more words that are the bot's.
 
-`pause_then_decide = true` pauses the bot's playout on a barge-in candidate once its speech has lasted `pause_after_ms` (below) and decides within `decide_ms`
+`pause_then_decide` (on by default; `false` turns it off, and `preset = "off"` turns it off unless it is set) pauses the bot's playout on a barge-in candidate once its speech has lasted `pause_after_ms` (below) and decides within `decide_ms`
 (300..=1750, default 1500; a recogniser needs 200 to 400 ms for a first interim, so a shorter window would decide before it could hear a word) whether to interrupt (exactly as without the setting) or to resume the same response from the paused point:
 a cough, a television or a "mm-hmm" no longer cuts the bot off for good. `rule` (`"words"` default, or `"never"`): `words` interrupts
 at once on any recognised word of the caller (the bot's own echo and backchannels do not count) or a command word ("stop", "wait", "dur",

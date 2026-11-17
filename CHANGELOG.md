@@ -8,9 +8,12 @@ named plain `brisvox` on crates.io, PyPI and npm, are released together under on
 
 ## [Unreleased]
 
+## [0.1.4] - 2026-11-17
+
 ### Added
 
-- **Pause, then decide on barge-ins**, opt in per agent: `[interruption] pause_then_decide = true` (default `false`) pauses
+- **Website: [brisvox.com](https://brisvox.com)**, with the benchmarks, a comparison with Pipecat and LiveKit Agents, how a call works, a quick start and an FAQ. The package homepages on crates.io, PyPI and npm point to it.
+- **Pause, then decide on barge-ins**, on by default in agent files (`[interruption] pause_then_decide`, `false` to turn it off; off with `preset = "off"` and in the engine library's own defaults) pauses
   the bot's playout the moment a barge-in candidate appears (the caller hears silence as early as an interruption would give it) and, within
   `decide_ms` (300 to 1750, default 1500), either interrupts as before or **resumes the same response from the paused point**: a cough, a
   door, a keyboard or a "mm-hmm" no longer cuts the bot off for good. The default rule (`rule = "words"`, the behaviour of LiveKit's
@@ -24,7 +27,7 @@ named plain `brisvox` on crates.io, PyPI and npm, are released together under on
   `brisvox_barge_in_pause_seconds`. Turning it on also turns on the echo recognition. `pause_after_ms` (default 400) delays the pause until the speech has lasted that long, so a click or a door bang never pauses the bot. Measured with the built-in harness
   (`bench/results/barge-in-noise.md`, `brisvox-bench denoise realistic --set fair`; assumed recognizer miss rates, mostly synthetic noise, no live transport): noise without speech cut the bot off on 13 % (wideband) and 19 % (telephone) of the candidates it made, driven by synthetic voiced coughs (the real recordings made 4 and 8
   candidates), with the `words` rule on none (2 % if the recognizer writes a word for a tenth of the noise windows), while the real barge-ins the recognizer misses are lost: weighted 1.2 % (wideband) and 5.1 % (telephone) when short utterances are missed twice as often as sentences, 0.7 % and 2.7 % at the sentence rate, 0 with a recognizer that hears every word
-  (today's guards decide on duration and lose none; a LiveKit-style configuration loses the same as this one, a `min_words = 1` interruption several times more). That is why it is off by default.
+  (today's guards decide on duration and lose none; a LiveKit-style configuration loses the same as this one, a `min_words = 1` interruption several times more). It is on by default as in LiveKit: a hands-on check over WebRTC in Turkish with a real recognizer (knocks and coughs did not stop the bot, "dur" and full sentences did, quiet background speech did not) matched the measurement; turn it off for a telephone agent whose callers interrupt with single short words.
   A second person who talks still interrupts the bot. See `docs/CONFIG.md` and `docs/ARCHITECTURE.md`.
 - The short-command list that keeps "stop" and "wait" from being taken for the bot's echo has the Turkish "dur", "bekle", "yeter", "sus", "pardon", "dinle" and "hayır"
   (case-insensitive, the Turkish dotted and dotless i folded). A candidate of at most two words with one of them is never held as the echo, **also with `pause_then_decide` off**: it changes what `echo_text_match` holds.
@@ -284,7 +287,8 @@ First public release.
   and Windows (x86_64) with checksums, and a multi-architecture image at
   `ghcr.io/bilal07karadeniz/brisvox-server`.
 
-[Unreleased]: https://github.com/bilal07karadeniz/brisvox/compare/v0.1.3...HEAD
+[Unreleased]: https://github.com/bilal07karadeniz/brisvox/compare/v0.1.4...HEAD
+[0.1.4]: https://github.com/bilal07karadeniz/brisvox/compare/v0.1.3...v0.1.4
 [0.1.3]: https://github.com/bilal07karadeniz/brisvox/compare/v0.1.2...v0.1.3
 [0.1.2]: https://github.com/bilal07karadeniz/brisvox/compare/v0.1.1...v0.1.2
 [0.1.1]: https://github.com/bilal07karadeniz/brisvox/compare/v0.1.0...v0.1.1
