@@ -17,7 +17,7 @@ moment. Open source, one process, hundreds of isolated calls per container.**
 
 [Website: brisvox.com](https://brisvox.com) · [Install](#install) · [Try it without keys](#try-it-without-keys) · [Quickstart](#quickstart) · [Comparison](#brisvox-vs-livekit-agents-vs-pipecat) ·
 [Features](#features) · [For AI coding agents](#for-ai-coding-agents) ·
-[Docs: the book](book/src/introduction.md) · [License](#license)
+[Docs: the book](book/src/introduction.md) · [Discussions](https://github.com/bilal07karadeniz/brisvox/discussions) · [License](#license)
 
 ## Why brisvox
 
@@ -413,6 +413,11 @@ scripts/verify.sh        # fmt + clippy (-D warnings) + docs + tests + SDKs + ex
 
 Library code may not `unwrap`, `expect`, `panic!`, `todo!` or index in a way that can panic;
 these lints are denied workspace-wide and relaxed only inside tests (`clippy.toml`).
+
+## Questions and feedback
+
+Questions, ideas and what you are building: [GitHub Discussions](https://github.com/bilal07karadeniz/brisvox/discussions).
+Bugs: [Issues](https://github.com/bilal07karadeniz/brisvox/issues).
 
 ## License
 
